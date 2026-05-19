@@ -14,7 +14,14 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
+import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
+import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
+import { Route as AdminReportsRouteImport } from './routes/admin.reports'
+import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
+import { Route as AdminFormsRouteImport } from './routes/admin.forms'
+import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
+import { Route as AdminClientsRouteImport } from './routes/admin.clients'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -41,9 +48,44 @@ const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
   path: '/work-orders',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVehiclesRoute = AdminVehiclesRouteImport.update({
+  id: '/vehicles',
+  path: '/vehicles',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminScheduleRoute = AdminScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminReportsRoute = AdminReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminJobsRoute = AdminJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFormsRoute = AdminFormsRouteImport.update({
+  id: '/forms',
+  path: '/forms',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDriversRoute = AdminDriversRouteImport.update({
+  id: '/drivers',
+  path: '/drivers',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminClientsRoute = AdminClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
   getParentRoute: () => AdminRoute,
 } as any)
 
@@ -51,14 +93,28 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -67,7 +123,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -77,17 +140,43 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
     | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
     | '/admin/work-orders'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/admin/schedule' | '/admin/work-orders' | '/admin'
+  to:
+    | '/'
+    | '/login'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
+    | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
+    | '/admin/work-orders'
+    | '/admin'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/login'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
     | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
     | '/admin/work-orders'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -135,6 +224,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWorkOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/vehicles': {
+      id: '/admin/vehicles'
+      path: '/vehicles'
+      fullPath: '/admin/vehicles'
+      preLoaderRoute: typeof AdminVehiclesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/schedule': {
       id: '/admin/schedule'
       path: '/schedule'
@@ -142,17 +245,66 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminScheduleRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/reports': {
+      id: '/admin/reports'
+      path: '/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AdminReportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/jobs': {
+      id: '/admin/jobs'
+      path: '/jobs'
+      fullPath: '/admin/jobs'
+      preLoaderRoute: typeof AdminJobsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/forms': {
+      id: '/admin/forms'
+      path: '/forms'
+      fullPath: '/admin/forms'
+      preLoaderRoute: typeof AdminFormsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/drivers': {
+      id: '/admin/drivers'
+      path: '/drivers'
+      fullPath: '/admin/drivers'
+      preLoaderRoute: typeof AdminDriversRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/clients': {
+      id: '/admin/clients'
+      path: '/clients'
+      fullPath: '/admin/clients'
+      preLoaderRoute: typeof AdminClientsRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
+  AdminClientsRoute: typeof AdminClientsRoute
+  AdminDriversRoute: typeof AdminDriversRoute
+  AdminFormsRoute: typeof AdminFormsRoute
+  AdminJobsRoute: typeof AdminJobsRoute
+  AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminVehiclesRoute: typeof AdminVehiclesRoute
   AdminWorkOrdersRoute: typeof AdminWorkOrdersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminClientsRoute: AdminClientsRoute,
+  AdminDriversRoute: AdminDriversRoute,
+  AdminFormsRoute: AdminFormsRoute,
+  AdminJobsRoute: AdminJobsRoute,
+  AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminVehiclesRoute: AdminVehiclesRoute,
   AdminWorkOrdersRoute: AdminWorkOrdersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
