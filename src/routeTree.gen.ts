@@ -9,38 +9,381 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MechanicRouteImport } from './routes/mechanic'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as DriverRouteImport } from './routes/driver'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MechanicIndexRouteImport } from './routes/mechanic.index'
+import { Route as DriverIndexRouteImport } from './routes/driver.index'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as MechanicWorkOrdersRouteImport } from './routes/mechanic.work-orders'
+import { Route as MechanicPurchaseRequestsRouteImport } from './routes/mechanic.purchase-requests'
+import { Route as MechanicMaintenanceRouteImport } from './routes/mechanic.maintenance'
+import { Route as MechanicInventoryRouteImport } from './routes/mechanic.inventory'
+import { Route as DriverWorkOrderRouteImport } from './routes/driver.work-order'
+import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-checklist'
+import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
+import { Route as DriverProfileRouteImport } from './routes/driver.profile'
+import { Route as DriverJobsRouteImport } from './routes/driver.jobs'
+import { Route as DriverFormsRouteImport } from './routes/driver.forms'
+import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
+import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
+import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
+import { Route as AdminReportsRouteImport } from './routes/admin.reports'
+import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
+import { Route as AdminFormsRouteImport } from './routes/admin.forms'
+import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
+import { Route as AdminClientsRouteImport } from './routes/admin.clients'
 
+const MechanicRoute = MechanicRouteImport.update({
+  id: '/mechanic',
+  path: '/mechanic',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriverRoute = DriverRouteImport.update({
+  id: '/driver',
+  path: '/driver',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MechanicIndexRoute = MechanicIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const DriverIndexRoute = DriverIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DriverRoute,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const MechanicWorkOrdersRoute = MechanicWorkOrdersRouteImport.update({
+  id: '/work-orders',
+  path: '/work-orders',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const MechanicPurchaseRequestsRoute =
+  MechanicPurchaseRequestsRouteImport.update({
+    id: '/purchase-requests',
+    path: '/purchase-requests',
+    getParentRoute: () => MechanicRoute,
+  } as any)
+const MechanicMaintenanceRoute = MechanicMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const MechanicInventoryRoute = MechanicInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const DriverWorkOrderRoute = DriverWorkOrderRouteImport.update({
+  id: '/work-order',
+  path: '/work-order',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverToolChecklistRoute = DriverToolChecklistRouteImport.update({
+  id: '/tool-checklist',
+  path: '/tool-checklist',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverStartOfDayRoute = DriverStartOfDayRouteImport.update({
+  id: '/start-of-day',
+  path: '/start-of-day',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverProfileRoute = DriverProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverJobsRoute = DriverJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverFormsRoute = DriverFormsRouteImport.update({
+  id: '/forms',
+  path: '/forms',
+  getParentRoute: () => DriverRoute,
+} as any)
+const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
+  id: '/work-orders',
+  path: '/work-orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminVehiclesRoute = AdminVehiclesRouteImport.update({
+  id: '/vehicles',
+  path: '/vehicles',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminScheduleRoute = AdminScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminReportsRoute = AdminReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminJobsRoute = AdminJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFormsRoute = AdminFormsRouteImport.update({
+  id: '/forms',
+  path: '/forms',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDriversRoute = AdminDriversRouteImport.update({
+  id: '/drivers',
+  path: '/drivers',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminClientsRoute = AdminClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/driver': typeof DriverRouteWithChildren
+  '/login': typeof LoginRoute
+  '/mechanic': typeof MechanicRouteWithChildren
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/forms': typeof DriverFormsRoute
+  '/driver/jobs': typeof DriverJobsRoute
+  '/driver/profile': typeof DriverProfileRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/admin/': typeof AdminIndexRoute
+  '/driver/': typeof DriverIndexRoute
+  '/mechanic/': typeof MechanicIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/forms': typeof DriverFormsRoute
+  '/driver/jobs': typeof DriverJobsRoute
+  '/driver/profile': typeof DriverProfileRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/admin': typeof AdminIndexRoute
+  '/driver': typeof DriverIndexRoute
+  '/mechanic': typeof MechanicIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/driver': typeof DriverRouteWithChildren
+  '/login': typeof LoginRoute
+  '/mechanic': typeof MechanicRouteWithChildren
+  '/admin/clients': typeof AdminClientsRoute
+  '/admin/drivers': typeof AdminDriversRoute
+  '/admin/forms': typeof AdminFormsRoute
+  '/admin/jobs': typeof AdminJobsRoute
+  '/admin/reports': typeof AdminReportsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/forms': typeof DriverFormsRoute
+  '/driver/jobs': typeof DriverJobsRoute
+  '/driver/profile': typeof DriverProfileRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/admin/': typeof AdminIndexRoute
+  '/driver/': typeof DriverIndexRoute
+  '/mechanic/': typeof MechanicIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/driver'
+    | '/login'
+    | '/mechanic'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
+    | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
+    | '/admin/work-orders'
+    | '/driver/forms'
+    | '/driver/jobs'
+    | '/driver/profile'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
+    | '/admin/'
+    | '/driver/'
+    | '/mechanic/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/login'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
+    | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
+    | '/admin/work-orders'
+    | '/driver/forms'
+    | '/driver/jobs'
+    | '/driver/profile'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
+    | '/admin'
+    | '/driver'
+    | '/mechanic'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/driver'
+    | '/login'
+    | '/mechanic'
+    | '/admin/clients'
+    | '/admin/drivers'
+    | '/admin/forms'
+    | '/admin/jobs'
+    | '/admin/reports'
+    | '/admin/schedule'
+    | '/admin/settings'
+    | '/admin/vehicles'
+    | '/admin/work-orders'
+    | '/driver/forms'
+    | '/driver/jobs'
+    | '/driver/profile'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
+    | '/admin/'
+    | '/driver/'
+    | '/mechanic/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  DriverRoute: typeof DriverRouteWithChildren
+  LoginRoute: typeof LoginRoute
+  MechanicRoute: typeof MechanicRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/mechanic': {
+      id: '/mechanic'
+      path: '/mechanic'
+      fullPath: '/mechanic'
+      preLoaderRoute: typeof MechanicRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/driver': {
+      id: '/driver'
+      path: '/driver'
+      fullPath: '/driver'
+      preLoaderRoute: typeof DriverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +391,240 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mechanic/': {
+      id: '/mechanic/'
+      path: '/'
+      fullPath: '/mechanic/'
+      preLoaderRoute: typeof MechanicIndexRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/driver/': {
+      id: '/driver/'
+      path: '/'
+      fullPath: '/driver/'
+      preLoaderRoute: typeof DriverIndexRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/mechanic/work-orders': {
+      id: '/mechanic/work-orders'
+      path: '/work-orders'
+      fullPath: '/mechanic/work-orders'
+      preLoaderRoute: typeof MechanicWorkOrdersRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/purchase-requests': {
+      id: '/mechanic/purchase-requests'
+      path: '/purchase-requests'
+      fullPath: '/mechanic/purchase-requests'
+      preLoaderRoute: typeof MechanicPurchaseRequestsRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/maintenance': {
+      id: '/mechanic/maintenance'
+      path: '/maintenance'
+      fullPath: '/mechanic/maintenance'
+      preLoaderRoute: typeof MechanicMaintenanceRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/inventory': {
+      id: '/mechanic/inventory'
+      path: '/inventory'
+      fullPath: '/mechanic/inventory'
+      preLoaderRoute: typeof MechanicInventoryRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/driver/work-order': {
+      id: '/driver/work-order'
+      path: '/work-order'
+      fullPath: '/driver/work-order'
+      preLoaderRoute: typeof DriverWorkOrderRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/tool-checklist': {
+      id: '/driver/tool-checklist'
+      path: '/tool-checklist'
+      fullPath: '/driver/tool-checklist'
+      preLoaderRoute: typeof DriverToolChecklistRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/start-of-day': {
+      id: '/driver/start-of-day'
+      path: '/start-of-day'
+      fullPath: '/driver/start-of-day'
+      preLoaderRoute: typeof DriverStartOfDayRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/profile': {
+      id: '/driver/profile'
+      path: '/profile'
+      fullPath: '/driver/profile'
+      preLoaderRoute: typeof DriverProfileRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/jobs': {
+      id: '/driver/jobs'
+      path: '/jobs'
+      fullPath: '/driver/jobs'
+      preLoaderRoute: typeof DriverJobsRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/forms': {
+      id: '/driver/forms'
+      path: '/forms'
+      fullPath: '/driver/forms'
+      preLoaderRoute: typeof DriverFormsRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/admin/work-orders': {
+      id: '/admin/work-orders'
+      path: '/work-orders'
+      fullPath: '/admin/work-orders'
+      preLoaderRoute: typeof AdminWorkOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/vehicles': {
+      id: '/admin/vehicles'
+      path: '/vehicles'
+      fullPath: '/admin/vehicles'
+      preLoaderRoute: typeof AdminVehiclesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/schedule': {
+      id: '/admin/schedule'
+      path: '/schedule'
+      fullPath: '/admin/schedule'
+      preLoaderRoute: typeof AdminScheduleRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/reports': {
+      id: '/admin/reports'
+      path: '/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AdminReportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/jobs': {
+      id: '/admin/jobs'
+      path: '/jobs'
+      fullPath: '/admin/jobs'
+      preLoaderRoute: typeof AdminJobsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/forms': {
+      id: '/admin/forms'
+      path: '/forms'
+      fullPath: '/admin/forms'
+      preLoaderRoute: typeof AdminFormsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/drivers': {
+      id: '/admin/drivers'
+      path: '/drivers'
+      fullPath: '/admin/drivers'
+      preLoaderRoute: typeof AdminDriversRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/clients': {
+      id: '/admin/clients'
+      path: '/clients'
+      fullPath: '/admin/clients'
+      preLoaderRoute: typeof AdminClientsRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminClientsRoute: typeof AdminClientsRoute
+  AdminDriversRoute: typeof AdminDriversRoute
+  AdminFormsRoute: typeof AdminFormsRoute
+  AdminJobsRoute: typeof AdminJobsRoute
+  AdminReportsRoute: typeof AdminReportsRoute
+  AdminScheduleRoute: typeof AdminScheduleRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminVehiclesRoute: typeof AdminVehiclesRoute
+  AdminWorkOrdersRoute: typeof AdminWorkOrdersRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminClientsRoute: AdminClientsRoute,
+  AdminDriversRoute: AdminDriversRoute,
+  AdminFormsRoute: AdminFormsRoute,
+  AdminJobsRoute: AdminJobsRoute,
+  AdminReportsRoute: AdminReportsRoute,
+  AdminScheduleRoute: AdminScheduleRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminVehiclesRoute: AdminVehiclesRoute,
+  AdminWorkOrdersRoute: AdminWorkOrdersRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface DriverRouteChildren {
+  DriverFormsRoute: typeof DriverFormsRoute
+  DriverJobsRoute: typeof DriverJobsRoute
+  DriverProfileRoute: typeof DriverProfileRoute
+  DriverStartOfDayRoute: typeof DriverStartOfDayRoute
+  DriverToolChecklistRoute: typeof DriverToolChecklistRoute
+  DriverWorkOrderRoute: typeof DriverWorkOrderRoute
+  DriverIndexRoute: typeof DriverIndexRoute
+}
+
+const DriverRouteChildren: DriverRouteChildren = {
+  DriverFormsRoute: DriverFormsRoute,
+  DriverJobsRoute: DriverJobsRoute,
+  DriverProfileRoute: DriverProfileRoute,
+  DriverStartOfDayRoute: DriverStartOfDayRoute,
+  DriverToolChecklistRoute: DriverToolChecklistRoute,
+  DriverWorkOrderRoute: DriverWorkOrderRoute,
+  DriverIndexRoute: DriverIndexRoute,
+}
+
+const DriverRouteWithChildren =
+  DriverRoute._addFileChildren(DriverRouteChildren)
+
+interface MechanicRouteChildren {
+  MechanicInventoryRoute: typeof MechanicInventoryRoute
+  MechanicMaintenanceRoute: typeof MechanicMaintenanceRoute
+  MechanicPurchaseRequestsRoute: typeof MechanicPurchaseRequestsRoute
+  MechanicWorkOrdersRoute: typeof MechanicWorkOrdersRoute
+  MechanicIndexRoute: typeof MechanicIndexRoute
+}
+
+const MechanicRouteChildren: MechanicRouteChildren = {
+  MechanicInventoryRoute: MechanicInventoryRoute,
+  MechanicMaintenanceRoute: MechanicMaintenanceRoute,
+  MechanicPurchaseRequestsRoute: MechanicPurchaseRequestsRoute,
+  MechanicWorkOrdersRoute: MechanicWorkOrdersRoute,
+  MechanicIndexRoute: MechanicIndexRoute,
+}
+
+const MechanicRouteWithChildren = MechanicRoute._addFileChildren(
+  MechanicRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  DriverRoute: DriverRouteWithChildren,
+  LoginRoute: LoginRoute,
+  MechanicRoute: MechanicRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
