@@ -10,9 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DriverRouteImport } from './routes/driver'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DriverIndexRouteImport } from './routes/driver.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as DriverWorkOrderRouteImport } from './routes/driver.work-order'
+import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-checklist'
+import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
 import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
@@ -28,6 +33,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DriverRoute = DriverRouteImport.update({
+  id: '/driver',
+  path: '/driver',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -38,10 +48,30 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DriverIndexRoute = DriverIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DriverRoute,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const DriverWorkOrderRoute = DriverWorkOrderRouteImport.update({
+  id: '/work-order',
+  path: '/work-order',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverToolChecklistRoute = DriverToolChecklistRouteImport.update({
+  id: '/tool-checklist',
+  path: '/tool-checklist',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverStartOfDayRoute = DriverStartOfDayRouteImport.update({
+  id: '/start-of-day',
+  path: '/start-of-day',
+  getParentRoute: () => DriverRoute,
 } as any)
 const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
   id: '/work-orders',
@@ -92,6 +122,7 @@ const AdminClientsRoute = AdminClientsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/driver': typeof DriverRouteWithChildren
   '/login': typeof LoginRoute
   '/admin/clients': typeof AdminClientsRoute
   '/admin/drivers': typeof AdminDriversRoute
@@ -102,7 +133,11 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
   '/admin/': typeof AdminIndexRoute
+  '/driver/': typeof DriverIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -116,12 +151,17 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
   '/admin': typeof AdminIndexRoute
+  '/driver': typeof DriverIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/driver': typeof DriverRouteWithChildren
   '/login': typeof LoginRoute
   '/admin/clients': typeof AdminClientsRoute
   '/admin/drivers': typeof AdminDriversRoute
@@ -132,13 +172,18 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vehicles': typeof AdminVehiclesRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tool-checklist': typeof DriverToolChecklistRoute
+  '/driver/work-order': typeof DriverWorkOrderRoute
   '/admin/': typeof AdminIndexRoute
+  '/driver/': typeof DriverIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
+    | '/driver'
     | '/login'
     | '/admin/clients'
     | '/admin/drivers'
@@ -149,7 +194,11 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
     | '/admin/'
+    | '/driver/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -163,11 +212,16 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
     | '/admin'
+    | '/driver'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/driver'
     | '/login'
     | '/admin/clients'
     | '/admin/drivers'
@@ -178,12 +232,17 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/start-of-day'
+    | '/driver/tool-checklist'
+    | '/driver/work-order'
     | '/admin/'
+    | '/driver/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  DriverRoute: typeof DriverRouteWithChildren
   LoginRoute: typeof LoginRoute
 }
 
@@ -194,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/driver': {
+      id: '/driver'
+      path: '/driver'
+      fullPath: '/driver'
+      preLoaderRoute: typeof DriverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -210,12 +276,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/driver/': {
+      id: '/driver/'
+      path: '/'
+      fullPath: '/driver/'
+      preLoaderRoute: typeof DriverIndexRouteImport
+      parentRoute: typeof DriverRoute
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/driver/work-order': {
+      id: '/driver/work-order'
+      path: '/work-order'
+      fullPath: '/driver/work-order'
+      preLoaderRoute: typeof DriverWorkOrderRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/tool-checklist': {
+      id: '/driver/tool-checklist'
+      path: '/tool-checklist'
+      fullPath: '/driver/tool-checklist'
+      preLoaderRoute: typeof DriverToolChecklistRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/start-of-day': {
+      id: '/driver/start-of-day'
+      path: '/start-of-day'
+      fullPath: '/driver/start-of-day'
+      preLoaderRoute: typeof DriverStartOfDayRouteImport
+      parentRoute: typeof DriverRoute
     }
     '/admin/work-orders': {
       id: '/admin/work-orders'
@@ -311,9 +405,27 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface DriverRouteChildren {
+  DriverStartOfDayRoute: typeof DriverStartOfDayRoute
+  DriverToolChecklistRoute: typeof DriverToolChecklistRoute
+  DriverWorkOrderRoute: typeof DriverWorkOrderRoute
+  DriverIndexRoute: typeof DriverIndexRoute
+}
+
+const DriverRouteChildren: DriverRouteChildren = {
+  DriverStartOfDayRoute: DriverStartOfDayRoute,
+  DriverToolChecklistRoute: DriverToolChecklistRoute,
+  DriverWorkOrderRoute: DriverWorkOrderRoute,
+  DriverIndexRoute: DriverIndexRoute,
+}
+
+const DriverRouteWithChildren =
+  DriverRoute._addFileChildren(DriverRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  DriverRoute: DriverRouteWithChildren,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
