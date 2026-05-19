@@ -17,6 +17,10 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as MechanicIndexRouteImport } from './routes/mechanic.index'
 import { Route as DriverIndexRouteImport } from './routes/driver.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as MechanicWorkOrdersRouteImport } from './routes/mechanic.work-orders'
+import { Route as MechanicPurchaseRequestsRouteImport } from './routes/mechanic.purchase-requests'
+import { Route as MechanicMaintenanceRouteImport } from './routes/mechanic.maintenance'
+import { Route as MechanicInventoryRouteImport } from './routes/mechanic.inventory'
 import { Route as DriverWorkOrderRouteImport } from './routes/driver.work-order'
 import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-checklist'
 import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
@@ -72,6 +76,27 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const MechanicWorkOrdersRoute = MechanicWorkOrdersRouteImport.update({
+  id: '/work-orders',
+  path: '/work-orders',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const MechanicPurchaseRequestsRoute =
+  MechanicPurchaseRequestsRouteImport.update({
+    id: '/purchase-requests',
+    path: '/purchase-requests',
+    getParentRoute: () => MechanicRoute,
+  } as any)
+const MechanicMaintenanceRoute = MechanicMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => MechanicRoute,
+} as any)
+const MechanicInventoryRoute = MechanicInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => MechanicRoute,
 } as any)
 const DriverWorkOrderRoute = DriverWorkOrderRouteImport.update({
   id: '/work-order',
@@ -170,6 +195,10 @@ export interface FileRoutesByFullPath {
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
@@ -192,6 +221,10 @@ export interface FileRoutesByTo {
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/admin': typeof AdminIndexRoute
   '/driver': typeof DriverIndexRoute
   '/mechanic': typeof MechanicIndexRoute
@@ -218,6 +251,10 @@ export interface FileRoutesById {
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
+  '/mechanic/inventory': typeof MechanicInventoryRoute
+  '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
+  '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
@@ -245,6 +282,10 @@ export interface FileRouteTypes {
     | '/driver/start-of-day'
     | '/driver/tool-checklist'
     | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
@@ -267,6 +308,10 @@ export interface FileRouteTypes {
     | '/driver/start-of-day'
     | '/driver/tool-checklist'
     | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
     | '/admin'
     | '/driver'
     | '/mechanic'
@@ -292,6 +337,10 @@ export interface FileRouteTypes {
     | '/driver/start-of-day'
     | '/driver/tool-checklist'
     | '/driver/work-order'
+    | '/mechanic/inventory'
+    | '/mechanic/maintenance'
+    | '/mechanic/purchase-requests'
+    | '/mechanic/work-orders'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
@@ -362,6 +411,34 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/mechanic/work-orders': {
+      id: '/mechanic/work-orders'
+      path: '/work-orders'
+      fullPath: '/mechanic/work-orders'
+      preLoaderRoute: typeof MechanicWorkOrdersRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/purchase-requests': {
+      id: '/mechanic/purchase-requests'
+      path: '/purchase-requests'
+      fullPath: '/mechanic/purchase-requests'
+      preLoaderRoute: typeof MechanicPurchaseRequestsRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/maintenance': {
+      id: '/mechanic/maintenance'
+      path: '/maintenance'
+      fullPath: '/mechanic/maintenance'
+      preLoaderRoute: typeof MechanicMaintenanceRouteImport
+      parentRoute: typeof MechanicRoute
+    }
+    '/mechanic/inventory': {
+      id: '/mechanic/inventory'
+      path: '/inventory'
+      fullPath: '/mechanic/inventory'
+      preLoaderRoute: typeof MechanicInventoryRouteImport
+      parentRoute: typeof MechanicRoute
     }
     '/driver/work-order': {
       id: '/driver/work-order'
@@ -523,10 +600,18 @@ const DriverRouteWithChildren =
   DriverRoute._addFileChildren(DriverRouteChildren)
 
 interface MechanicRouteChildren {
+  MechanicInventoryRoute: typeof MechanicInventoryRoute
+  MechanicMaintenanceRoute: typeof MechanicMaintenanceRoute
+  MechanicPurchaseRequestsRoute: typeof MechanicPurchaseRequestsRoute
+  MechanicWorkOrdersRoute: typeof MechanicWorkOrdersRoute
   MechanicIndexRoute: typeof MechanicIndexRoute
 }
 
 const MechanicRouteChildren: MechanicRouteChildren = {
+  MechanicInventoryRoute: MechanicInventoryRoute,
+  MechanicMaintenanceRoute: MechanicMaintenanceRoute,
+  MechanicPurchaseRequestsRoute: MechanicPurchaseRequestsRoute,
+  MechanicWorkOrdersRoute: MechanicWorkOrdersRoute,
   MechanicIndexRoute: MechanicIndexRoute,
 }
 
