@@ -178,6 +178,67 @@ export const driverById = (id: string | null) => id ? drivers.find(d => d.id ===
 export const vehicleById = (id: string | null) => id ? vehicles.find(v => v.id === id) : undefined;
 export const jobById = (id: string) => jobs.find(j => j.id === id);
 
+const pad = (n: number) => String(n).padStart(2, "0");
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace("-", " ");
+
+// Legacy display projection for jobs (string client/driver/truck/time/day)
+export function jobDisplay(j: Job) {
+  const c = clientById(j.clientId);
+  const d = driverById(j.driverId);
+  const v = vehicleById(j.vehicleId);
+  const dt = new Date(j.scheduledAt);
+  return {
+    id: j.id,
+    client: c?.name ?? "—",
+    driver: d?.name ?? "Unassigned",
+    truck: v?.id ?? "—",
+    location: j.location.address,
+    time: `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`,
+    day: (dt.getUTCDay() + 6) % 7, // Mon=0..Sun=6
+    status: cap(j.status),
+    notes: j.notes,
+  };
+}
+
+export function vehicleDisplay(v: Vehicle) {
+  const d = driverById(v.driverId);
+  return {
+    id: v.id,
+    name: v.name,
+    year: v.year,
+    type: cap(v.type),
+    odometer: v.odometer,
+    hours: v.engineHours,
+    lastService: v.lastService,
+    nextDue: v.nextServiceDue,
+    status: v.status === "operational" ? "Operational" : v.status === "maintenance" ? "In maintenance" : "Out of service",
+    driver: d?.name ?? "Unassigned",
+  };
+}
+
+export function workOrderDisplay(w: WorkOrder) {
+  const j = jobById(w.jobId);
+  const c = j ? clientById(j.clientId) : undefined;
+  const d = driverById(w.driverId);
+  const dt = new Date(w.submittedAt);
+  return {
+    id: w.id,
+    job: w.jobId,
+    client: c?.name ?? "—",
+    driver: d?.name ?? "—",
+    submitted: dt.toUTCString().slice(5, 22),
+    status: cap(w.status),
+    workPerformed: w.workPerformed,
+    loadType: w.loadType,
+    weight: `${w.weightTonnes} tonnes`,
+    dumpSite: w.dumpSite,
+    location: j?.location.address ?? "—",
+  };
+}
+
+// Snapshot legacy aliases for routes not part of mutation flow
+export const trucks = vehicles.map(vehicleDisplay);
+
 // ============ Legacy / display-only ============
 export const activityFeed = [
   { time: "08:42", text: "Tom Morrison submitted start-of-day form", type: "positive" as const },
