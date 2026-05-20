@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Filter, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { drivers, trucks, jobs, clients } from "@/data/mockData";
+import { jobDisplay } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -23,13 +25,34 @@ const statusBorder: Record<string, string> = {
 };
 
 function Page() {
-  const [open, setOpen] = useState(true);
+  const { drivers, vehicles, clients, jobs } = useData();
+  const display = jobs.map(jobDisplay);
+  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ clientId: "", address: "", date: "", time: "", driverId: "", vehicleId: "", notes: "" });
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.clientId || !form.driverId || !form.vehicleId || !form.date || !form.time) {
+      toast.error("Fill all required fields"); return;
+    }
     setSaving(true);
-    setTimeout(() => { setSaving(false); setOpen(false); toast.success("Job JOB-044 created · SMS sent to driver"); }, 800);
+    try {
+      const job = await api.createJob({
+        clientId: form.clientId,
+        location: { address: form.address || "TBD", lat: null, lng: null },
+        scheduledAt: new Date(`${form.date}T${form.time}:00Z`).toISOString(),
+        durationMin: 240,
+        driverId: form.driverId, vehicleId: form.vehicleId,
+        status: "scheduled", notes: form.notes, createdBy: "A-01",
+      });
+      await api.sendSms(form.driverId, `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`, job.id);
+      toast.success(`${job.id} created · SMS sent to driver`);
+      setOpen(false);
+      setForm({ clientId: "", address: "", date: "", time: "", driverId: "", vehicleId: "", notes: "" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -42,7 +65,7 @@ function Page() {
           <Select><SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Driver" /></SelectTrigger>
             <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
           <Select><SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Truck" /></SelectTrigger>
-            <SelectContent>{trucks.map(t => <SelectItem key={t.id} value={t.id}>{t.id}</SelectItem>)}</SelectContent></Select>
+            <SelectContent>{vehicles.map(t => <SelectItem key={t.id} value={t.id}>{t.id}</SelectItem>)}</SelectContent></Select>
           <Select><SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem></SelectContent></Select>
         </div>
@@ -64,7 +87,7 @@ function Page() {
                 <div className="text-sm font-medium truncate">{driver.name}</div>
               </div>
               {days.map((_, di) => {
-                const job = jobs.find(j => j.driver === driver.name && j.day === di);
+                const job = display.find(j => j.driver === driver.name && j.day === di);
                 return (
                   <div key={di} className="p-2 border-l border-border min-h-[80px] group">
                     {job ? (
@@ -95,30 +118,34 @@ function Page() {
             </div>
             <div>
               <Label>Client</Label>
-              <Select defaultValue={clients[0]}><SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{clients.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
+              <Select value={form.clientId} onValueChange={v => setForm(f => ({ ...f, clientId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Choose client" /></SelectTrigger>
+                <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Location / Site address</Label>
-              <Input placeholder="e.g. 14 River Rd" />
+              <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="e.g. 14 River Rd" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Date</Label><Input type="date" /></div>
-              <div><Label>Start time</Label><Input type="time" /></div>
+              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+              <div><Label>Start time</Label><Input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} /></div>
             </div>
             <div>
               <Label>Assign driver</Label>
-              <Select><SelectTrigger><SelectValue placeholder="Choose driver" /></SelectTrigger>
+              <Select value={form.driverId} onValueChange={v => setForm(f => ({ ...f, driverId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Choose driver" /></SelectTrigger>
                 <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.initials} — {d.name}</SelectItem>)}</SelectContent></Select>
             </div>
             <div>
               <Label>Assign truck</Label>
-              <Select><SelectTrigger><SelectValue placeholder="Choose truck" /></SelectTrigger>
-                <SelectContent>{trucks.map(t => <SelectItem key={t.id} value={t.id}>{t.id} — {t.name}</SelectItem>)}</SelectContent></Select>
+              <Select value={form.vehicleId} onValueChange={v => setForm(f => ({ ...f, vehicleId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Choose truck" /></SelectTrigger>
+                <SelectContent>{vehicles.map(t => <SelectItem key={t.id} value={t.id}>{t.id} — {t.name}</SelectItem>)}</SelectContent></Select>
             </div>
             <div>
               <Label>Notes</Label>
-              <Textarea placeholder="Site contact, gate code, etc." rows={3} />
+              <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Site contact, gate code, etc." rows={3} />
             </div>
             <Button type="submit" disabled={saving} className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : "Create job + notify driver"}

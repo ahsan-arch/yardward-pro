@@ -1,61 +1,245 @@
-export type Status = "Active" | "Scheduled" | "Completed" | "Delayed" | "Pending" | "Approved" | "Rejected" | "Operational" | "In maintenance";
+import type {
+  Driver, Mechanic, Client, RateTable, Vehicle, MaintenanceLog, FuelLog,
+  Tool, ToolChecklistSubmission, Job, WorkOrder, InvoiceData, TimeEntry,
+  PurchaseRequest, InventoryItem, SmsLog, Notification, DriverToken,
+  TicketPhoto, Tender,
+} from "@/types/domain";
 
-export const drivers = [
-  { id: "D-01", name: "Tom Morrison", initials: "TM", phone: "+1 555 0142", license: "HR-A" },
-  { id: "D-02", name: "Raja Singh", initials: "RS", phone: "+1 555 0188", license: "HR-A" },
-  { id: "D-03", name: "Dana Clarke", initials: "DC", phone: "+1 555 0156", license: "MR" },
-  { id: "D-04", name: "Kenji Park", initials: "KP", phone: "+1 555 0172", license: "HR-B" },
-  { id: "D-05", name: "Abby Walsh", initials: "AW", phone: "+1 555 0119", license: "MR" },
-  { id: "D-06", name: "Marcus Bell", initials: "MB", phone: "+1 555 0163", license: "HR-A" },
+// ============ Users / Drivers / Mechanics ============
+export const drivers: Driver[] = [
+  { id: "D-01", email: "tom@fleetops.co", name: "Tom Morrison", role: "driver", phone: "+1 555 0142", status: "active", createdAt: "2024-03-12T08:00:00Z", licenseNumber: "HR-A 884211", licenseExpiry: "2027-06-30", vehicleAssignmentId: "TRK-07", currentTokenId: "TKN-01", initials: "TM" },
+  { id: "D-02", email: "raja@fleetops.co", name: "Raja Singh", role: "driver", phone: "+1 555 0188", status: "active", createdAt: "2024-01-22T08:00:00Z", licenseNumber: "HR-A 770119", licenseExpiry: "2026-11-14", vehicleAssignmentId: "TRK-03", currentTokenId: null, initials: "RS" },
+  { id: "D-03", email: "dana@fleetops.co", name: "Dana Clarke", role: "driver", phone: "+1 555 0156", status: "active", createdAt: "2023-08-04T08:00:00Z", licenseNumber: "MR 449302", licenseExpiry: "2028-02-19", vehicleAssignmentId: "TRK-11", currentTokenId: null, initials: "DC" },
+  { id: "D-04", email: "kenji@fleetops.co", name: "Kenji Park", role: "driver", phone: "+1 555 0172", status: "active", createdAt: "2024-05-30T08:00:00Z", licenseNumber: "HR-B 220841", licenseExpiry: "2027-09-01", vehicleAssignmentId: "EQ-02", currentTokenId: null, initials: "KP" },
+  { id: "D-05", email: "abby@fleetops.co", name: "Abby Walsh", role: "driver", phone: "+1 555 0119", status: "active", createdAt: "2023-11-17T08:00:00Z", licenseNumber: "MR 612089", licenseExpiry: "2026-04-25", vehicleAssignmentId: "TRL-01", currentTokenId: null, initials: "AW" },
+  { id: "D-06", email: "marcus@fleetops.co", name: "Marcus Bell", role: "driver", phone: "+1 555 0163", status: "inactive", createdAt: "2024-02-09T08:00:00Z", licenseNumber: "HR-A 558740", licenseExpiry: "2025-12-12", vehicleAssignmentId: null, currentTokenId: null, initials: "MB" },
 ];
 
-export const trucks = [
-  { id: "TRK-03", name: "Kenworth T610", year: 2020, type: "Truck", odometer: 112430, hours: 4210, lastService: "02 Apr 2025", nextDue: "120,000 km", status: "Operational" as const, driver: "Raja Singh" },
-  { id: "TRK-07", name: "Mack Granite", year: 2021, type: "Truck", odometer: 84220, hours: 3104, lastService: "12 Apr 2025", nextDue: "90,000 km", status: "Operational" as const, driver: "Tom Morrison" },
-  { id: "TRK-11", name: "Volvo FH", year: 2022, type: "Truck", odometer: 56780, hours: 2018, lastService: "28 Mar 2025", nextDue: "60,000 km", status: "Operational" as const, driver: "Dana Clarke" },
-  { id: "TRK-14", name: "Isuzu FXZ", year: 2019, type: "Truck", odometer: 198400, hours: 7320, lastService: "01 May 2025", nextDue: "Service overdue", status: "In maintenance" as const, driver: "Unassigned" },
-  { id: "EQ-02",  name: "CAT 320 Excavator", year: 2020, type: "Equipment", odometer: 0, hours: 5410, lastService: "18 Apr 2025", nextDue: "5,800 hrs", status: "Operational" as const, driver: "Kenji Park" },
-  { id: "TRL-01", name: "Flat-deck trailer", year: 2018, type: "Trailer", odometer: 142000, hours: 0, lastService: "10 Feb 2025", nextDue: "150,000 km", status: "Operational" as const, driver: "Marcus Bell" },
+export const mechanics: Mechanic[] = [
+  { id: "M-01", email: "jamie@fleetops.co", name: "Jamie Reyes", role: "mechanic", phone: "+1 555 0210", status: "active", createdAt: "2023-06-01T08:00:00Z", specialty: "Diesel engines", shopId: "SHOP-01" },
+  { id: "M-02", email: "lee@fleetops.co", name: "Lee Okafor", role: "mechanic", phone: "+1 555 0244", status: "active", createdAt: "2024-04-18T08:00:00Z", specialty: "Hydraulics", shopId: "SHOP-01" },
 ];
 
-export const clients = ["Maple City Council", "Brennan Demolition", "Metro Infrastructure", "Henderson Haulage", "Stoneridge Contracting"];
+// ============ Clients ============
+export const clients: Client[] = [
+  { id: "C-01", name: "Maple City Council", contactName: "Helen Pike", email: "hpike@maplecity.gov", phone: "+1 555 1001", billingAddress: "City Hall, 1 Civic Sq", rateTableId: "RT-01", notes: "Net-30 terms. PO required.", status: "active" },
+  { id: "C-02", name: "Brennan Demolition", contactName: "Mike Brennan", email: "mike@brennandemo.co", phone: "+1 555 1042", billingAddress: "88 Industrial Pkwy", rateTableId: "RT-02", notes: "Prefers Friday invoicing.", status: "active" },
+  { id: "C-03", name: "Metro Infrastructure", contactName: "Sarah Vance", email: "svance@metroinfra.com", phone: "+1 555 1077", billingAddress: "200 Bridge St, Floor 12", rateTableId: null, notes: "", status: "active" },
+  { id: "C-04", name: "Henderson Haulage", contactName: "Bo Henderson", email: "bo@hendersonhaul.com", phone: "+1 555 1131", billingAddress: "Yard 4, Old Rail Rd", rateTableId: null, notes: "Subcontract — invoice monthly.", status: "active" },
+  { id: "C-05", name: "Stoneridge Contracting", contactName: "Tara Lim", email: "tara@stoneridge.co", phone: "+1 555 1188", billingAddress: "Unit 6, 22 Quarry Ln", rateTableId: null, notes: "", status: "active" },
+];
 
-export type Job = {
-  id: string;
-  client: string;
-  location: string;
-  driver: string;
-  truck: string;
-  status: Status;
-  time: string;
-  day?: number; // 0..6 Mon..Sun
-};
+export const rateTables: RateTable[] = [
+  { id: "RT-01", clientId: "C-01", lineItems: [
+    { description: "Truck + driver", unit: "hour", rate: 165, surcharges: [{ label: "Fuel surcharge", amount: 0.08 }] },
+    { description: "Mixed fill haul", unit: "tonne", rate: 24, surcharges: [] },
+  ]},
+  { id: "RT-02", clientId: "C-02", lineItems: [
+    { description: "Concrete removal", unit: "tonne", rate: 38, surcharges: [{ label: "After-hours", amount: 75 }] },
+    { description: "Equipment hire", unit: "hour", rate: 210, surcharges: [] },
+  ]},
+];
 
+// ============ Vehicles ============
+export const vehicles: Vehicle[] = [
+  { id: "TRK-03", name: "Kenworth T610", plate: "KW-3204", year: 2020, type: "truck", vin: "1XKWD49X4LJ112430", odometer: 112430, engineHours: 4210, lastService: "02 Apr 2025", nextServiceDue: "120,000 km", driverId: "D-02", geotabDeviceId: "GT-3041", status: "operational" },
+  { id: "TRK-07", name: "Mack Granite", plate: "MK-7088", year: 2021, type: "truck", vin: "1M2GR2GC2MM084220", odometer: 84220, engineHours: 3104, lastService: "12 Apr 2025", nextServiceDue: "90,000 km", driverId: "D-01", geotabDeviceId: "GT-3042", status: "operational" },
+  { id: "TRK-11", name: "Volvo FH", plate: "VO-1144", year: 2022, type: "truck", vin: "YV2RT40A0NA567802", odometer: 56780, engineHours: 2018, lastService: "28 Mar 2025", nextServiceDue: "60,000 km", driverId: "D-03", geotabDeviceId: "GT-3043", status: "operational" },
+  { id: "TRK-14", name: "Isuzu FXZ", plate: "IZ-1410", year: 2019, type: "truck", vin: "JALFXZ70KK7984002", odometer: 198400, engineHours: 7320, lastService: "01 May 2025", nextServiceDue: "Service overdue", driverId: null, geotabDeviceId: "GT-3044", status: "maintenance" },
+  { id: "EQ-02",  name: "CAT 320 Excavator", plate: "EQ-0220", year: 2020, type: "equipment", vin: "CAT0320CHKBL05410", odometer: 0, engineHours: 5410, lastService: "18 Apr 2025", nextServiceDue: "5,800 hrs", driverId: "D-04", geotabDeviceId: null, status: "operational" },
+  { id: "TRL-01", name: "Flat-deck trailer", plate: "TRL-0118", year: 2018, type: "trailer", vin: "1JJV532W8JL142000", odometer: 142000, engineHours: 0, lastService: "10 Feb 2025", nextServiceDue: "150,000 km", driverId: "D-05", geotabDeviceId: null, status: "operational" },
+];
+
+// ============ Maintenance / Fuel ============
+export const maintenanceLogs: MaintenanceLog[] = [
+  { id: "MN-01", vehicleId: "TRK-03", type: "Oil change", performedBy: "Jamie Reyes", date: "02 Apr 2025", mileage: 110200, cost: 320, notes: "Standard interval service.", attachments: [] },
+  { id: "MN-02", vehicleId: "TRK-07", type: "Brake inspection", performedBy: "Jamie Reyes", date: "12 Apr 2025", mileage: 83910, cost: 180, notes: "Pads at 60%.", attachments: [] },
+  { id: "MN-03", vehicleId: "TRK-14", type: "Brake replacement", performedBy: "Lee Okafor", date: "12 May 2025", mileage: 198100, cost: 1240, notes: "Rear pads + lines bled.", attachments: [] },
+  { id: "MN-04", vehicleId: "EQ-02",  type: "Hydraulic reseal", performedBy: "Lee Okafor", date: "18 Apr 2025", mileage: 0, cost: 880, notes: "Boom cylinder reseal.", attachments: [] },
+  { id: "MN-05", vehicleId: "TRK-11", type: "Tyre rotation", performedBy: "Jamie Reyes", date: "28 Mar 2025", mileage: 56010, cost: 95, notes: "All tyres above wear limit.", attachments: [] },
+];
+
+export const fuelLogs: FuelLog[] = [
+  { id: "FL-01", vehicleId: "TRK-07", date: "13 May 2025", gallons: 62, cost: 248, location: "Shell — Hwy 6", driverId: "D-01" },
+  { id: "FL-02", vehicleId: "TRK-03", date: "13 May 2025", gallons: 58, cost: 232, location: "Petro Card Lock", driverId: "D-02" },
+  { id: "FL-03", vehicleId: "TRK-11", date: "12 May 2025", gallons: 71, cost: 284, location: "Esso — Depot Rd", driverId: "D-03" },
+  { id: "FL-04", vehicleId: "EQ-02",  date: "11 May 2025", gallons: 40, cost: 160, location: "On-site bowser", driverId: "D-04" },
+  { id: "FL-05", vehicleId: "TRL-01", date: "10 May 2025", gallons: 0, cost: 0, location: "N/A", driverId: "D-05" },
+  { id: "FL-06", vehicleId: "TRK-07", date: "09 May 2025", gallons: 60, cost: 240, location: "Shell — Hwy 6", driverId: "D-01" },
+];
+
+// ============ Tools ============
+export const tools: Tool[] = [
+  { id: "TL-01", name: "Safety cones (4x)", condition: "ok",      vehicleId: "TRK-07" },
+  { id: "TL-02", name: "Hi-vis vests (2x)", condition: "ok",      vehicleId: "TRK-07" },
+  { id: "TL-03", name: "First aid kit",     condition: "ok",      vehicleId: "TRK-07" },
+  { id: "TL-04", name: "Fire extinguisher", condition: "ok",      vehicleId: "TRK-07" },
+  { id: "TL-05", name: "Ground mat",        condition: "ok",      vehicleId: "TRK-07" },
+  { id: "TL-06", name: "Lashing straps (6x)", condition: "missing", vehicleId: "TRK-07" },
+  { id: "TL-07", name: "Tow chain",         condition: "damaged", vehicleId: "TRK-07" },
+  { id: "TL-08", name: "Hand tools kit",    condition: "ok",      vehicleId: "TRK-07" },
+];
+
+export const toolChecklistSubmissions: ToolChecklistSubmission[] = [
+  { id: "TCS-01", driverId: "D-01", vehicleId: "TRK-07", submittedAt: "2025-05-14T08:42:00Z", gpsLat: 43.6532, gpsLng: -79.3832,
+    items: tools.map(t => ({ toolId: t.id, status: t.condition, notes: t.condition === "missing" ? "Need replacements" : "" })) },
+  { id: "TCS-02", driverId: "D-02", vehicleId: "TRK-03", submittedAt: "2025-05-14T08:30:00Z", gpsLat: 43.6510, gpsLng: -79.3470,
+    items: tools.slice(0, 6).map(t => ({ toolId: t.id, status: "ok", notes: "" })) },
+  { id: "TCS-03", driverId: "D-03", vehicleId: "TRK-11", submittedAt: "2025-05-13T07:55:00Z", gpsLat: 43.6720, gpsLng: -79.3960,
+    items: tools.slice(0, 8).map(t => ({ toolId: t.id, status: "ok", notes: "" })) },
+];
+
+// ============ Jobs ============
 export const jobs: Job[] = [
-  { id: "JOB-041", client: "Maple City Council", location: "14 River Rd", driver: "Tom Morrison", truck: "TRK-07", status: "Active", time: "07:00", day: 1 },
-  { id: "JOB-042", client: "Brennan Demolition", location: "88 York Ave", driver: "Raja Singh", truck: "TRK-03", status: "Scheduled", time: "09:30", day: 1 },
-  { id: "JOB-043", client: "Metro Infrastructure", location: "Site C, North", driver: "Dana Clarke", truck: "TRK-11", status: "Completed", time: "06:00", day: 1 },
-  { id: "JOB-044", client: "Henderson Haulage", location: "Depot 4", driver: "Kenji Park", truck: "EQ-02", status: "Scheduled", time: "08:00", day: 2 },
-  { id: "JOB-045", client: "Stoneridge Contracting", location: "Lot 12, East", driver: "Abby Walsh", truck: "TRL-01", status: "Active", time: "07:30", day: 2 },
-  { id: "JOB-046", client: "Maple City Council", location: "44 Pine St", driver: "Marcus Bell", truck: "TRK-03", status: "Delayed", time: "10:15", day: 3 },
-  { id: "JOB-047", client: "Brennan Demolition", location: "11 Harbor Way", driver: "Tom Morrison", truck: "TRK-07", status: "Scheduled", time: "07:00", day: 4 },
-  { id: "JOB-048", client: "Metro Infrastructure", location: "Junction B", driver: "Dana Clarke", truck: "TRK-11", status: "Scheduled", time: "06:45", day: 5 },
+  { id: "JOB-041", clientId: "C-01", location: { address: "14 River Rd",   lat: 43.6532, lng: -79.3832 }, scheduledAt: "2025-05-14T07:00:00Z", durationMin: 240, driverId: "D-01", vehicleId: "TRK-07", status: "active",    notes: "Site access via north gate.", createdBy: "A-01", createdAt: "2025-05-12T10:00:00Z" },
+  { id: "JOB-042", clientId: "C-02", location: { address: "88 York Ave",   lat: 43.6510, lng: -79.3470 }, scheduledAt: "2025-05-14T09:30:00Z", durationMin: 180, driverId: "D-02", vehicleId: "TRK-03", status: "scheduled", notes: "", createdBy: "A-01", createdAt: "2025-05-12T10:05:00Z" },
+  { id: "JOB-043", clientId: "C-03", location: { address: "Site C, North", lat: 43.6720, lng: -79.3960 }, scheduledAt: "2025-05-14T06:00:00Z", durationMin: 300, driverId: "D-03", vehicleId: "TRK-11", status: "completed", notes: "", createdBy: "A-01", createdAt: "2025-05-12T10:10:00Z" },
+  { id: "JOB-044", clientId: "C-04", location: { address: "Depot 4",       lat: 43.6605, lng: -79.4101 }, scheduledAt: "2025-05-15T08:00:00Z", durationMin: 360, driverId: "D-04", vehicleId: "EQ-02",  status: "scheduled", notes: "Operator needs site induction.", createdBy: "A-01", createdAt: "2025-05-12T10:15:00Z" },
+  { id: "JOB-045", clientId: "C-05", location: { address: "Lot 12, East",  lat: 43.6580, lng: -79.3300 }, scheduledAt: "2025-05-15T07:30:00Z", durationMin: 240, driverId: "D-05", vehicleId: "TRL-01", status: "active",    notes: "", createdBy: "A-01", createdAt: "2025-05-12T10:20:00Z" },
+  { id: "JOB-046", clientId: "C-01", location: { address: "44 Pine St",    lat: 43.6660, lng: -79.3855 }, scheduledAt: "2025-05-16T10:15:00Z", durationMin: 200, driverId: "D-06", vehicleId: "TRK-03", status: "delayed",   notes: "Awaiting permit.", createdBy: "A-01", createdAt: "2025-05-12T10:25:00Z" },
+  { id: "JOB-047", clientId: "C-02", location: { address: "11 Harbor Way", lat: 43.6402, lng: -79.3700 }, scheduledAt: "2025-05-17T07:00:00Z", durationMin: 300, driverId: "D-01", vehicleId: "TRK-07", status: "scheduled", notes: "", createdBy: "A-01", createdAt: "2025-05-12T10:30:00Z" },
+  { id: "JOB-048", clientId: "C-03", location: { address: "Junction B",    lat: 43.6810, lng: -79.4150 }, scheduledAt: "2025-05-18T06:45:00Z", durationMin: 360, driverId: "D-03", vehicleId: "TRK-11", status: "scheduled", notes: "", createdBy: "A-01", createdAt: "2025-05-12T10:35:00Z" },
 ];
 
-export type WorkOrder = {
-  id: string; job: string; client: string; driver: string; submitted: string; status: "Pending" | "Approved" | "Rejected";
-  workPerformed: string; loadType: string; weight: string; dumpSite: string; location: string;
-};
-
+// ============ Work orders ============
 export const workOrders: WorkOrder[] = [
-  { id: "WO-115", job: "JOB-039", client: "Henderson Haulage", driver: "Marcus Bell", submitted: "12 May 2025, 16:08", status: "Approved", workPerformed: "Transported 22 tonnes of clean fill to designated site.", loadType: "Clean fill", weight: "22 tonnes", dumpSite: "Hill Road Tip", location: "Depot 4" },
-  { id: "WO-116", job: "JOB-040", client: "Stoneridge Contracting", driver: "Abby Walsh", submitted: "13 May 2025, 11:45", status: "Approved", workPerformed: "Delivered and spread road base on access track.", loadType: "Road base", weight: "9 tonnes", dumpSite: "On-site spread", location: "Lot 12, East" },
-  { id: "WO-117", job: "JOB-043", client: "Metro Infrastructure", driver: "Dana Clarke", submitted: "14 May 2025, 12:12", status: "Rejected", workPerformed: "Site visit only — client postponed work.", loadType: "N/A", weight: "0 tonnes", dumpSite: "N/A", location: "Site C, North" },
-  { id: "WO-118", job: "JOB-041", client: "Maple City Council", driver: "Tom Morrison", submitted: "14 May 2025, 14:32", status: "Pending", workPerformed: "Excavated and removed 14 tonnes of mixed fill from rear lot. Site left clean.", loadType: "Mixed fill", weight: "14 tonnes", dumpSite: "Greenfield Tip", location: "14 River Rd" },
-  { id: "WO-119", job: "JOB-042", client: "Brennan Demolition", driver: "Raja Singh", submitted: "14 May 2025, 15:01", status: "Pending", workPerformed: "Removed broken concrete panels.", loadType: "Concrete", weight: "11 tonnes", dumpSite: "Westside Recycling", location: "88 York Ave" },
-  { id: "WO-120", job: "JOB-045", client: "Stoneridge Contracting", driver: "Abby Walsh", submitted: "14 May 2025, 15:48", status: "Pending", workPerformed: "Hauled green waste from yard clearance.", loadType: "Green waste", weight: "6 tonnes", dumpSite: "Composting Centre", location: "Lot 12, East" },
+  { id: "WO-115", jobId: "JOB-039", driverId: "D-06", workPerformed: "Transported 22 tonnes of clean fill to designated site.", loadType: "Clean fill", weightTonnes: 22, dumpSite: "Hill Road Tip", gpsCapture: { lat: 43.66, lng: -79.41, capturedAt: "2025-05-12T16:08:00Z" }, foremanSignature: "data:image/svg+xml;base64,SIG_PLACEHOLDER", siteIssues: false, siteIssuesNote: "", submittedAt: "2025-05-12T16:08:00Z", status: "approved",  approvedBy: "A-01", approvedAt: "2025-05-12T18:00:00Z", invoiceDataId: "INV-01" },
+  { id: "WO-116", jobId: "JOB-040", driverId: "D-05", workPerformed: "Delivered and spread road base on access track.",         loadType: "Road base", weightTonnes: 9,  dumpSite: "On-site spread", gpsCapture: { lat: 43.658, lng: -79.33, capturedAt: "2025-05-13T11:45:00Z" }, foremanSignature: "data:image/svg+xml;base64,SIG_PLACEHOLDER", siteIssues: false, siteIssuesNote: "", submittedAt: "2025-05-13T11:45:00Z", status: "approved",  approvedBy: "A-01", approvedAt: "2025-05-13T14:00:00Z", invoiceDataId: null },
+  { id: "WO-117", jobId: "JOB-043", driverId: "D-03", workPerformed: "Site visit only — client postponed work.",                 loadType: "N/A",       weightTonnes: 0,  dumpSite: "N/A",            gpsCapture: { lat: 43.672, lng: -79.396, capturedAt: "2025-05-14T12:12:00Z" }, foremanSignature: "", siteIssues: true, siteIssuesNote: "Client cancelled on arrival.", submittedAt: "2025-05-14T12:12:00Z", status: "rejected",  approvedBy: "A-01", approvedAt: "2025-05-14T13:00:00Z", invoiceDataId: null },
+  { id: "WO-118", jobId: "JOB-041", driverId: "D-01", workPerformed: "Excavated and removed 14 tonnes of mixed fill from rear lot. Site left clean.", loadType: "Mixed fill", weightTonnes: 14, dumpSite: "Greenfield Tip", gpsCapture: { lat: 43.6532, lng: -79.3832, capturedAt: "2025-05-14T14:32:00Z" }, foremanSignature: "data:image/svg+xml;base64,SIG_PLACEHOLDER", siteIssues: false, siteIssuesNote: "", submittedAt: "2025-05-14T14:32:00Z", status: "pending",   approvedBy: null, approvedAt: null, invoiceDataId: null },
+  { id: "WO-119", jobId: "JOB-042", driverId: "D-02", workPerformed: "Removed broken concrete panels.",                          loadType: "Concrete",  weightTonnes: 11, dumpSite: "Westside Recycling", gpsCapture: { lat: 43.651, lng: -79.347, capturedAt: "2025-05-14T15:01:00Z" }, foremanSignature: "data:image/svg+xml;base64,SIG_PLACEHOLDER", siteIssues: false, siteIssuesNote: "", submittedAt: "2025-05-14T15:01:00Z", status: "pending",   approvedBy: null, approvedAt: null, invoiceDataId: null },
+  { id: "WO-120", jobId: "JOB-045", driverId: "D-05", workPerformed: "Hauled green waste from yard clearance.",                  loadType: "Green waste", weightTonnes: 6, dumpSite: "Composting Centre", gpsCapture: { lat: 43.658, lng: -79.33, capturedAt: "2025-05-14T15:48:00Z" }, foremanSignature: "data:image/svg+xml;base64,SIG_PLACEHOLDER", siteIssues: false, siteIssuesNote: "", submittedAt: "2025-05-14T15:48:00Z", status: "pending",   approvedBy: null, approvedAt: null, invoiceDataId: null },
 ];
 
+export const invoiceData: InvoiceData[] = [
+  { id: "INV-01", workOrderId: "WO-115", clientId: "C-04", lineItems: [{ description: "Clean fill haul", qty: 22, rate: 24, amount: 528 }], total: 528, qboSyncStatus: "synced",  qboInvoiceId: "QBO-1041" },
+  { id: "INV-02", workOrderId: "WO-116", clientId: "C-05", lineItems: [{ description: "Road base spread", qty: 9, rate: 36, amount: 324 }], total: 324, qboSyncStatus: "pending", qboInvoiceId: null },
+];
+
+export const timeEntries: TimeEntry[] = [
+  { id: "TE-01", driverId: "D-01", clockIn: "2025-05-14T06:55:00Z", clockOut: "2025-05-14T15:40:00Z", gpsClockIn: { lat: 43.66, lng: -79.41 }, gpsClockOut: { lat: 43.6532, lng: -79.3832 }, vehicleMovementCorrelation: "matches",  flagged: false, flagReason: "" },
+  { id: "TE-02", driverId: "D-02", clockIn: "2025-05-14T07:10:00Z", clockOut: "2025-05-14T16:05:00Z", gpsClockIn: { lat: 43.66, lng: -79.41 }, gpsClockOut: { lat: 43.651, lng: -79.347 }, vehicleMovementCorrelation: "matches",  flagged: false, flagReason: "" },
+  { id: "TE-03", driverId: "D-03", clockIn: "2025-05-14T05:50:00Z", clockOut: "2025-05-14T13:20:00Z", gpsClockIn: { lat: 43.66, lng: -79.41 }, gpsClockOut: { lat: 43.672, lng: -79.396 }, vehicleMovementCorrelation: "matches",  flagged: false, flagReason: "" },
+  { id: "TE-04", driverId: "D-04", clockIn: "2025-05-14T07:30:00Z", clockOut: null,                   gpsClockIn: { lat: 43.66, lng: -79.41 }, gpsClockOut: null, vehicleMovementCorrelation: "pending", flagged: false, flagReason: "" },
+  { id: "TE-05", driverId: "D-05", clockIn: "2025-05-14T06:40:00Z", clockOut: "2025-05-14T14:55:00Z", gpsClockIn: { lat: 43.66, lng: -79.41 }, gpsClockOut: { lat: 43.61, lng: -79.30 }, vehicleMovementCorrelation: "mismatch", flagged: true,  flagReason: "Vehicle stationary while driver moved 4km from site." },
+];
+
+export const purchaseRequests: PurchaseRequest[] = [
+  { id: "PR-01", mechanicId: "M-01", item: "Brake pads — Bendix HD set",  reason: "TRK-14 rear axle replacement", estimatedCost: 480, urgency: "high",   inventoryCheckedAt: "2025-05-10T09:00:00Z", status: "approved", approvedBy: "A-01", supplierId: "SUP-01", createdAt: "2025-05-10T08:55:00Z" },
+  { id: "PR-02", mechanicId: "M-02", item: "Hydraulic seal kit — CAT 320", reason: "EQ-02 boom seep",              estimatedCost: 215, urgency: "medium", inventoryCheckedAt: "2025-05-12T11:00:00Z", status: "pending",  approvedBy: null,   supplierId: null,     createdAt: "2025-05-12T10:50:00Z" },
+  { id: "PR-03", mechanicId: "M-01", item: "Air filter pack (x6)",         reason: "Quarterly fleet stock",         estimatedCost: 132, urgency: "low",    inventoryCheckedAt: "2025-05-13T08:00:00Z", status: "rejected", approvedBy: "A-01", supplierId: null,     createdAt: "2025-05-13T07:55:00Z" },
+];
+
+export const inventoryItems: InventoryItem[] = [
+  { id: "INV-A1", name: "Engine oil 15W-40 (drum)", sku: "OIL-15W40", qtyOnHand: 3, qtyReserved: 1, reorderPoint: 2, supplierId: "SUP-02", lastRestocked: "2025-04-22" },
+  { id: "INV-A2", name: "Brake pads — HD set",      sku: "BRK-HD-SET", qtyOnHand: 1, qtyReserved: 1, reorderPoint: 2, supplierId: "SUP-01", lastRestocked: "2025-03-30" },
+  { id: "INV-A3", name: "Air filter — heavy truck", sku: "AIR-HT-01",  qtyOnHand: 8, qtyReserved: 0, reorderPoint: 4, supplierId: "SUP-03", lastRestocked: "2025-04-10" },
+  { id: "INV-A4", name: "Hydraulic seal kit",       sku: "HYD-SEAL-320", qtyOnHand: 0, qtyReserved: 0, reorderPoint: 1, supplierId: "SUP-02", lastRestocked: "2025-02-14" },
+  { id: "INV-A5", name: "Coolant 5L",               sku: "COOL-5L",    qtyOnHand: 14, qtyReserved: 2, reorderPoint: 6, supplierId: "SUP-02", lastRestocked: "2025-05-01" },
+  { id: "INV-A6", name: "Wiper blade — 24in",       sku: "WIP-24",     qtyOnHand: 6, qtyReserved: 0, reorderPoint: 4, supplierId: "SUP-03", lastRestocked: "2025-04-18" },
+];
+
+export const smsLogs: SmsLog[] = [
+  { id: "SMS-01", driverId: "D-01", jobId: "JOB-041", body: "JOB-041 assigned · 14 River Rd · 07:00", sentAt: "2025-05-12T10:00:30Z", twilioMessageId: "SM01a", deliveryStatus: "delivered" },
+  { id: "SMS-02", driverId: "D-02", jobId: "JOB-042", body: "JOB-042 assigned · 88 York Ave · 09:30", sentAt: "2025-05-12T10:05:30Z", twilioMessageId: "SM02b", deliveryStatus: "delivered" },
+  { id: "SMS-03", driverId: "D-04", jobId: "JOB-044", body: "JOB-044 assigned · Depot 4 · 08:00",      sentAt: "2025-05-12T10:15:30Z", twilioMessageId: "SM03c", deliveryStatus: "sent" },
+  { id: "SMS-04", driverId: "D-06", jobId: "JOB-046", body: "JOB-046 delayed — awaiting permit.",      sentAt: "2025-05-13T09:00:00Z", twilioMessageId: null,    deliveryStatus: "failed" },
+];
+
+export const notifications: Notification[] = [
+  { id: "N-01", userId: "A-01", type: "approval", body: "WO-118 awaits approval", link: "/admin/work-orders", readAt: null,                     createdAt: "2025-05-14T14:33:00Z" },
+  { id: "N-02", userId: "A-01", type: "alert",    body: "Tool flagged: missing on TRK-07", link: "/admin/forms", readAt: null,                  createdAt: "2025-05-14T08:43:00Z" },
+  { id: "N-03", userId: "D-01", type: "job",      body: "JOB-041 details updated", link: "/driver/jobs",     readAt: "2025-05-14T07:00:00Z",     createdAt: "2025-05-14T06:55:00Z" },
+  { id: "N-04", userId: "M-01", type: "approval", body: "PR-01 approved",          link: "/mechanic",         readAt: "2025-05-10T10:00:00Z",     createdAt: "2025-05-10T09:30:00Z" },
+  { id: "N-05", userId: "A-01", type: "system",   body: "Geotab sync completed",   link: null,                readAt: "2025-05-13T22:00:00Z",     createdAt: "2025-05-13T22:00:00Z" },
+  { id: "N-06", userId: "D-02", type: "job",      body: "JOB-042 reminder",        link: "/driver/jobs",      readAt: null,                       createdAt: "2025-05-14T08:00:00Z" },
+];
+
+export const driverTokens: DriverToken[] = [
+  { id: "TKN-01", driverId: "D-01", token: "tok_live_a1b2c3", scopedTo: "shift", expiresAt: "2025-05-14T20:00:00Z", usedAt: null },
+  { id: "TKN-02", driverId: "D-02", token: "tok_live_d4e5f6", scopedTo: "job",   expiresAt: "2025-05-13T20:00:00Z", usedAt: "2025-05-13T15:00:00Z" },
+  { id: "TKN-03", driverId: "D-03", token: "tok_live_g7h8i9", scopedTo: "forms", expiresAt: "2025-05-10T20:00:00Z", usedAt: null },
+];
+
+export const ticketPhotos: TicketPhoto[] = [
+  { id: "TP-01", jobId: "JOB-041", driverId: "D-01", photoUrl: "https://placehold.co/400x600?text=Ticket", weight: 14, location: "Greenfield Tip", enteredBy: "A-01", status: "entered",          uploadedAt: "2025-05-14T14:35:00Z" },
+  { id: "TP-02", jobId: "JOB-042", driverId: "D-02", photoUrl: "https://placehold.co/400x600?text=Ticket", weight: null, location: null, enteredBy: null, status: "awaiting-entry", uploadedAt: "2025-05-14T15:05:00Z" },
+];
+
+export const tenders: Tender[] = [
+  { id: "TND-01", source: "City of Maple", title: "Municipal waste haulage — Q3", url: "https://example.gov/tenders/01", closingDate: "2025-06-15", summary: "Annual contract for municipal yard waste haulage.", scrapedAt: "2025-05-12T03:00:00Z" },
+  { id: "TND-02", source: "Metro Infra",   title: "Bridge demo material removal", url: "https://example.com/tenders/02", closingDate: "2025-06-30", summary: "Removal and disposal of concrete debris.",          scrapedAt: "2025-05-12T03:00:00Z" },
+  { id: "TND-03", source: "Stoneridge",    title: "Quarry overflow haulage",      url: "https://example.com/tenders/03", closingDate: "2025-07-10", summary: "Two-truck overflow contract, 6-month term.",       scrapedAt: "2025-05-12T03:00:00Z" },
+];
+
+// ============ Lookup helpers ============
+export const clientById = (id: string) => clients.find(c => c.id === id);
+export const driverById = (id: string | null) => id ? drivers.find(d => d.id === id) : undefined;
+export const vehicleById = (id: string | null) => id ? vehicles.find(v => v.id === id) : undefined;
+export const jobById = (id: string) => jobs.find(j => j.id === id);
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace("-", " ");
+
+// Legacy display projection for jobs (string client/driver/truck/time/day)
+export function jobDisplay(j: Job) {
+  const c = clientById(j.clientId);
+  const d = driverById(j.driverId);
+  const v = vehicleById(j.vehicleId);
+  const dt = new Date(j.scheduledAt);
+  return {
+    id: j.id,
+    client: c?.name ?? "—",
+    driver: d?.name ?? "Unassigned",
+    truck: v?.id ?? "—",
+    location: j.location.address,
+    time: `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`,
+    day: (dt.getUTCDay() + 6) % 7, // Mon=0..Sun=6
+    status: cap(j.status),
+    notes: j.notes,
+  };
+}
+
+export function vehicleDisplay(v: Vehicle) {
+  const d = driverById(v.driverId);
+  return {
+    id: v.id,
+    name: v.name,
+    year: v.year,
+    type: cap(v.type),
+    odometer: v.odometer,
+    hours: v.engineHours,
+    lastService: v.lastService,
+    nextDue: v.nextServiceDue,
+    status: v.status === "operational" ? "Operational" : v.status === "maintenance" ? "In maintenance" : "Out of service",
+    driver: d?.name ?? "Unassigned",
+  };
+}
+
+export function workOrderDisplay(w: WorkOrder) {
+  const j = jobById(w.jobId);
+  const c = j ? clientById(j.clientId) : undefined;
+  const d = driverById(w.driverId);
+  const dt = new Date(w.submittedAt);
+  return {
+    id: w.id,
+    job: w.jobId,
+    client: c?.name ?? "—",
+    driver: d?.name ?? "—",
+    submitted: dt.toUTCString().slice(5, 22),
+    status: cap(w.status),
+    workPerformed: w.workPerformed,
+    loadType: w.loadType,
+    weight: `${w.weightTonnes} tonnes`,
+    dumpSite: w.dumpSite,
+    location: j?.location.address ?? "—",
+  };
+}
+
+// Snapshot legacy aliases for routes not part of mutation flow
+export const trucks = vehicles.map(vehicleDisplay);
+
+// ============ Legacy / display-only ============
 export const activityFeed = [
   { time: "08:42", text: "Tom Morrison submitted start-of-day form", type: "positive" as const },
   { time: "08:51", text: "TRK-07 departed depot (GPS confirmed)", type: "positive" as const },
@@ -70,21 +254,4 @@ export const activityFeed = [
 export const mechanicWorkOrders = [
   { vehicle: "TRK-14 — Isuzu FXZ", issue: "Brake pad wear on rear axle, replace and bleed lines", reportedBy: "Tom Morrison", priority: "High" as const },
   { vehicle: "EQ-02 — CAT 320", issue: "Hydraulic seep at boom cylinder, inspect and reseal", reportedBy: "Kenji Park", priority: "Medium" as const },
-];
-
-export const purchaseRequests = [
-  { item: "Brake pads — Bendix HD set", cost: 480, date: "10 May 2025", status: "Approved" as const },
-  { item: "Hydraulic seal kit — CAT 320", cost: 215, date: "12 May 2025", status: "Pending" as const },
-  { item: "Air filter pack (x6)", cost: 132, date: "13 May 2025", status: "Rejected" as const },
-];
-
-export const toolChecklist = [
-  { name: "Safety cones (4x)", ok: true },
-  { name: "Hi-vis vests (2x)", ok: true },
-  { name: "First aid kit", ok: true },
-  { name: "Fire extinguisher", ok: true },
-  { name: "Ground mat", ok: true },
-  { name: "Lashing straps (6x)", ok: false },
-  { name: "Tow chain", ok: true },
-  { name: "Hand tools kit", ok: true },
 ];

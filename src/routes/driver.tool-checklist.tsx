@@ -1,9 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Check, AlertTriangle, Loader2, Flag } from "lucide-react";
+import { ArrowLeft, Check, AlertTriangle, Loader2, Wrench } from "lucide-react";
 import { useState } from "react";
-import { toolChecklist } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
+import type { ToolCondition } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -12,15 +15,35 @@ export const Route = createFileRoute("/driver/tool-checklist")({
   component: Page,
 });
 
+const stateStyles: Record<ToolCondition, string> = {
+  ok: "bg-card border-border",
+  missing: "bg-danger/10 border-danger/30",
+  damaged: "bg-amber-brand/10 border-amber-brand/40",
+};
+const stateLabel: Record<ToolCondition, string> = { ok: "OK", missing: "MISSING", damaged: "DAMAGED" };
+
 function Page() {
   const nav = useNavigate();
-  const [items, setItems] = useState(toolChecklist);
+  const { tools } = useData();
+  const { user } = useAuth();
+  const [items, setItems] = useState(tools.map(t => ({ toolId: t.id, name: t.name, status: t.condition as ToolCondition, notes: "" })));
   const [loading, setLoading] = useState(false);
-  const flagged = items.filter(i => !i.ok).length;
+  const flagged = items.filter(i => i.status !== "ok").length;
 
-  function submit() {
+  function setStatus(idx: number, next: ToolCondition) {
+    setItems(arr => arr.map((x, i) => i === idx ? { ...x, status: next } : x));
+  }
+
+  async function submit() {
     setLoading(true);
-    setTimeout(() => { toast.success(flagged ? `Checklist submitted · ${flagged} flagged` : "Checklist submitted"); nav({ to: "/driver" }); }, 700);
+    try {
+      await api.submitToolChecklist({
+        driverId: user.id, vehicleId: "TRK-07", gpsLat: null, gpsLng: null,
+        items: items.map(({ toolId, status, notes }) => ({ toolId, status, notes })),
+      });
+      toast.success(flagged ? `Checklist submitted · ${flagged} flagged` : "Checklist submitted");
+      nav({ to: "/driver" });
+    } finally { setLoading(false); }
   }
 
   return (
@@ -28,24 +51,37 @@ function Page() {
       <div className="p-4">
         <Link to="/driver" className="inline-flex items-center gap-1 text-sm text-muted-foreground mb-3"><ArrowLeft className="w-4 h-4" /> Back</Link>
         <h1 className="text-xl font-bold">Tool checklist — TRK-07</h1>
-        <p className="text-sm text-muted-foreground mt-1">Check each item before departing. Flag any missing or damaged tools.</p>
+        <p className="text-sm text-muted-foreground mt-1">Mark each item: OK, damaged, or missing.</p>
 
         <div className="mt-4 space-y-2">
           {items.map((it, i) => (
-            <div key={it.name} className={cn("rounded-lg border p-3 flex items-center gap-3",
-              it.ok ? "bg-card border-border" : "bg-danger/10 border-danger/30")}>
-              <button onClick={() => setItems(arr => arr.map((x, idx) => idx === i ? { ...x, ok: !x.ok } : x))}
-                className={cn("w-9 h-9 rounded-full grid place-items-center shrink-0 border-2",
-                  it.ok ? "bg-success border-success text-success-foreground" : "border-danger text-danger")}>
-                {it.ok ? <Check className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
-              </button>
+            <div key={it.toolId} className={cn("rounded-lg border p-3 flex items-center gap-3", stateStyles[it.status])}>
               <div className="flex-1 min-w-0">
-                <div className={cn("font-medium", !it.ok && "text-danger")}>{it.name}</div>
-                {!it.ok && <div className="text-xs text-danger font-mono uppercase mt-0.5">MISSING</div>}
+                <div className={cn("font-medium",
+                  it.status === "missing" && "text-danger",
+                  it.status === "damaged" && "text-amber-brand")}>{it.name}</div>
+                <div className={cn("text-xs font-mono uppercase mt-0.5",
+                  it.status === "ok" && "text-success",
+                  it.status === "missing" && "text-danger",
+                  it.status === "damaged" && "text-amber-brand")}>{stateLabel[it.status]}</div>
               </div>
-              {!it.ok && (
-                <Button size="sm" variant="outline" className="border-danger text-danger hover:bg-danger/10 h-9"><Flag className="w-3 h-3" /> Flag</Button>
-              )}
+              <div className="flex gap-1">
+                <button type="button" aria-label="OK" onClick={() => setStatus(i, "ok")}
+                  className={cn("w-9 h-9 rounded grid place-items-center border-2",
+                    it.status === "ok" ? "bg-success border-success text-success-foreground" : "border-border text-muted-foreground")}>
+                  <Check className="w-4 h-4" />
+                </button>
+                <button type="button" aria-label="Damaged" onClick={() => setStatus(i, "damaged")}
+                  className={cn("w-9 h-9 rounded grid place-items-center border-2",
+                    it.status === "damaged" ? "bg-amber-brand border-amber-brand text-amber-brand-foreground" : "border-border text-muted-foreground")}>
+                  <Wrench className="w-4 h-4" />
+                </button>
+                <button type="button" aria-label="Missing" onClick={() => setStatus(i, "missing")}
+                  className={cn("w-9 h-9 rounded grid place-items-center border-2",
+                    it.status === "missing" ? "bg-danger border-danger text-danger-foreground" : "border-border text-muted-foreground")}>
+                  <AlertTriangle className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

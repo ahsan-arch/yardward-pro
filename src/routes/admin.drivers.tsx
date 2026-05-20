@@ -26,7 +26,7 @@ export const Route = createFileRoute("/admin/drivers")({
             </div>
             <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground"><Phone className="w-3.5 h-3.5" /><span className="font-mono text-xs">{d.phone}</span></div>
-              <div className="flex items-center gap-2 text-muted-foreground"><Award className="w-3.5 h-3.5" /><span className="text-xs">License: {d.license}</span></div>
+              <div className="flex items-center gap-2 text-muted-foreground"><Award className="w-3.5 h-3.5" /><span className="text-xs">License: {d.licenseNumber}</span></div>
             </div>
           </div>
         ))}

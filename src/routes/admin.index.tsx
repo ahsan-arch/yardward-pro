@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { StatusBadge } from "@/components/crm/StatusBadge";
-import { jobs, activityFeed } from "@/data/mockData";
+import { activityFeed, jobDisplay } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
 import { Briefcase, Users, ClipboardCheck, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,8 @@ const toneClass: Record<string, string> = {
 };
 
 function Dashboard() {
-  const todays = jobs.filter(j => j.day === 1).slice(0, 6);
+  const { jobs } = useData();
+  const todays = jobs.map(jobDisplay).filter(j => j.day === 1).slice(0, 6);
   const dotColor: Record<string, string> = { positive: "bg-success", pending: "bg-amber-brand", flag: "bg-danger" };
 
   return (

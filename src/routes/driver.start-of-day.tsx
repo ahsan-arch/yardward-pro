@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +26,7 @@ const conditions = [
 
 function Page() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const [odo, setOdo] = useState("");
   const [fuel, setFuel] = useState("3/4");
   const [cond, setCond] = useState("ok");
@@ -33,7 +36,7 @@ function Page() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ odo?: string; note?: string }>({});
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: typeof err = {};
     if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
@@ -41,7 +44,11 @@ function Page() {
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
-    setTimeout(() => { toast.success("Start-of-day form submitted"); nav({ to: "/driver" }); }, 800);
+    try {
+      await api.submitStartOfDay({ driverId: user.id, odometer: +odo, fuelLevel: fuel, condition: cond, gps: null });
+      toast.success("Start-of-day form submitted");
+      nav({ to: "/driver" });
+    } finally { setLoading(false); }
   }
 
   return (

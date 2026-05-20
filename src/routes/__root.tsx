@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, createRootRouteWithContext, useRouter, HeadContent, Scripts, Link } from "@tanstack/react-router";
 import appCss from "../styles.css?url";
-import { AppProvider, useApp } from "@/contexts/AppContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { DataProvider, DataBridge } from "@/contexts/DataContext";
+import { OfflineProvider } from "@/contexts/OfflineContext";
 import { RoleSwitcher } from "@/components/crm/RoleSwitcher";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -69,7 +71,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function Chrome() {
-  const { authed } = useApp();
+  const { authed } = useAuth();
   return (
     <>
       {authed && <RoleSwitcher />}
@@ -83,9 +85,14 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <AppProvider>
-        <Chrome />
-      </AppProvider>
+      <AuthProvider>
+        <DataProvider>
+          <OfflineProvider>
+            <DataBridge />
+            <Chrome />
+          </OfflineProvider>
+        </DataProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

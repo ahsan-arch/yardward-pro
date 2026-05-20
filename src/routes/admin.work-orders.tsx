@@ -4,7 +4,10 @@ import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { workOrders } from "@/data/mockData";
+import { workOrderDisplay } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import { useState } from "react";
 import { Check, X, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -15,10 +18,16 @@ export const Route = createFileRoute("/admin/work-orders")({
 });
 
 function Page() {
+  const { workOrders } = useData();
+  const { user } = useAuth();
   const [tab, setTab] = useState("all");
   const [openId, setOpenId] = useState<string | null>("WO-118");
-  const filtered = workOrders.filter(w => tab === "all" ? true : w.status.toLowerCase() === tab);
-  const wo = workOrders.find(w => w.id === openId) || null;
+  const filtered = workOrders.filter(w => tab === "all" ? true : w.status === tab);
+  const woRaw = workOrders.find(w => w.id === openId) || null;
+  const wo = woRaw ? workOrderDisplay(woRaw) : null;
+
+  async function approve(id: string) { await api.approveWorkOrder(id, user.id); toast.success(`${id} approved · invoice draft created`); }
+  async function reject(id: string) { await api.rejectWorkOrder(id, "Rejected by admin"); toast.error(`${id} rejected`); }
 
   return (
     <AdminShell title="Work Orders">
@@ -40,26 +49,29 @@ function Page() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(w => (
-                  <tr key={w.id} className="border-t border-border hover:bg-muted/30 cursor-pointer" onClick={() => setOpenId(w.id)}>
-                    <td className="px-4 py-3 font-mono text-xs font-medium text-amber-brand">{w.id}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{w.job}</td>
-                    <td className="px-4 py-3">{w.client}</td>
-                    <td className="px-4 py-3">{w.driver}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{w.submitted}</td>
-                    <td className="px-4 py-3"><StatusBadge status={w.status} /></td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      {w.status === "Pending" ? (
-                        <div className="flex gap-1.5">
-                          <Button size="sm" variant="outline" className="h-7 border-success text-success hover:bg-success/10" onClick={() => toast.success(`${w.id} approved`)}><Check className="w-3 h-3" /> Approve</Button>
-                          <Button size="sm" variant="outline" className="h-7 border-danger text-danger hover:bg-danger/10" onClick={() => toast.error(`${w.id} rejected`)}><X className="w-3 h-3" /> Reject</Button>
-                        </div>
-                      ) : w.status === "Approved" ? (
-                        <a className="text-xs text-amber-brand hover:underline">View invoice data</a>
-                      ) : <span className="text-xs text-muted-foreground">—</span>}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map(w => {
+                  const d = workOrderDisplay(w);
+                  return (
+                    <tr key={w.id} className="border-t border-border hover:bg-muted/30 cursor-pointer" onClick={() => setOpenId(w.id)}>
+                      <td className="px-4 py-3 font-mono text-xs font-medium text-amber-brand">{w.id}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{d.job}</td>
+                      <td className="px-4 py-3">{d.client}</td>
+                      <td className="px-4 py-3">{d.driver}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{d.submitted}</td>
+                      <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        {w.status === "pending" ? (
+                          <div className="flex gap-1.5">
+                            <Button size="sm" variant="outline" className="h-7 border-success text-success hover:bg-success/10" onClick={() => approve(w.id)}><Check className="w-3 h-3" /> Approve</Button>
+                            <Button size="sm" variant="outline" className="h-7 border-danger text-danger hover:bg-danger/10" onClick={() => reject(w.id)}><X className="w-3 h-3" /> Reject</Button>
+                          </div>
+                        ) : w.status === "approved" ? (
+                          <a className="text-xs text-amber-brand hover:underline">View invoice data</a>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -104,8 +116,8 @@ function Page() {
                   </div>
                 </Section>
                 <div className="space-y-2 pt-2">
-                  <Button className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold" onClick={() => toast.success("Invoice draft created")}>Approve & generate invoice data</Button>
-                  <Button variant="outline" className="w-full h-11 border-danger text-danger hover:bg-danger/10" onClick={() => toast.error("Work order rejected")}>Reject</Button>
+                  <Button className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold" onClick={() => woRaw && approve(woRaw.id)}>Approve &amp; generate invoice data</Button>
+                  <Button variant="outline" className="w-full h-11 border-danger text-danger hover:bg-danger/10" onClick={() => woRaw && reject(woRaw.id)}>Reject</Button>
                 </div>
               </div>
             </>

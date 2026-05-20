@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { StatusBadge } from "@/components/crm/StatusBadge";
-import { jobs } from "@/data/mockData";
+import { jobDisplay } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from "lucide-react";
@@ -13,8 +14,11 @@ export const Route = createFileRoute("/admin/jobs")({
 });
 
 function Page() {
-  const [sort, setSort] = useState<{ k: keyof typeof jobs[0]; dir: 1 | -1 }>({ k: "id", dir: 1 });
-  const sorted = [...jobs].sort((a, b) => (a[sort.k] > b[sort.k] ? 1 : -1) * sort.dir);
+  const { jobs } = useData();
+  const rows = jobs.map(jobDisplay);
+  type Row = (typeof rows)[number];
+  const [sort, setSort] = useState<{ k: keyof Row; dir: 1 | -1 }>({ k: "id", dir: 1 });
+  const sorted = [...rows].sort((a, b) => (((a[sort.k] ?? "") as any) > ((b[sort.k] ?? "") as any) ? 1 : -1) * sort.dir);
   const toggle = (k: any) => setSort(s => ({ k, dir: s.k === k ? (s.dir === 1 ? -1 : 1) : 1 }));
 
   return (

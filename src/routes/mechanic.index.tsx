@@ -6,7 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { mechanicWorkOrders, purchaseRequests } from "@/data/mockData";
+import { mechanicWorkOrders } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import { Play, Loader2, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -17,21 +20,31 @@ export const Route = createFileRoute("/mechanic/")({
   component: Page,
 });
 
-const urgencies = ["Low", "Medium", "High"];
+const urgencies: ("low" | "medium" | "high")[] = ["low", "medium", "high"];
 
 function Page() {
-  const [urgency, setUrgency] = useState("Medium");
+  const { purchaseRequests } = useData();
+  const { user } = useAuth();
+  const [urgency, setUrgency] = useState<"low" | "medium" | "high">("medium");
   const [checkInv, setCheckInv] = useState(true);
   const [item, setItem] = useState("");
   const [reason, setReason] = useState("");
   const [cost, setCost] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!item || !reason || !cost) { toast.error("Fill all required fields"); return; }
     setLoading(true);
-    setTimeout(() => { setLoading(false); toast.success("Purchase request sent for approval"); setItem(""); setReason(""); setCost(""); }, 700);
+    try {
+      await api.submitPurchaseRequest({
+        mechanicId: user.id, item, reason, estimatedCost: +cost, urgency,
+        inventoryCheckedAt: checkInv ? new Date().toISOString() : null,
+        approvedBy: null, supplierId: null,
+      });
+      toast.success("Purchase request sent for approval");
+      setItem(""); setReason(""); setCost("");
+    } finally { setLoading(false); }
   }
 
   return (
@@ -72,7 +85,7 @@ function Page() {
               <div className="grid grid-cols-3 gap-1 mt-1.5 bg-muted rounded-md p-1">
                 {urgencies.map(u => (
                   <button type="button" key={u} onClick={() => setUrgency(u)}
-                    className={cn("h-10 rounded text-sm font-medium", urgency === u ? "bg-amber-brand text-amber-brand-foreground" : "text-muted-foreground")}>{u}</button>
+                    className={cn("h-10 rounded text-sm font-medium capitalize", urgency === u ? "bg-amber-brand text-amber-brand-foreground" : "text-muted-foreground")}>{u}</button>
                 ))}
               </div>
             </div>
@@ -93,11 +106,11 @@ function Page() {
           <h3 className="font-semibold mb-1">PO approval status</h3>
           <p className="text-xs text-muted-foreground mb-4">Recent requests</p>
           <div className="space-y-2">
-            {purchaseRequests.map((p, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/20">
+            {purchaseRequests.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/20">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{p.item}</div>
-                  <div className="text-xs font-mono text-muted-foreground">${p.cost} · {p.date}</div>
+                  <div className="text-xs font-mono text-muted-foreground">${p.estimatedCost} · {new Date(p.createdAt).toLocaleDateString()}</div>
                 </div>
                 <StatusBadge status={p.status} />
               </div>

@@ -8,6 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/driver/work-order")({
 
 function Page() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const [work, setWork] = useState("");
   const [load, setLoad] = useState("");
   const [weight, setWeight] = useState("");
@@ -43,7 +46,7 @@ function Page() {
   function end() { drawing.current = false; }
   function clear() { const c = canvasRef.current!; c.getContext("2d")!.clearRect(0, 0, c.width, c.height); setHasSig(false); }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!work.trim()) errs.work = "Required";
@@ -54,7 +57,18 @@ function Page() {
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
-    setTimeout(() => { toast.success("Work order submitted for approval"); nav({ to: "/driver" }); }, 800);
+    try {
+      const sig = canvasRef.current?.toDataURL("image/png") ?? "";
+      await api.submitWorkOrder({
+        jobId: "JOB-041", driverId: user.id,
+        workPerformed: work, loadType: load, weightTonnes: +weight, dumpSite: dump,
+        gpsCapture: null, foremanSignature: sig,
+        siteIssues: issues, siteIssuesNote: "",
+        approvedBy: null, approvedAt: null, invoiceDataId: null,
+      });
+      toast.success("Work order submitted for approval");
+      nav({ to: "/driver" });
+    } finally { setLoading(false); }
   }
 
   return (
