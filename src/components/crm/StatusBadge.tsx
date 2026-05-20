@@ -17,6 +17,23 @@ const map: Record<string, string> = {
   High: "bg-danger/15 text-danger border-danger/30",
   Inactive: "bg-muted text-muted-foreground border-border",
   Low: "bg-muted text-muted-foreground border-border",
+  // lowercase aliases (new domain enums)
+  active: "bg-success/15 text-success border-success/30",
+  completed: "bg-success/15 text-success border-success/30",
+  approved: "bg-success/15 text-success border-success/30",
+  operational: "bg-success/15 text-success border-success/30",
+  synced: "bg-success/15 text-success border-success/30",
+  delivered: "bg-success/15 text-success border-success/30",
+  scheduled: "bg-amber-brand/15 text-amber-brand border-amber-brand/40",
+  pending: "bg-amber-brand/15 text-amber-brand border-amber-brand/40",
+  maintenance: "bg-amber-brand/15 text-amber-brand border-amber-brand/40",
+  medium: "bg-amber-brand/15 text-amber-brand border-amber-brand/40",
+  delayed: "bg-danger/15 text-danger border-danger/30",
+  rejected: "bg-danger/15 text-danger border-danger/30",
+  failed: "bg-danger/15 text-danger border-danger/30",
+  high: "bg-danger/15 text-danger border-danger/30",
+  low: "bg-muted text-muted-foreground border-border",
+  inactive: "bg-muted text-muted-foreground border-border",
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
