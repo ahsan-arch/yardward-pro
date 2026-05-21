@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as MechanicIndexRouteImport } from './routes/mechanic.index'
 import { Route as DriverIndexRouteImport } from './routes/driver.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as MechanicWorkOrdersRouteImport } from './routes/mechanic.work-orders'
 import { Route as MechanicPurchaseRequestsRouteImport } from './routes/mechanic.purchase-requests'
 import { Route as MechanicMaintenanceRouteImport } from './routes/mechanic.maintenance'
@@ -26,16 +27,25 @@ import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-ch
 import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
 import { Route as DriverProfileRouteImport } from './routes/driver.profile'
 import { Route as DriverJobsRouteImport } from './routes/driver.jobs'
+import { Route as DriverJobLogRouteImport } from './routes/driver.job-log'
 import { Route as DriverFormsRouteImport } from './routes/driver.forms'
+import { Route as DriverEndOfDayRouteImport } from './routes/driver.end-of-day'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
 import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
+import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
+import { Route as AdminTicketsRouteImport } from './routes/admin.tickets'
+import { Route as AdminTendersRouteImport } from './routes/admin.tenders'
+import { Route as AdminSmsLogRouteImport } from './routes/admin.sms-log'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
+import { Route as AdminPurchaseRequestsRouteImport } from './routes/admin.purchase-requests'
 import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
 import { Route as AdminClientsRouteImport } from './routes/admin.clients'
+import { Route as AdminVehiclesIdRouteImport } from './routes/admin.vehicles.$id'
+import { Route as AdminInvoicesWorkOrderIdRouteImport } from './routes/admin.invoices.$workOrderId'
 
 const MechanicRoute = MechanicRouteImport.update({
   id: '/mechanic',
@@ -76,6 +86,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const TTokenRoute = TTokenRouteImport.update({
+  id: '/t/$token',
+  path: '/t/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const MechanicWorkOrdersRoute = MechanicWorkOrdersRouteImport.update({
   id: '/work-orders',
@@ -123,9 +138,19 @@ const DriverJobsRoute = DriverJobsRouteImport.update({
   path: '/jobs',
   getParentRoute: () => DriverRoute,
 } as any)
+const DriverJobLogRoute = DriverJobLogRouteImport.update({
+  id: '/job-log',
+  path: '/job-log',
+  getParentRoute: () => DriverRoute,
+} as any)
 const DriverFormsRoute = DriverFormsRouteImport.update({
   id: '/forms',
   path: '/forms',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverEndOfDayRoute = DriverEndOfDayRouteImport.update({
+  id: '/end-of-day',
+  path: '/end-of-day',
   getParentRoute: () => DriverRoute,
 } as any)
 const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
@@ -136,6 +161,26 @@ const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
 const AdminVehiclesRoute = AdminVehiclesRouteImport.update({
   id: '/vehicles',
   path: '/vehicles',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTimesheetsRoute = AdminTimesheetsRouteImport.update({
+  id: '/timesheets',
+  path: '/timesheets',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTicketsRoute = AdminTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTendersRoute = AdminTendersRouteImport.update({
+  id: '/tenders',
+  path: '/tenders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSmsLogRoute = AdminSmsLogRouteImport.update({
+  id: '/sms-log',
+  path: '/sms-log',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
@@ -151,6 +196,11 @@ const AdminScheduleRoute = AdminScheduleRouteImport.update({
 const AdminReportsRoute = AdminReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPurchaseRequestsRoute = AdminPurchaseRequestsRouteImport.update({
+  id: '/purchase-requests',
+  path: '/purchase-requests',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminJobsRoute = AdminJobsRouteImport.update({
@@ -173,6 +223,17 @@ const AdminClientsRoute = AdminClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVehiclesIdRoute = AdminVehiclesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AdminVehiclesRoute,
+} as any)
+const AdminInvoicesWorkOrderIdRoute =
+  AdminInvoicesWorkOrderIdRouteImport.update({
+    id: '/invoices/$workOrderId',
+    path: '/invoices/$workOrderId',
+    getParentRoute: () => AdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -184,12 +245,19 @@ export interface FileRoutesByFullPath {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
-  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/sms-log': typeof AdminSmsLogRoute
+  '/admin/tenders': typeof AdminTendersRoute
+  '/admin/tickets': typeof AdminTicketsRoute
+  '/admin/timesheets': typeof AdminTimesheetsRoute
+  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
@@ -199,9 +267,12 @@ export interface FileRoutesByFullPath {
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/t/$token': typeof TTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
+  '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
+  '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -210,12 +281,19 @@ export interface FileRoutesByTo {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
-  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/sms-log': typeof AdminSmsLogRoute
+  '/admin/tenders': typeof AdminTendersRoute
+  '/admin/tickets': typeof AdminTicketsRoute
+  '/admin/timesheets': typeof AdminTimesheetsRoute
+  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
@@ -225,9 +303,12 @@ export interface FileRoutesByTo {
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/t/$token': typeof TTokenRoute
   '/admin': typeof AdminIndexRoute
   '/driver': typeof DriverIndexRoute
   '/mechanic': typeof MechanicIndexRoute
+  '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
+  '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -240,12 +321,19 @@ export interface FileRoutesById {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
-  '/admin/vehicles': typeof AdminVehiclesRoute
+  '/admin/sms-log': typeof AdminSmsLogRoute
+  '/admin/tenders': typeof AdminTendersRoute
+  '/admin/tickets': typeof AdminTicketsRoute
+  '/admin/timesheets': typeof AdminTimesheetsRoute
+  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
@@ -255,9 +343,12 @@ export interface FileRoutesById {
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/t/$token': typeof TTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
+  '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
+  '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -271,12 +362,19 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
+    | '/admin/sms-log'
+    | '/admin/tenders'
+    | '/admin/tickets'
+    | '/admin/timesheets'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
@@ -286,9 +384,12 @@ export interface FileRouteTypes {
     | '/mechanic/maintenance'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/t/$token'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
+    | '/admin/invoices/$workOrderId'
+    | '/admin/vehicles/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -297,12 +398,19 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
+    | '/admin/sms-log'
+    | '/admin/tenders'
+    | '/admin/tickets'
+    | '/admin/timesheets'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
@@ -312,9 +420,12 @@ export interface FileRouteTypes {
     | '/mechanic/maintenance'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/t/$token'
     | '/admin'
     | '/driver'
     | '/mechanic'
+    | '/admin/invoices/$workOrderId'
+    | '/admin/vehicles/$id'
   id:
     | '__root__'
     | '/'
@@ -326,12 +437,19 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
+    | '/admin/sms-log'
+    | '/admin/tenders'
+    | '/admin/tickets'
+    | '/admin/timesheets'
     | '/admin/vehicles'
     | '/admin/work-orders'
+    | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
@@ -341,9 +459,12 @@ export interface FileRouteTypes {
     | '/mechanic/maintenance'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/t/$token'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
+    | '/admin/invoices/$workOrderId'
+    | '/admin/vehicles/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -352,6 +473,7 @@ export interface RootRouteChildren {
   DriverRoute: typeof DriverRouteWithChildren
   LoginRoute: typeof LoginRoute
   MechanicRoute: typeof MechanicRouteWithChildren
+  TTokenRoute: typeof TTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -411,6 +533,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/t/$token': {
+      id: '/t/$token'
+      path: '/t/$token'
+      fullPath: '/t/$token'
+      preLoaderRoute: typeof TTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/mechanic/work-orders': {
       id: '/mechanic/work-orders'
@@ -475,11 +604,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DriverJobsRouteImport
       parentRoute: typeof DriverRoute
     }
+    '/driver/job-log': {
+      id: '/driver/job-log'
+      path: '/job-log'
+      fullPath: '/driver/job-log'
+      preLoaderRoute: typeof DriverJobLogRouteImport
+      parentRoute: typeof DriverRoute
+    }
     '/driver/forms': {
       id: '/driver/forms'
       path: '/forms'
       fullPath: '/driver/forms'
       preLoaderRoute: typeof DriverFormsRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/end-of-day': {
+      id: '/driver/end-of-day'
+      path: '/end-of-day'
+      fullPath: '/driver/end-of-day'
+      preLoaderRoute: typeof DriverEndOfDayRouteImport
       parentRoute: typeof DriverRoute
     }
     '/admin/work-orders': {
@@ -494,6 +637,34 @@ declare module '@tanstack/react-router' {
       path: '/vehicles'
       fullPath: '/admin/vehicles'
       preLoaderRoute: typeof AdminVehiclesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/timesheets': {
+      id: '/admin/timesheets'
+      path: '/timesheets'
+      fullPath: '/admin/timesheets'
+      preLoaderRoute: typeof AdminTimesheetsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/tickets': {
+      id: '/admin/tickets'
+      path: '/tickets'
+      fullPath: '/admin/tickets'
+      preLoaderRoute: typeof AdminTicketsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/tenders': {
+      id: '/admin/tenders'
+      path: '/tenders'
+      fullPath: '/admin/tenders'
+      preLoaderRoute: typeof AdminTendersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/sms-log': {
+      id: '/admin/sms-log'
+      path: '/sms-log'
+      fullPath: '/admin/sms-log'
+      preLoaderRoute: typeof AdminSmsLogRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/settings': {
@@ -515,6 +686,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/admin/reports'
       preLoaderRoute: typeof AdminReportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/purchase-requests': {
+      id: '/admin/purchase-requests'
+      path: '/purchase-requests'
+      fullPath: '/admin/purchase-requests'
+      preLoaderRoute: typeof AdminPurchaseRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/jobs': {
@@ -545,20 +723,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminClientsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/vehicles/$id': {
+      id: '/admin/vehicles/$id'
+      path: '/$id'
+      fullPath: '/admin/vehicles/$id'
+      preLoaderRoute: typeof AdminVehiclesIdRouteImport
+      parentRoute: typeof AdminVehiclesRoute
+    }
+    '/admin/invoices/$workOrderId': {
+      id: '/admin/invoices/$workOrderId'
+      path: '/invoices/$workOrderId'
+      fullPath: '/admin/invoices/$workOrderId'
+      preLoaderRoute: typeof AdminInvoicesWorkOrderIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
+
+interface AdminVehiclesRouteChildren {
+  AdminVehiclesIdRoute: typeof AdminVehiclesIdRoute
+}
+
+const AdminVehiclesRouteChildren: AdminVehiclesRouteChildren = {
+  AdminVehiclesIdRoute: AdminVehiclesIdRoute,
+}
+
+const AdminVehiclesRouteWithChildren = AdminVehiclesRoute._addFileChildren(
+  AdminVehiclesRouteChildren,
+)
 
 interface AdminRouteChildren {
   AdminClientsRoute: typeof AdminClientsRoute
   AdminDriversRoute: typeof AdminDriversRoute
   AdminFormsRoute: typeof AdminFormsRoute
   AdminJobsRoute: typeof AdminJobsRoute
+  AdminPurchaseRequestsRoute: typeof AdminPurchaseRequestsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
-  AdminVehiclesRoute: typeof AdminVehiclesRoute
+  AdminSmsLogRoute: typeof AdminSmsLogRoute
+  AdminTendersRoute: typeof AdminTendersRoute
+  AdminTicketsRoute: typeof AdminTicketsRoute
+  AdminTimesheetsRoute: typeof AdminTimesheetsRoute
+  AdminVehiclesRoute: typeof AdminVehiclesRouteWithChildren
   AdminWorkOrdersRoute: typeof AdminWorkOrdersRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminInvoicesWorkOrderIdRoute: typeof AdminInvoicesWorkOrderIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
@@ -566,18 +776,26 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminDriversRoute: AdminDriversRoute,
   AdminFormsRoute: AdminFormsRoute,
   AdminJobsRoute: AdminJobsRoute,
+  AdminPurchaseRequestsRoute: AdminPurchaseRequestsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
   AdminSettingsRoute: AdminSettingsRoute,
-  AdminVehiclesRoute: AdminVehiclesRoute,
+  AdminSmsLogRoute: AdminSmsLogRoute,
+  AdminTendersRoute: AdminTendersRoute,
+  AdminTicketsRoute: AdminTicketsRoute,
+  AdminTimesheetsRoute: AdminTimesheetsRoute,
+  AdminVehiclesRoute: AdminVehiclesRouteWithChildren,
   AdminWorkOrdersRoute: AdminWorkOrdersRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminInvoicesWorkOrderIdRoute: AdminInvoicesWorkOrderIdRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface DriverRouteChildren {
+  DriverEndOfDayRoute: typeof DriverEndOfDayRoute
   DriverFormsRoute: typeof DriverFormsRoute
+  DriverJobLogRoute: typeof DriverJobLogRoute
   DriverJobsRoute: typeof DriverJobsRoute
   DriverProfileRoute: typeof DriverProfileRoute
   DriverStartOfDayRoute: typeof DriverStartOfDayRoute
@@ -587,7 +805,9 @@ interface DriverRouteChildren {
 }
 
 const DriverRouteChildren: DriverRouteChildren = {
+  DriverEndOfDayRoute: DriverEndOfDayRoute,
   DriverFormsRoute: DriverFormsRoute,
+  DriverJobLogRoute: DriverJobLogRoute,
   DriverJobsRoute: DriverJobsRoute,
   DriverProfileRoute: DriverProfileRoute,
   DriverStartOfDayRoute: DriverStartOfDayRoute,
@@ -625,6 +845,7 @@ const rootRouteChildren: RootRouteChildren = {
   DriverRoute: DriverRouteWithChildren,
   LoginRoute: LoginRoute,
   MechanicRoute: MechanicRouteWithChildren,
+  TTokenRoute: TTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

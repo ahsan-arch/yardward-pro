@@ -20,11 +20,20 @@ export function RoleSwitcher() {
           <span className="sm:hidden">DEMO</span>
         </div>
         <div className="flex items-center gap-1 bg-sidebar-accent/60 rounded-lg p-0.5">
-          {opts.map(o => (
-            <button key={o.value}
-              onClick={() => { setRole(o.value); navigate({ to: o.path }); }}
-              className={cn("flex items-center gap-1.5 px-2 sm:px-3 h-8 rounded-md text-xs font-medium transition-colors",
-                role === o.value ? "bg-amber-brand text-amber-brand-foreground" : "text-navy-foreground/80 hover:bg-sidebar-accent")}>
+          {opts.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => {
+                setRole(o.value);
+                navigate({ to: o.path });
+              }}
+              className={cn(
+                "flex items-center gap-1.5 px-2 sm:px-3 h-8 rounded-md text-xs font-medium transition-colors",
+                role === o.value
+                  ? "bg-amber-brand text-amber-brand-foreground"
+                  : "text-navy-foreground/80 hover:bg-sidebar-accent",
+              )}
+            >
               <o.icon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{o.label} view</span>
               <span className="sm:hidden">{o.label}</span>
@@ -32,10 +41,23 @@ export function RoleSwitcher() {
           ))}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-8 w-8 text-navy-foreground hover:bg-sidebar-accent hover:text-navy-foreground">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="h-8 w-8 text-navy-foreground hover:bg-sidebar-accent hover:text-navy-foreground"
+          >
             {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => { logout(); navigate({ to: "/login" }); }} className="h-8 w-8 text-navy-foreground hover:bg-sidebar-accent hover:text-navy-foreground">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              logout();
+              navigate({ to: "/login" });
+            }}
+            className="h-8 w-8 text-navy-foreground hover:bg-sidebar-accent hover:text-navy-foreground"
+          >
             <LogOut className="w-4 h-4" />
           </Button>
         </div>

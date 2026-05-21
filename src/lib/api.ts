@@ -1,17 +1,31 @@
 import type {
-  Job, WorkOrder, PurchaseRequest, ToolChecklistSubmission, TimeEntry,
-  SmsLog, DriverToken, InvoiceData, TokenScope, ToolChecklistItem,
+  Job,
+  WorkOrder,
+  PurchaseRequest,
+  ToolChecklistSubmission,
+  TimeEntry,
+  SmsLog,
+  DriverToken,
+  InvoiceData,
+  TokenScope,
+  ToolChecklistItem,
 } from "@/types/domain";
 import { getStore } from "@/contexts/DataContext";
 import { driverById, jobById, clientById } from "@/data/mockData";
 
-const wait = (ms = 300) => new Promise(r => setTimeout(r, ms));
+const wait = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
 export const api = {
   // Auth
-  login: async (_email: string, _password: string) => { await wait(200); return { ok: true }; },
-  logout: async () => { await wait(50); return { ok: true }; },
+  login: async (_email: string, _password: string) => {
+    await wait(200);
+    return { ok: true };
+  },
+  logout: async () => {
+    await wait(50);
+    return { ok: true };
+  },
 
   // Jobs
   createJob: async (input: Omit<Job, "id" | "createdAt">) => {
@@ -29,7 +43,7 @@ export const api = {
     await wait();
     const s = getStore();
     s.updateJob(jobId, { driverId, vehicleId });
-    const j = s.jobs.find(x => x.id === jobId) ?? jobById(jobId);
+    const j = s.jobs.find((x) => x.id === jobId) ?? jobById(jobId);
     const driver = driverById(driverId);
     const body = `${jobId} assigned · ${j?.location.address ?? ""} · ${j?.scheduledAt.slice(11, 16) ?? ""}`;
     await api.sendSms(driver?.id ?? driverId, body, jobId);
@@ -39,21 +53,38 @@ export const api = {
   // Work orders
   submitWorkOrder: async (input: Omit<WorkOrder, "id" | "submittedAt" | "status">) => {
     await wait();
-    const wo: WorkOrder = { ...input, id: uid("WO"), submittedAt: new Date().toISOString(), status: "pending" };
+    const wo: WorkOrder = {
+      ...input,
+      id: uid("WO"),
+      submittedAt: new Date().toISOString(),
+      status: "pending",
+    };
     getStore().submitWorkOrder(wo);
     return wo;
   },
   approveWorkOrder: async (id: string, approverId: string) => {
     await wait();
     const s = getStore();
-    const wo = s.workOrders.find(w => w.id === id);
+    const wo = s.workOrders.find((w) => w.id === id);
     const j = wo ? jobById(wo.jobId) : undefined;
     const c = j ? clientById(j.clientId) : undefined;
     const invoice: InvoiceData = {
-      id: uid("INV"), workOrderId: id, clientId: c?.id ?? "",
-      lineItems: wo ? [{ description: `${wo.loadType} haul`, qty: wo.weightTonnes, rate: 24, amount: wo.weightTonnes * 24 }] : [],
+      id: uid("INV"),
+      workOrderId: id,
+      clientId: c?.id ?? "",
+      lineItems: wo
+        ? [
+            {
+              description: `${wo.loadType} haul`,
+              qty: wo.weightTonnes,
+              rate: 24,
+              amount: wo.weightTonnes * 24,
+            },
+          ]
+        : [],
       total: wo ? wo.weightTonnes * 24 : 0,
-      qboSyncStatus: "pending", qboInvoiceId: null,
+      qboSyncStatus: "pending",
+      qboInvoiceId: null,
     };
     s.approveWorkOrder(id, approverId, invoice);
     return invoice;
@@ -65,42 +96,80 @@ export const api = {
   },
 
   // Driver forms
-  submitStartOfDay: async (p: { driverId: string; odometer: number; fuelLevel: string; condition: string; gps: { lat: number; lng: number } | null }) => {
+  submitStartOfDay: async (p: {
+    driverId: string;
+    odometer: number;
+    fuelLevel: string;
+    condition: string;
+    gps: { lat: number; lng: number } | null;
+  }) => {
     await wait();
     const entry: TimeEntry = {
-      id: uid("TE"), driverId: p.driverId, clockIn: new Date().toISOString(), clockOut: null,
-      gpsClockIn: p.gps, gpsClockOut: null, vehicleMovementCorrelation: "pending",
-      flagged: p.condition !== "ok", flagReason: p.condition !== "ok" ? `Condition: ${p.condition}` : "",
+      id: uid("TE"),
+      driverId: p.driverId,
+      clockIn: new Date().toISOString(),
+      clockOut: null,
+      gpsClockIn: p.gps,
+      gpsClockOut: null,
+      vehicleMovementCorrelation: "pending",
+      flagged: p.condition !== "ok",
+      flagReason: p.condition !== "ok" ? `Condition: ${p.condition}` : "",
     };
     getStore().submitStartOfDay(entry);
     return entry;
   },
-  submitEndOfDay: async (p: { driverId: string; odometer: number; fuelLevel: string; summary: string; gps: { lat: number; lng: number } | null }) => {
+  submitEndOfDay: async (p: {
+    driverId: string;
+    odometer: number;
+    fuelLevel: string;
+    summary: string;
+    gps: { lat: number; lng: number } | null;
+  }) => {
     await wait();
     const s = getStore();
-    const open = s.timeEntries.find(t => t.driverId === p.driverId && !t.clockOut);
+    const open = s.timeEntries.find((t) => t.driverId === p.driverId && !t.clockOut);
     if (open) s.submitEndOfDay(open.id, { clockOut: new Date().toISOString(), gpsClockOut: p.gps });
     return { ok: true };
   },
-  submitToolChecklist: async (input: Omit<ToolChecklistSubmission, "id" | "submittedAt"> & { items: ToolChecklistItem[] }) => {
+  submitToolChecklist: async (
+    input: Omit<ToolChecklistSubmission, "id" | "submittedAt"> & { items: ToolChecklistItem[] },
+  ) => {
     await wait();
-    const s: ToolChecklistSubmission = { ...input, id: uid("TCS"), submittedAt: new Date().toISOString() };
+    const s: ToolChecklistSubmission = {
+      ...input,
+      id: uid("TCS"),
+      submittedAt: new Date().toISOString(),
+    };
     getStore().submitToolChecklist(s);
     return s;
   },
 
   // Time tracking
-  clockIn: async (driverId: string, gps: { lat: number; lng: number } | null, _odometer: number) => {
+  clockIn: async (
+    driverId: string,
+    gps: { lat: number; lng: number } | null,
+    _odometer: number,
+  ) => {
     await wait();
     const entry: TimeEntry = {
-      id: uid("TE"), driverId, clockIn: new Date().toISOString(), clockOut: null,
-      gpsClockIn: gps, gpsClockOut: null, vehicleMovementCorrelation: "pending",
-      flagged: false, flagReason: "",
+      id: uid("TE"),
+      driverId,
+      clockIn: new Date().toISOString(),
+      clockOut: null,
+      gpsClockIn: gps,
+      gpsClockOut: null,
+      vehicleMovementCorrelation: "pending",
+      flagged: false,
+      flagReason: "",
     };
     getStore().clockIn(entry);
     return entry;
   },
-  clockOut: async (entryId: string, gps: { lat: number; lng: number } | null, _odometer: number) => {
+  clockOut: async (
+    entryId: string,
+    gps: { lat: number; lng: number } | null,
+    _odometer: number,
+  ) => {
     await wait();
     getStore().clockOut(entryId, { clockOut: new Date().toISOString(), gpsClockOut: gps });
     return { ok: true };
@@ -109,7 +178,12 @@ export const api = {
   // Mechanic
   submitPurchaseRequest: async (input: Omit<PurchaseRequest, "id" | "createdAt" | "status">) => {
     await wait();
-    const pr: PurchaseRequest = { ...input, id: uid("PR"), createdAt: new Date().toISOString(), status: "pending" };
+    const pr: PurchaseRequest = {
+      ...input,
+      id: uid("PR"),
+      createdAt: new Date().toISOString(),
+      status: "pending",
+    };
     getStore().submitPurchaseRequest(pr);
     return pr;
   },
@@ -123,8 +197,12 @@ export const api = {
   sendSms: async (driverId: string, body: string, jobId?: string) => {
     await wait(100);
     const sms: SmsLog = {
-      id: uid("SMS"), driverId, jobId: jobId ?? null, body,
-      sentAt: new Date().toISOString(), twilioMessageId: `SM${Math.random().toString(36).slice(2, 8)}`,
+      id: uid("SMS"),
+      driverId,
+      jobId: jobId ?? null,
+      body,
+      sentAt: new Date().toISOString(),
+      twilioMessageId: `SM${Math.random().toString(36).slice(2, 8)}`,
       deliveryStatus: "sent",
     };
     getStore().addSms(sms);
@@ -134,14 +212,20 @@ export const api = {
     Promise.resolve({ lat: 0, lng: 0, capturedAt: new Date().toISOString() }),
   fetchGeotabTelematics: async (_vehicleId: string) =>
     Promise.resolve({ odometer: 0, engineHours: 0 }),
-  pushInvoiceToQbo: async (_invoiceDataId: string) => { await wait(); return { ok: true }; },
+  pushInvoiceToQbo: async (_invoiceDataId: string) => {
+    await wait();
+    return { ok: true };
+  },
 
   // Tokens
   generateDriverToken: async (driverId: string, scope: TokenScope, expiresInHours: number) => {
     await wait();
     const t: DriverToken = {
-      id: uid("TKN"), driverId, token: `tok_${Math.random().toString(36).slice(2, 14)}`,
-      scopedTo: scope, expiresAt: new Date(Date.now() + expiresInHours * 3600_000).toISOString(),
+      id: uid("TKN"),
+      driverId,
+      token: `tok_${Math.random().toString(36).slice(2, 14)}`,
+      scopedTo: scope,
+      expiresAt: new Date(Date.now() + expiresInHours * 3600_000).toISOString(),
       usedAt: null,
     };
     getStore().generateDriverToken(t);
@@ -149,7 +233,7 @@ export const api = {
   },
   validateDriverToken: async (token: string) => {
     await wait(100);
-    const found = getStore().driverTokens.find(t => t.token === token);
+    const found = getStore().driverTokens.find((t) => t.token === token);
     const expired = found ? new Date(found.expiresAt).getTime() < Date.now() : true;
     return { valid: !!found && !found.usedAt && !expired, token: found ?? null };
   },

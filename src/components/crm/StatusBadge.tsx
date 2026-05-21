@@ -38,8 +38,13 @@ const map: Record<string, string> = {
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border",
-      map[status] || "bg-muted text-muted-foreground border-border", className)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border",
+        map[status] || "bg-muted text-muted-foreground border-border",
+        className,
+      )}
+    >
       {status}
     </span>
   );

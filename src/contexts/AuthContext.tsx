@@ -27,7 +27,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = (localStorage.getItem("fo:theme") as Theme) || "light";
     const r = (localStorage.getItem("fo:role") as Role) || "admin";
     const a = localStorage.getItem("fo:authed") === "1";
-    setTheme(t); setRoleState(r); setAuthed(a);
+    setTheme(t);
+    setRoleState(r);
+    setAuthed(a);
   }, []);
 
   useEffect(() => {
@@ -36,16 +38,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("fo:theme", theme);
   }, [theme]);
 
-  const setRole = (r: Role) => { setRoleState(r); localStorage.setItem("fo:role", r); };
-  const toggleTheme = () => setTheme(t => t === "light" ? "dark" : "light");
+  const setRole = (r: Role) => {
+    setRoleState(r);
+    localStorage.setItem("fo:role", r);
+  };
+  const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
   const login = (r: Role) => {
-    setAuthed(true); setRole(r);
-    setUser(r === "driver" ? { id: "D-01", name: "Tom Morrison", email: "tom@fleetops.co" }
-         : r === "mechanic" ? { id: "M-01", name: "Jamie Reyes", email: "jamie@fleetops.co" }
-         : { id: "A-01", name: "Alex Chen", email: "alex@fleetops.co" });
+    setAuthed(true);
+    setRole(r);
+    setUser(
+      r === "driver"
+        ? { id: "D-01", name: "Tom Morrison", email: "tom@fleetops.co" }
+        : r === "mechanic"
+          ? { id: "M-01", name: "Jamie Reyes", email: "jamie@fleetops.co" }
+          : { id: "A-01", name: "Alex Chen", email: "alex@fleetops.co" },
+    );
     localStorage.setItem("fo:authed", "1");
   };
-  const logout = () => { setAuthed(false); localStorage.removeItem("fo:authed"); };
+  const logout = () => {
+    setAuthed(false);
+    localStorage.removeItem("fo:authed");
+  };
 
   return (
     <AuthCtx.Provider value={{ role, setRole, theme, toggleTheme, authed, login, logout, user }}>

@@ -1,12 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { offlineQueue } from "@/lib/offline-queue";
 
-type Ctx = { isOnline: boolean; pendingSubmissions: number };
+type Ctx = {
+  isOnline: boolean;
+  pendingSubmissions: number;
+  flush: () => Promise<void>;
+};
 
 const OfflineCtx = createContext<Ctx | null>(null);
 
 export function OfflineProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(true);
-  const [pendingSubmissions] = useState(0);
+  const [pendingSubmissions, setPending] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -15,10 +20,23 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     const down = () => setIsOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+    const unsub = offlineQueue.subscribe(setPending);
+    return () => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+      unsub();
+    };
   }, []);
 
-  return <OfflineCtx.Provider value={{ isOnline, pendingSubmissions }}>{children}</OfflineCtx.Provider>;
+  async function flush() {
+    await offlineQueue.flush();
+  }
+
+  return (
+    <OfflineCtx.Provider value={{ isOnline, pendingSubmissions, flush }}>
+      {children}
+    </OfflineCtx.Provider>
+  );
 }
 
 export function useOffline() {

@@ -1,13 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useAuth } from "@/contexts/AuthContext";
+import { useData } from "@/contexts/DataContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Loader2, MapPin, Check, AlertTriangle, AlertOctagon } from "lucide-react";
+import { ArrowLeft, Loader2, Moon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -15,47 +15,35 @@ import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { offlineQueue } from "@/lib/offline-queue";
 
-export const Route = createFileRoute("/driver/start-of-day")({
-  head: () => ({ meta: [{ title: "Start of day — FleetOps" }] }),
+export const Route = createFileRoute("/driver/end-of-day")({
+  head: () => ({ meta: [{ title: "End of day — FleetOps" }] }),
   component: Page,
 });
 
 const fuels = ["Empty", "1/4", "1/2", "3/4", "Full"];
-const conditions = [
-  { v: "ok", label: "No issues", icon: Check, color: "text-success" },
-  {
-    v: "minor",
-    label: "Minor issue (note required)",
-    icon: AlertTriangle,
-    color: "text-amber-brand",
-  },
-  {
-    v: "major",
-    label: "Major issue (notify management)",
-    icon: AlertOctagon,
-    color: "text-danger",
-  },
-];
 
 function Page() {
   const nav = useNavigate();
   const { user } = useAuth();
+  const { timeEntries } = useData();
   const { isOnline } = useOffline();
   const gps = useGpsCapture(true);
   const [odo, setOdo] = useState("");
-  const [fuel, setFuel] = useState("3/4");
-  const [cond, setCond] = useState("ok");
-  const [note, setNote] = useState("");
-  const [pax, setPax] = useState(false);
-  const [ppe, setPpe] = useState(false);
+  const [fuel, setFuel] = useState("1/2");
+  const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<{ odo?: string; note?: string }>({});
+  const [err, setErr] = useState<{ odo?: string; summary?: string }>({});
+
+  const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
+  const hours = openShift
+    ? ((Date.now() - new Date(openShift.clockIn).getTime()) / 3600_000).toFixed(1)
+    : "—";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: typeof err = {};
     if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
-    if (cond === "minor" && !note.trim()) errs.note = "Describe the issue";
+    if (!summary.trim()) errs.summary = "Add a quick summary";
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
@@ -64,15 +52,18 @@ function Page() {
         driverId: user.id,
         odometer: +odo,
         fuelLevel: fuel,
-        condition: cond,
+        summary,
         gps: gps.coords,
       };
       if (!isOnline) {
-        await offlineQueue.enqueue({ kind: "startOfDay", payload });
+        await offlineQueue.enqueue({ kind: "endOfDay", payload });
         toast.success("Saved offline — will sync when connection returns");
       } else {
-        await api.submitStartOfDay(payload);
-        toast.success("Start-of-day form submitted");
+        await api.submitEndOfDay(payload);
+        // revoke driver token (if used via /t/:token)
+        const token = sessionStorage.getItem("fo:driver-token");
+        if (token) sessionStorage.clear();
+        toast.success("End-of-day submitted · shift closed");
       }
       nav({ to: "/driver" });
     } finally {
@@ -91,27 +82,28 @@ function Page() {
         </Link>
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold">Start of day</h1>
-            <p className="text-xs font-mono text-muted-foreground">14 May 2025</p>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <Moon className="w-5 h-5" /> End of day
+            </h1>
+            <p className="text-xs font-mono text-muted-foreground">Hours so far: {hours}h</p>
           </div>
           <GpsBadge result={gps.result} loading={gps.loading} onRetry={gps.refresh} />
         </div>
 
         <form onSubmit={submit} className="mt-5 space-y-5">
           <div>
-            <Label className="text-base">Odometer reading at start</Label>
+            <Label className="text-base">Final odometer</Label>
             <Input
               inputMode="numeric"
               value={odo}
               onChange={(e) => setOdo(e.target.value)}
-              placeholder="84220"
+              placeholder="84580"
               className={cn("h-14 mt-2 text-lg font-mono", err.odo && "border-danger")}
             />
             {err.odo && <p className="text-xs text-danger mt-1">{err.odo}</p>}
           </div>
-
           <div>
-            <Label className="text-base">Fuel level</Label>
+            <Label className="text-base">Fuel level at end</Label>
             <div className="grid grid-cols-5 gap-1 mt-2 bg-muted rounded-md p-1">
               {fuels.map((f) => (
                 <button
@@ -130,49 +122,17 @@ function Page() {
               ))}
             </div>
           </div>
-
           <div>
-            <Label className="text-base">Vehicle condition</Label>
-            <div className="space-y-2 mt-2">
-              {conditions.map((c) => (
-                <button
-                  key={c.v}
-                  type="button"
-                  onClick={() => setCond(c.v)}
-                  className={cn(
-                    "w-full flex items-center gap-3 p-4 rounded-lg border-2 text-left transition-all",
-                    cond === c.v ? "border-amber-brand bg-amber-brand/5" : "border-border",
-                  )}
-                >
-                  <c.icon className={cn("w-5 h-5", c.color)} />
-                  <span className="font-medium">{c.label}</span>
-                </button>
-              ))}
-            </div>
+            <Label className="text-base">Shift summary</Label>
+            <Textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              rows={4}
+              placeholder="Jobs completed, any issues, vehicle state..."
+              className={cn("mt-2 text-base", err.summary && "border-danger")}
+            />
+            {err.summary && <p className="text-xs text-danger mt-1">{err.summary}</p>}
           </div>
-
-          {cond === "minor" && (
-            <div>
-              <Label className="text-base">Describe the issue</Label>
-              <Textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={3}
-                className={cn("mt-2 text-base", err.note && "border-danger")}
-              />
-              {err.note && <p className="text-xs text-danger mt-1">{err.note}</p>}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
-            <Label className="text-base">Passengers in vehicle?</Label>
-            <Switch checked={pax} onCheckedChange={setPax} />
-          </div>
-          <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
-            <Label className="text-base">Any personal PPE missing?</Label>
-            <Switch checked={ppe} onCheckedChange={setPpe} />
-          </div>
-
           <Button
             type="submit"
             disabled={loading}
@@ -183,12 +143,9 @@ function Page() {
                 <Loader2 className="w-5 h-5 animate-spin" /> Submitting…
               </>
             ) : (
-              "Submit start-of-day form"
+              "Submit end-of-day"
             )}
           </Button>
-          <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
-            <MapPin className="w-3 h-3" /> GPS location and timestamp will be recorded on submission
-          </p>
         </form>
       </div>
     </DriverShell>

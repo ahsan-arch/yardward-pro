@@ -1,5 +1,5 @@
-export type UserRole = 'admin' | 'driver' | 'mechanic';
-export type UserStatus = 'active' | 'inactive' | 'suspended';
+export type UserRole = "admin" | "driver" | "mechanic";
+export type UserStatus = "active" | "inactive" | "suspended";
 
 export interface User {
   id: string;
@@ -33,12 +33,12 @@ export interface Client {
   billingAddress: string;
   rateTableId: string | null;
   notes: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
 }
 
 export interface RateLineItem {
   description: string;
-  unit: 'hour' | 'tonne' | 'load' | 'flat';
+  unit: "hour" | "tonne" | "load" | "flat";
   rate: number;
   surcharges: { label: string; amount: number }[];
 }
@@ -49,8 +49,8 @@ export interface RateTable {
   lineItems: RateLineItem[];
 }
 
-export type VehicleType = 'truck' | 'trailer' | 'equipment';
-export type VehicleStatus = 'operational' | 'maintenance' | 'out-of-service';
+export type VehicleType = "truck" | "trailer" | "equipment";
+export type VehicleStatus = "operational" | "maintenance" | "out-of-service";
 
 export interface Vehicle {
   id: string;
@@ -90,7 +90,7 @@ export interface FuelLog {
   driverId: string;
 }
 
-export type ToolCondition = 'ok' | 'missing' | 'damaged';
+export type ToolCondition = "ok" | "missing" | "damaged";
 
 export interface Tool {
   id: string;
@@ -115,7 +115,7 @@ export interface ToolChecklistSubmission {
   items: ToolChecklistItem[];
 }
 
-export type JobStatus = 'scheduled' | 'active' | 'completed' | 'delayed' | 'cancelled';
+export type JobStatus = "scheduled" | "active" | "completed" | "delayed" | "cancelled";
 
 export interface Job {
   id: string;
@@ -131,7 +131,7 @@ export interface Job {
   createdAt: string;
 }
 
-export type WorkOrderStatus = 'pending' | 'approved' | 'rejected';
+export type WorkOrderStatus = "pending" | "approved" | "rejected";
 
 export interface WorkOrder {
   id: string;
@@ -152,7 +152,7 @@ export interface WorkOrder {
   invoiceDataId: string | null;
 }
 
-export type QboSyncStatus = 'not-synced' | 'pending' | 'synced' | 'failed';
+export type QboSyncStatus = "not-synced" | "pending" | "synced" | "failed";
 
 export interface InvoiceData {
   id: string;
@@ -171,12 +171,12 @@ export interface TimeEntry {
   clockOut: string | null;
   gpsClockIn: { lat: number; lng: number } | null;
   gpsClockOut: { lat: number; lng: number } | null;
-  vehicleMovementCorrelation: 'matches' | 'mismatch' | 'pending';
+  vehicleMovementCorrelation: "matches" | "mismatch" | "pending";
   flagged: boolean;
   flagReason: string;
 }
 
-export type PurchaseRequestStatus = 'pending' | 'approved' | 'rejected' | 'ordered';
+export type PurchaseRequestStatus = "pending" | "approved" | "rejected" | "ordered";
 
 export interface PurchaseRequest {
   id: string;
@@ -184,7 +184,7 @@ export interface PurchaseRequest {
   item: string;
   reason: string;
   estimatedCost: number;
-  urgency: 'low' | 'medium' | 'high';
+  urgency: "low" | "medium" | "high";
   inventoryCheckedAt: string | null;
   status: PurchaseRequestStatus;
   approvedBy: string | null;
@@ -203,7 +203,7 @@ export interface InventoryItem {
   lastRestocked: string;
 }
 
-export type SmsDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed';
+export type SmsDeliveryStatus = "queued" | "sent" | "delivered" | "failed";
 
 export interface SmsLog {
   id: string;
@@ -218,14 +218,14 @@ export interface SmsLog {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'job' | 'approval' | 'alert' | 'system';
+  type: "job" | "approval" | "alert" | "system";
   body: string;
   link: string | null;
   readAt: string | null;
   createdAt: string;
 }
 
-export type TokenScope = 'forms' | 'job' | 'shift';
+export type TokenScope = "forms" | "job" | "shift";
 
 export interface DriverToken {
   id: string;
@@ -244,7 +244,7 @@ export interface TicketPhoto {
   weight: number | null;
   location: string | null;
   enteredBy: string | null;
-  status: 'awaiting-entry' | 'entered';
+  status: "awaiting-entry" | "entered";
   uploadedAt: string;
 }
 
