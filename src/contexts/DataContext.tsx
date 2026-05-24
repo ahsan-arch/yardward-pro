@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react";
 import * as seed from "@/data/mockData";
 import type {
   Job,
@@ -55,6 +62,38 @@ type Ctx = {
 
 const DataCtx = createContext<Ctx | null>(null);
 
+const TOKENS_STORAGE_KEY = "fo:driver-tokens:v1";
+
+function readPersistedTokens(): DriverToken[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(TOKENS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as DriverToken[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedTokens(tokens: DriverToken[]) {
+  if (typeof window === "undefined") return;
+  try {
+    // Only persist tokens NOT in seed data (we don't want to duplicate the seed list)
+    const seedTokens = new Set(seed.driverTokens.map((t) => t.token));
+    const userGenerated = tokens.filter((t) => !seedTokens.has(t.token));
+    localStorage.setItem(TOKENS_STORAGE_KEY, JSON.stringify(userGenerated));
+  } catch {
+    /* quota or disabled — silent */
+  }
+}
+
+function mergeTokens(): DriverToken[] {
+  const persisted = readPersistedTokens();
+  // Seed first (oldest at bottom), then user-generated (newest at top)
+  return [...persisted, ...seed.driverTokens];
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>(seed.jobs);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(seed.workOrders);
@@ -69,6 +108,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [vehicleInspections, setInspections] = useState<VehicleInspection[]>(
     seed.vehicleInspections,
   );
+
+  // Hydrate tokens from localStorage on mount so tokens generated in one tab
+  // are visible (and validatable) in any other tab on the same origin.
+  useEffect(() => {
+    setTokens(mergeTokens());
+    function onStorage(e: StorageEvent) {
+      if (e.key === TOKENS_STORAGE_KEY) setTokens(mergeTokens());
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const createJob = useCallback((job: Job) => setJobs((j) => [job, ...j]), []);
   const updateJob = useCallback(
@@ -140,17 +190,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
   const addSms = useCallback((sms: SmsLog) => setSmsLogs((arr) => [sms, ...arr]), []);
-  const generateDriverToken = useCallback(
-    (token: DriverToken) => setTokens((arr) => [token, ...arr]),
-    [],
-  );
-  const markTokenUsed = useCallback(
-    (id: string) =>
-      setTokens((arr) =>
-        arr.map((x) => (x.id === id ? { ...x, usedAt: new Date().toISOString() } : x)),
-      ),
-    [],
-  );
+  const generateDriverToken = useCallback((token: DriverToken) => {
+    setTokens((arr) => {
+      const next = [token, ...arr];
+      writePersistedTokens(next);
+      return next;
+    });
+  }, []);
+  const markTokenUsed = useCallback((id: string) => {
+    setTokens((arr) => {
+      const next = arr.map((x) =>
+        x.id === id ? { ...x, usedAt: new Date().toISOString() } : x,
+      );
+      writePersistedTokens(next);
+      return next;
+    });
+  }, []);
   const submitVehicleInspection = useCallback(
     (inspection: VehicleInspection) => setInspections((arr) => [inspection, ...arr]),
     [],
