@@ -17,6 +17,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/driver/job-log")({
   head: () => ({ meta: [{ title: "Job log — FleetOps" }] }),
@@ -27,9 +28,20 @@ function Page() {
   const nav = useNavigate();
   const { user } = useAuth();
   const { jobs } = useData();
-  const gps = useGpsCapture(true);
   const myJobs = jobs.filter((j) => j.driverId === user.id);
   const [jobId, setJobId] = useState(myJobs[0]?.id ?? "");
+  const pickedJob = myJobs.find((j) => j.id === jobId);
+  const fallback = useMemo(() => {
+    if (pickedJob?.location.lat != null && pickedJob.location.lng != null) {
+      return {
+        lat: pickedJob.location.lat,
+        lng: pickedJob.location.lng,
+        label: "Using job site location",
+      };
+    }
+    return null;
+  }, [pickedJob?.location.lat, pickedJob?.location.lng]);
+  const gps = useGpsCapture(fallback);
   const [note, setNote] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);

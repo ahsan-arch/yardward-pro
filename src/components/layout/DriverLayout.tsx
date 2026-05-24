@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Home, Briefcase, FileText, User, Menu, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { PendingBadge } from "@/components/crm/OfflineBanner";
 import { toast } from "sonner";
+import { geotabCoordsForVehicle } from "@/data/mockData";
 
 const tabs = [
   { to: "/driver", label: "Home", icon: Home, exact: true },
@@ -23,12 +24,17 @@ const tabs = [
 export function DriverShell({ children }: { children?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user } = useAuth();
-  const { timeEntries } = useData();
+  const { timeEntries, drivers } = useData();
   const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
+  const me = drivers.find((d) => d.id === user.id);
+  const fallback = useMemo(() => {
+    const c = geotabCoordsForVehicle(me?.vehicleAssignmentId ?? null);
+    return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;
+  }, [me?.vehicleAssignmentId]);
   const [open, setOpen] = useState(false);
   const [odo, setOdo] = useState("");
   const [busy, setBusy] = useState(false);
-  const gps = useGpsCapture(open);
+  const gps = useGpsCapture(fallback, open);
 
   async function handleClock() {
     setBusy(true);

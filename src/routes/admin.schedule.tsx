@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ const statusBorder: Record<string, string> = {
 
 function Page() {
   const { drivers, vehicles, clients, jobs } = useData();
+  const nav = useNavigate();
   const display = jobs.map(jobDisplay);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -67,12 +68,19 @@ function Page() {
         notes: form.notes,
         createdBy: "A-01",
       });
-      await api.sendSms(
+      const driver = drivers.find((d) => d.id === form.driverId);
+      const sms = await api.sendSms(
         form.driverId,
         `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`,
         job.id,
       );
-      toast.success(`${job.id} created · SMS sent to driver`);
+      toast.success(`${job.id} created · SMS ${sms.id} sent to ${driver?.name ?? "driver"}`, {
+        action: {
+          label: "View SMS log",
+          onClick: () => nav({ to: "/admin/sms-log" }),
+        },
+        duration: 8000,
+      });
       setOpen(false);
       setForm({
         clientId: "",
@@ -141,6 +149,7 @@ function Page() {
         </div>
         <Button
           onClick={() => setOpen(true)}
+          data-testid="open-create-job"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
           <Plus className="w-4 h-4" /> Create new job
@@ -304,6 +313,7 @@ function Page() {
             <Button
               type="submit"
               disabled={saving}
+              data-testid="submit-create-job"
               className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold"
             >
               {saving ? (

@@ -14,6 +14,7 @@ import {
   X,
   Clock,
   ShoppingCart,
+  MessageSquare,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/admin/vehicles", label: "Vehicles", icon: Truck },
   { to: "/admin/work-orders", label: "Work Orders", icon: ClipboardCheck },
   { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
+  { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare },
   { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart },
   { to: "/admin/clients", label: "Clients", icon: Building2 },
   { to: "/admin/forms", label: "Forms & Submissions", icon: FileText },

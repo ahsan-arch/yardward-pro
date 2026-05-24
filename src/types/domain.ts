@@ -257,3 +257,31 @@ export interface Tender {
   summary: string;
   scrapedAt: string;
 }
+
+export type InspectionItemStatus = "ok" | "issue";
+
+export interface InspectionItem {
+  name: string;
+  status: InspectionItemStatus;
+  notes: string;
+}
+
+export interface GeotabSnapshot {
+  lat: number;
+  lng: number;
+  capturedAt: string;
+  distanceMeters: number;
+}
+
+export interface VehicleInspection {
+  id: string;
+  driverId: string;
+  vehicleId: string;
+  submittedAt: string;
+  gpsCapture: { lat: number; lng: number; capturedAt: string } | null;
+  geotabSnapshot: GeotabSnapshot | null;
+  items: InspectionItem[];
+  notes: string;
+  photos: string[];
+  flagged: boolean;
+}

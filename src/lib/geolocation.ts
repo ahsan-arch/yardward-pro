@@ -1,23 +1,50 @@
 export type Coords = { lat: number; lng: number };
+export type GpsSource = "real" | "fallback";
+
+export type GpsFallback = { lat: number; lng: number; label: string };
+
 export type GpsResult =
-  | { ok: true; coords: Coords; accuracy: number; capturedAt: string }
-  | { ok: false; reason: "unsupported" | "denied" | "timeout" | "unavailable"; message: string };
+  | {
+      ok: true;
+      coords: Coords;
+      accuracy: number;
+      capturedAt: string;
+      source: GpsSource;
+      fallbackLabel?: string;
+    }
+  | {
+      ok: false;
+      reason: "unsupported" | "denied" | "timeout" | "unavailable";
+      message: string;
+    };
 
 const DEFAULT_TIMEOUT = 8000;
 
-export async function captureGps(timeoutMs = DEFAULT_TIMEOUT): Promise<GpsResult> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
+export async function captureGps(
+  options: { timeoutMs?: number; fallback?: GpsFallback | null } = {},
+): Promise<GpsResult> {
+  const { timeoutMs = DEFAULT_TIMEOUT, fallback } = options;
+
+  function applyFallback(): GpsResult {
+    if (!fallback) {
+      return { ok: false, reason: "unavailable", message: "Location unavailable." };
+    }
     return {
-      ok: false,
-      reason: "unsupported",
-      message: "Geolocation not supported on this device.",
+      ok: true,
+      coords: { lat: fallback.lat, lng: fallback.lng },
+      accuracy: 0,
+      capturedAt: new Date().toISOString(),
+      source: "fallback",
+      fallbackLabel: fallback.label,
     };
   }
+
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return applyFallback();
+  }
+
   return new Promise<GpsResult>((resolve) => {
-    const timer = setTimeout(
-      () => resolve({ ok: false, reason: "timeout", message: "GPS lookup timed out." }),
-      timeoutMs,
-    );
+    const timer = setTimeout(() => resolve(applyFallback()), timeoutMs);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         clearTimeout(timer);
@@ -26,20 +53,12 @@ export async function captureGps(timeoutMs = DEFAULT_TIMEOUT): Promise<GpsResult
           coords: { lat: pos.coords.latitude, lng: pos.coords.longitude },
           accuracy: pos.coords.accuracy,
           capturedAt: new Date(pos.timestamp).toISOString(),
+          source: "real",
         });
       },
-      (err) => {
+      () => {
         clearTimeout(timer);
-        if (err.code === err.PERMISSION_DENIED)
-          resolve({ ok: false, reason: "denied", message: "Location permission denied." });
-        else if (err.code === err.TIMEOUT)
-          resolve({ ok: false, reason: "timeout", message: "GPS lookup timed out." });
-        else
-          resolve({
-            ok: false,
-            reason: "unavailable",
-            message: err.message || "Location unavailable.",
-          });
+        resolve(applyFallback());
       },
       { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30_000 },
     );
@@ -49,4 +68,17 @@ export async function captureGps(timeoutMs = DEFAULT_TIMEOUT): Promise<GpsResult
 export function formatCoords(c: Coords | null | undefined): string {
   if (!c) return "—";
   return `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+}
+
+const EARTH_RADIUS_M = 6_371_000;
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+export function haversineMeters(a: Coords, b: Coords): number {
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }

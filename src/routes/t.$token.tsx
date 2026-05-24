@@ -76,6 +76,10 @@ function Page() {
       sessionStorage.setItem("fo:driver-token", tokenData.token);
       sessionStorage.setItem("fo:driver-token-scope", tokenData.scopedTo);
       sessionStorage.setItem("fo:driver-token-driver", tokenData.driverId);
+      // Mark this browser session as a driver so the /driver/* route guards
+      // (which check localStorage) let the user through without a login.
+      localStorage.setItem("fo:authed", "1");
+      localStorage.setItem("fo:role", "driver");
     }
     nav({ to: scopeTarget });
   }

@@ -9,9 +9,10 @@ import type {
   InvoiceData,
   TokenScope,
   ToolChecklistItem,
+  VehicleInspection,
 } from "@/types/domain";
 import { getStore } from "@/contexts/DataContext";
-import { driverById, jobById, clientById } from "@/data/mockData";
+import { driverById, jobById, clientById, geotabCoordsForVehicle } from "@/data/mockData";
 
 const wait = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -175,6 +176,18 @@ export const api = {
     return { ok: true };
   },
 
+  // Vehicle inspection
+  submitVehicleInspection: async (input: Omit<VehicleInspection, "id" | "submittedAt">) => {
+    await wait();
+    const inspection: VehicleInspection = {
+      ...input,
+      id: uid("INS"),
+      submittedAt: new Date().toISOString(),
+    };
+    getStore().submitVehicleInspection(inspection);
+    return inspection;
+  },
+
   // Mechanic
   submitPurchaseRequest: async (input: Omit<PurchaseRequest, "id" | "createdAt" | "status">) => {
     await wait();
@@ -208,8 +221,17 @@ export const api = {
     getStore().addSms(sms);
     return sms;
   },
-  fetchGeotabLocation: async (_vehicleId: string) =>
-    Promise.resolve({ lat: 0, lng: 0, capturedAt: new Date().toISOString() }),
+  fetchGeotabLocation: async (vehicleId: string) => {
+    await wait(80);
+    const coords = geotabCoordsForVehicle(vehicleId) ?? { lat: 43.6532, lng: -79.3832 };
+    // Add a tiny stable jitter so the position looks "live" without breaking distance checks
+    const jitter = (vehicleId.charCodeAt(0) % 5) * 0.00002;
+    return {
+      lat: coords.lat + jitter,
+      lng: coords.lng - jitter,
+      capturedAt: new Date(Date.now() - 60_000 - (vehicleId.charCodeAt(0) % 5) * 60_000).toISOString(),
+    };
+  },
   fetchGeotabTelematics: async (_vehicleId: string) =>
     Promise.resolve({ odometer: 0, engineHours: 0 }),
   pushInvoiceToQbo: async (_invoiceDataId: string) => {

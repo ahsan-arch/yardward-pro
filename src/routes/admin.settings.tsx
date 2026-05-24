@@ -17,9 +17,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
-import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send } from "lucide-react";
 import { useState } from "react";
-import type { TokenScope } from "@/types/domain";
+import type { TokenScope, DriverToken } from "@/types/domain";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/settings")({
@@ -235,29 +235,77 @@ function IntegrationsTab() {
   );
 }
 
+function tokenUrl(token: string) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}/t/${token}`;
+}
+
 function TokensTab() {
   const { driverTokens, drivers } = useData();
   const [open, setOpen] = useState(false);
   const [driverId, setDriverId] = useState("");
   const [scope, setScope] = useState<TokenScope>("shift");
   const [hours, setHours] = useState(12);
+  const [generating, setGenerating] = useState(false);
+  const [result, setResult] = useState<DriverToken | null>(null);
 
   async function gen() {
     if (!driverId) {
       toast.error("Pick a driver");
       return;
     }
-    const t = await api.generateDriverToken(driverId, scope, hours);
-    toast.success(`Token created: ${t.token}`);
-    setOpen(false);
+    setGenerating(true);
+    try {
+      const t = await api.generateDriverToken(driverId, scope, hours);
+      setResult(t);
+      toast.success("Token generated · share the URL below with your driver");
+    } finally {
+      setGenerating(false);
+    }
   }
+
+  function resetDialog() {
+    setResult(null);
+    setDriverId("");
+    setScope("shift");
+    setHours(12);
+  }
+
+  function closeDialog(o: boolean) {
+    setOpen(o);
+    if (!o) resetDialog();
+  }
+
+  async function copyUrl(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("URL copied to clipboard");
+    } catch {
+      toast.error("Couldn't copy — select the URL and copy manually");
+    }
+  }
+
+  const resultDriver = result ? driverById(result.driverId) : null;
+  const resultUrl = result ? tokenUrl(result.token) : "";
 
   return (
     <Card title="Driver access tokens">
+      <details className="mb-4 bg-muted/30 border border-border rounded-md p-3 text-sm">
+        <summary className="cursor-pointer font-medium">How tokenized driver links work</summary>
+        <ol className="mt-2 ml-5 list-decimal space-y-1 text-muted-foreground text-xs">
+          <li>Generate a token for a driver below.</li>
+          <li>Copy the URL shown after generation.</li>
+          <li>Send it to the driver however you want (SMS, Slack, email, paper).</li>
+          <li>Driver opens the URL on any phone — no login needed.</li>
+          <li>Token expires after its time window or first submission.</li>
+        </ol>
+      </details>
+
       <div className="flex justify-end mb-3">
         <Button
           size="sm"
           onClick={() => setOpen(true)}
+          data-testid="generate-token-btn"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
           <Plus className="w-4 h-4" /> Generate token
@@ -266,11 +314,11 @@ function TokensTab() {
       <table className="w-full text-sm">
         <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
-            <th className="text-left font-medium px-3 py-2">Token</th>
             <th className="text-left font-medium px-3 py-2">Driver</th>
             <th className="text-left font-medium px-3 py-2">Scope</th>
             <th className="text-left font-medium px-3 py-2">Expires</th>
             <th className="text-left font-medium px-3 py-2">State</th>
+            <th className="text-left font-medium px-3 py-2">Shareable URL</th>
             <th></th>
           </tr>
         </thead>
@@ -278,9 +326,9 @@ function TokensTab() {
           {driverTokens.map((t) => {
             const expired = new Date(t.expiresAt).getTime() < Date.now();
             const state = t.usedAt ? "Used" : expired ? "Expired" : "Active";
+            const url = tokenUrl(t.token);
             return (
               <tr key={t.id} className="border-t border-border">
-                <td className="px-3 py-2 font-mono text-xs">{t.token}</td>
                 <td className="px-3 py-2">{driverById(t.driverId)?.name}</td>
                 <td className="px-3 py-2 text-xs uppercase">{t.scopedTo}</td>
                 <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
@@ -289,17 +337,29 @@ function TokensTab() {
                 <td className="px-3 py-2">
                   <StatusBadge status={state} />
                 </td>
+                <td className="px-3 py-2 font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={url}>
+                  {url}
+                </td>
                 <td className="px-3 py-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(`${location.origin}/t/${t.token}`);
-                      toast.success("Link copied");
-                    }}
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Copy URL"
+                      onClick={() => copyUrl(url)}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Open as driver in new tab"
+                      onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                      disabled={state !== "Active"}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             );
@@ -307,51 +367,97 @@ function TokensTab() {
         </tbody>
       </table>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={closeDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Generate driver token</DialogTitle>
+            <DialogTitle>{result ? "Token ready · share with driver" : "Generate driver token"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Driver</Label>
-              <Select value={driverId} onValueChange={setDriverId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose driver" />
-                </SelectTrigger>
-                <SelectContent>
-                  {drivers.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+          {!result ? (
+            <div className="space-y-3">
+              <div>
+                <Label>Driver</Label>
+                <Select value={driverId} onValueChange={setDriverId}>
+                  <SelectTrigger data-testid="token-driver-select">
+                    <SelectValue placeholder="Choose driver" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {drivers.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Scope</Label>
+                <Select value={scope} onValueChange={(v) => setScope(v as TokenScope)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="forms">Forms only</SelectItem>
+                    <SelectItem value="job">Single job</SelectItem>
+                    <SelectItem value="shift">Full shift</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Expires in (hours)</Label>
+                <Input type="number" value={hours} onChange={(e) => setHours(+e.target.value)} />
+              </div>
+              <Button
+                onClick={gen}
+                disabled={generating}
+                data-testid="token-generate-confirm"
+                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+              >
+                {generating ? "Generating…" : "Generate"}
+              </Button>
             </div>
-            <div>
-              <Label>Scope</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as TokenScope)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="forms">Forms only</SelectItem>
-                  <SelectItem value="job">Single job</SelectItem>
-                  <SelectItem value="shift">Full shift</SelectItem>
-                </SelectContent>
-              </Select>
+          ) : (
+            <div className="space-y-4" data-testid="token-result-card">
+              <div className="text-sm text-muted-foreground">
+                Share this URL with <span className="font-semibold text-foreground">{resultDriver?.name ?? "the driver"}</span>.
+                Opens on any phone without login. Expires in <span className="font-semibold text-foreground">{hours}h</span> ·
+                Scope: <span className="font-mono uppercase">{result.scopedTo}</span>.
+              </div>
+              <div className="flex gap-2 items-center bg-muted/40 border border-border rounded-md p-2">
+                <Input
+                  readOnly
+                  value={resultUrl}
+                  data-testid="token-url-input"
+                  className="font-mono text-xs bg-card"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  onClick={() => copyUrl(resultUrl)}
+                  data-testid="token-copy-btn"
+                  className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                >
+                  <Copy className="w-4 h-4" /> Copy URL
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(resultUrl, "_blank", "noopener,noreferrer")}
+                  data-testid="token-open-btn"
+                >
+                  <ExternalLink className="w-4 h-4" /> Open as driver
+                </Button>
+              </div>
+              <div className="flex gap-2 pt-1 border-t border-border">
+                <Button variant="ghost" size="sm" onClick={resetDialog} className="flex-1">
+                  <Send className="w-3.5 h-3.5" /> Generate another
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => closeDialog(false)} className="flex-1">
+                  Close
+                </Button>
+              </div>
             </div>
-            <div>
-              <Label>Expires in (hours)</Label>
-              <Input type="number" value={hours} onChange={(e) => setHours(+e.target.value)} />
-            </div>
-            <Button
-              onClick={gen}
-              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-            >
-              Generate
-            </Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

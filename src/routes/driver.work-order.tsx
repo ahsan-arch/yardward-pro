@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { offlineQueue } from "@/lib/offline-queue";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useData } from "@/contexts/DataContext";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/driver/work-order")({
   head: () => ({ meta: [{ title: "New work order — FleetOps" }] }),
@@ -31,7 +33,19 @@ function Page() {
   const nav = useNavigate();
   const { user } = useAuth();
   const { isOnline } = useOffline();
-  const gps = useGpsCapture(true);
+  const { jobs } = useData();
+  const currentJob = jobs.find((j) => j.id === "JOB-041");
+  const fallback = useMemo(() => {
+    if (currentJob?.location.lat != null && currentJob.location.lng != null) {
+      return {
+        lat: currentJob.location.lat,
+        lng: currentJob.location.lng,
+        label: "Using job site location",
+      };
+    }
+    return null;
+  }, [currentJob?.location.lat, currentJob?.location.lng]);
+  const gps = useGpsCapture(fallback);
   const [work, setWork] = useState("");
   const [load, setLoad] = useState("");
   const [weight, setWeight] = useState("");

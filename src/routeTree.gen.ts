@@ -28,6 +28,7 @@ import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-d
 import { Route as DriverProfileRouteImport } from './routes/driver.profile'
 import { Route as DriverJobsRouteImport } from './routes/driver.jobs'
 import { Route as DriverJobLogRouteImport } from './routes/driver.job-log'
+import { Route as DriverInspectionRouteImport } from './routes/driver.inspection'
 import { Route as DriverFormsRouteImport } from './routes/driver.forms'
 import { Route as DriverEndOfDayRouteImport } from './routes/driver.end-of-day'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
@@ -141,6 +142,11 @@ const DriverJobsRoute = DriverJobsRouteImport.update({
 const DriverJobLogRoute = DriverJobLogRouteImport.update({
   id: '/job-log',
   path: '/job-log',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverInspectionRoute = DriverInspectionRouteImport.update({
+  id: '/inspection',
+  path: '/inspection',
   getParentRoute: () => DriverRoute,
 } as any)
 const DriverFormsRoute = DriverFormsRouteImport.update({
@@ -257,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
@@ -293,6 +300,7 @@ export interface FileRoutesByTo {
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
@@ -333,6 +341,7 @@ export interface FileRoutesById {
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
+  '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
@@ -374,6 +383,7 @@ export interface FileRouteTypes {
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
@@ -410,6 +420,7 @@ export interface FileRouteTypes {
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
@@ -449,6 +460,7 @@ export interface FileRouteTypes {
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
+    | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
     | '/driver/profile'
@@ -609,6 +621,13 @@ declare module '@tanstack/react-router' {
       path: '/job-log'
       fullPath: '/driver/job-log'
       preLoaderRoute: typeof DriverJobLogRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/inspection': {
+      id: '/driver/inspection'
+      path: '/inspection'
+      fullPath: '/driver/inspection'
+      preLoaderRoute: typeof DriverInspectionRouteImport
       parentRoute: typeof DriverRoute
     }
     '/driver/forms': {
@@ -795,6 +814,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface DriverRouteChildren {
   DriverEndOfDayRoute: typeof DriverEndOfDayRoute
   DriverFormsRoute: typeof DriverFormsRoute
+  DriverInspectionRoute: typeof DriverInspectionRoute
   DriverJobLogRoute: typeof DriverJobLogRoute
   DriverJobsRoute: typeof DriverJobsRoute
   DriverProfileRoute: typeof DriverProfileRoute
@@ -807,6 +827,7 @@ interface DriverRouteChildren {
 const DriverRouteChildren: DriverRouteChildren = {
   DriverEndOfDayRoute: DriverEndOfDayRoute,
   DriverFormsRoute: DriverFormsRoute,
+  DriverInspectionRoute: DriverInspectionRoute,
   DriverJobLogRoute: DriverJobLogRoute,
   DriverJobsRoute: DriverJobsRoute,
   DriverProfileRoute: DriverProfileRoute,

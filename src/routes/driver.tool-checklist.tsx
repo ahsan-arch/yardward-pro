@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { offlineQueue } from "@/lib/offline-queue";
+import { geotabCoordsForVehicle } from "@/data/mockData";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/driver/tool-checklist")({
   head: () => ({ meta: [{ title: "Tool checklist — FleetOps" }] }),
@@ -31,10 +33,16 @@ const stateLabel: Record<ToolCondition, string> = {
 
 function Page() {
   const nav = useNavigate();
-  const { tools } = useData();
+  const { tools, drivers } = useData();
   const { user } = useAuth();
   const { isOnline } = useOffline();
-  const gps = useGpsCapture(true);
+  const me = drivers.find((d) => d.id === user.id);
+  const vehicleId = me?.vehicleAssignmentId ?? "TRK-07";
+  const fallback = useMemo(() => {
+    const c = geotabCoordsForVehicle(vehicleId);
+    return c ? { lat: c.lat, lng: c.lng, label: `Vehicle ${vehicleId} last known` } : null;
+  }, [vehicleId]);
+  const gps = useGpsCapture(fallback);
   const [items, setItems] = useState(
     tools.map((t) => ({
       toolId: t.id,

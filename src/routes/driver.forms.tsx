@@ -2,7 +2,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowLeft, Sun, Wrench, ClipboardList, Truck, Moon, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Sun,
+  Wrench,
+  ClipboardList,
+  ClipboardCheck,
+  Truck,
+  Moon,
+  ChevronRight,
+} from "lucide-react";
 
 export const Route = createFileRoute("/driver/forms")({
   head: () => ({ meta: [{ title: "Forms — FleetOps" }] }),
@@ -21,6 +30,12 @@ const tiles = [
     label: "Tool checklist",
     desc: "Verify all required tools",
     icon: Wrench,
+  },
+  {
+    to: "/driver/inspection",
+    label: "Vehicle inspection",
+    desc: "Pre-trip walk-around with GPS + Geotab",
+    icon: ClipboardCheck,
   },
   {
     to: "/driver/job-log",

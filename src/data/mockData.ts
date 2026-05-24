@@ -19,6 +19,7 @@ import type {
   DriverToken,
   TicketPhoto,
   Tender,
+  VehicleInspection,
 } from "@/types/domain";
 
 // ============ Users / Drivers / Mechanics ============
@@ -984,7 +985,7 @@ export const driverTokens: DriverToken[] = [
     driverId: "D-01",
     token: "tok_live_a1b2c3",
     scopedTo: "shift",
-    expiresAt: "2025-05-14T20:00:00Z",
+    expiresAt: "2099-12-31T20:00:00Z",
     usedAt: null,
   },
   {
@@ -1162,5 +1163,78 @@ export const mechanicWorkOrders = [
     issue: "Hydraulic seep at boom cylinder, inspect and reseal",
     reportedBy: "Kenji Park",
     priority: "Medium" as const,
+  },
+];
+
+// ============ Vehicle inspections ============
+// Per-vehicle Geotab "last known" coords for mock cross-reference.
+// Coordinates are near the seeded job locations so the haversine distance is small.
+export const vehicleGeotabCoords: Record<string, { lat: number; lng: number }> = {
+  "TRK-03": { lat: 43.6510, lng: -79.3470 },
+  "TRK-07": { lat: 43.6532, lng: -79.3832 },
+  "TRK-11": { lat: 43.6720, lng: -79.3960 },
+  "TRK-14": { lat: 43.6605, lng: -79.4101 },
+  "EQ-02":  { lat: 43.6605, lng: -79.4101 },
+  "TRL-01": { lat: 43.6580, lng: -79.3300 },
+};
+
+export function geotabCoordsForVehicle(vehicleId: string | null | undefined) {
+  if (!vehicleId) return null;
+  return vehicleGeotabCoords[vehicleId] ?? null;
+}
+
+export const inspectionChecklist: { name: string }[] = [
+  { name: "Tyres & wheels" },
+  { name: "Lights & indicators" },
+  { name: "Brakes" },
+  { name: "Mirrors" },
+  { name: "Wipers & washers" },
+  { name: "Horn" },
+  { name: "Seatbelts" },
+  { name: "Fluids (oil/coolant)" },
+  { name: "Body damage" },
+  { name: "Load secure" },
+];
+
+export const vehicleInspections: VehicleInspection[] = [
+  {
+    id: "INS-001",
+    driverId: "D-01",
+    vehicleId: "TRK-07",
+    submittedAt: "2025-05-14T07:05:00Z",
+    gpsCapture: { lat: 43.6532, lng: -79.3832, capturedAt: "2025-05-14T07:05:00Z" },
+    geotabSnapshot: { lat: 43.6532, lng: -79.3832, capturedAt: "2025-05-14T07:00:00Z", distanceMeters: 12 },
+    items: inspectionChecklist.map((i) => ({ name: i.name, status: "ok", notes: "" })),
+    notes: "",
+    photos: [],
+    flagged: false,
+  },
+  {
+    id: "INS-002",
+    driverId: "D-02",
+    vehicleId: "TRK-03",
+    submittedAt: "2025-05-14T07:15:00Z",
+    gpsCapture: { lat: 43.6510, lng: -79.3470, capturedAt: "2025-05-14T07:15:00Z" },
+    geotabSnapshot: { lat: 43.6510, lng: -79.3470, capturedAt: "2025-05-14T07:10:00Z", distanceMeters: 8 },
+    items: inspectionChecklist.map((i, idx) => ({
+      name: i.name,
+      status: idx === 4 ? "issue" : "ok",
+      notes: idx === 4 ? "Driver-side wiper streaking" : "",
+    })),
+    notes: "Wiper blade needs replacement before next rain.",
+    photos: [],
+    flagged: true,
+  },
+  {
+    id: "INS-003",
+    driverId: "D-03",
+    vehicleId: "TRK-11",
+    submittedAt: "2025-05-13T06:50:00Z",
+    gpsCapture: { lat: 43.6720, lng: -79.3960, capturedAt: "2025-05-13T06:50:00Z" },
+    geotabSnapshot: { lat: 43.6720, lng: -79.3960, capturedAt: "2025-05-13T06:45:00Z", distanceMeters: 22 },
+    items: inspectionChecklist.map((i) => ({ name: i.name, status: "ok", notes: "" })),
+    notes: "",
+    photos: [],
+    flagged: false,
   },
 ];

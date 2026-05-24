@@ -10,6 +10,7 @@ import type {
   DriverToken,
   InvoiceData,
   TokenScope,
+  VehicleInspection,
 } from "@/types/domain";
 
 type Ctx = {
@@ -33,6 +34,7 @@ type Ctx = {
   ticketPhotos: typeof seed.ticketPhotos;
   tenders: typeof seed.tenders;
   timeEntries: TimeEntry[];
+  vehicleInspections: VehicleInspection[];
   createJob: (job: Job) => void;
   updateJob: (id: string, patch: Partial<Job>) => void;
   submitWorkOrder: (wo: WorkOrder) => void;
@@ -48,6 +50,7 @@ type Ctx = {
   addSms: (sms: SmsLog) => void;
   generateDriverToken: (token: DriverToken) => void;
   markTokenUsed: (id: string) => void;
+  submitVehicleInspection: (inspection: VehicleInspection) => void;
 };
 
 const DataCtx = createContext<Ctx | null>(null);
@@ -63,6 +66,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(seed.smsLogs);
   const [driverTokens, setTokens] = useState<DriverToken[]>(seed.driverTokens);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(seed.timeEntries);
+  const [vehicleInspections, setInspections] = useState<VehicleInspection[]>(
+    seed.vehicleInspections,
+  );
 
   const createJob = useCallback((job: Job) => setJobs((j) => [job, ...j]), []);
   const updateJob = useCallback(
@@ -145,6 +151,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ),
     [],
   );
+  const submitVehicleInspection = useCallback(
+    (inspection: VehicleInspection) => setInspections((arr) => [inspection, ...arr]),
+    [],
+  );
 
   return (
     <DataCtx.Provider
@@ -169,6 +179,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ticketPhotos: seed.ticketPhotos,
         tenders: seed.tenders,
         timeEntries,
+        vehicleInspections,
         createJob,
         updateJob,
         submitWorkOrder,
@@ -184,6 +195,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addSms,
         generateDriverToken,
         markTokenUsed,
+        submitVehicleInspection,
       }}
     >
       {children}

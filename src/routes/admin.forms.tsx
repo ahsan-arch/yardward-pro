@@ -23,11 +23,11 @@ export const Route = createFileRoute("/admin/forms")({
   component: Page,
 });
 
-type Tab = "all" | "tool" | "wo" | "time" | "ticket";
+type Tab = "all" | "tool" | "wo" | "time" | "ticket" | "inspection";
 
 type Row = {
   id: string;
-  type: "Tool checklist" | "Work order" | "Time entry" | "Ticket photo";
+  type: "Tool checklist" | "Work order" | "Time entry" | "Ticket photo" | "Vehicle inspection";
   driver: string;
   context: string;
   submittedAt: string;
@@ -37,7 +37,8 @@ type Row = {
 };
 
 function Page() {
-  const { toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos } = useData();
+  const { toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos, vehicleInspections } =
+    useData();
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
   const [openRow, setOpenRow] = useState<Row | null>(null);
@@ -89,10 +90,20 @@ function Page() {
       flagged: p.status === "awaiting-entry",
       status: p.status === "entered" ? "Entered" : "Awaiting entry",
     }));
-    return [...tcs, ...wos, ...tes, ...tps].sort((a, b) =>
+    const inspections = vehicleInspections.map<Row>((ins) => ({
+      id: ins.id,
+      type: "Vehicle inspection",
+      driver: driverById(ins.driverId)?.name ?? "—",
+      context: ins.vehicleId,
+      submittedAt: ins.submittedAt,
+      gpsOk: !!ins.gpsCapture,
+      flagged: ins.flagged,
+      status: ins.flagged ? "Flagged" : "Clean",
+    }));
+    return [...tcs, ...wos, ...tes, ...tps, ...inspections].sort((a, b) =>
       b.submittedAt.localeCompare(a.submittedAt),
     );
-  }, [toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos]);
+  }, [toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos, vehicleInspections]);
 
   const filtered = useMemo(
     () =>
@@ -106,7 +117,9 @@ function Page() {
                 ? r.type === "Work order"
                 : tab === "time"
                   ? r.type === "Time entry"
-                  : r.type === "Ticket photo";
+                  : tab === "ticket"
+                    ? r.type === "Ticket photo"
+                    : r.type === "Vehicle inspection";
         const matchSearch =
           search === "" ||
           r.driver.toLowerCase().includes(search.toLowerCase()) ||
@@ -121,6 +134,7 @@ function Page() {
     if (t === "Tool checklist") return <Wrench className="w-3.5 h-3.5" />;
     if (t === "Work order") return <ClipboardCheck className="w-3.5 h-3.5" />;
     if (t === "Time entry") return <Sun className="w-3.5 h-3.5" />;
+    if (t === "Vehicle inspection") return <ClipboardCheck className="w-3.5 h-3.5" />;
     return <ScrollText className="w-3.5 h-3.5" />;
   };
 
@@ -133,6 +147,7 @@ function Page() {
           <TabsTrigger value="wo">Work orders</TabsTrigger>
           <TabsTrigger value="time">Time entries</TabsTrigger>
           <TabsTrigger value="ticket">Ticket photos</TabsTrigger>
+          <TabsTrigger value="inspection">Inspections</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -218,7 +233,14 @@ function Page() {
 }
 
 function FormDetail({ row }: { row: Row }) {
-  const { toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos, tools } = useData();
+  const {
+    toolChecklistSubmissions,
+    workOrders,
+    timeEntries,
+    ticketPhotos,
+    tools,
+    vehicleInspections,
+  } = useData();
   let body: React.ReactNode = null;
 
   if (row.type === "Tool checklist") {
@@ -272,7 +294,7 @@ function FormDetail({ row }: { row: Row }) {
           )}
         </div>
       );
-  } else {
+  } else if (row.type === "Ticket photo") {
     const p = ticketPhotos.find((x) => x.id === row.id);
     if (p)
       body = (
@@ -281,6 +303,45 @@ function FormDetail({ row }: { row: Row }) {
           <Field k="Job" v={p.jobId} />
           <Field k="Weight" v={p.weight ? `${p.weight}t` : "Not entered"} />
           <Field k="Location" v={p.location ?? "Not entered"} />
+        </div>
+      );
+  } else {
+    const ins = vehicleInspections.find((x) => x.id === row.id);
+    if (ins)
+      body = (
+        <div className="space-y-3 text-sm">
+          <Field k="Vehicle" v={ins.vehicleId} />
+          <Field
+            k="Submitted at"
+            v={new Date(ins.submittedAt).toLocaleString()}
+          />
+          {ins.geotabSnapshot && (
+            <Field
+              k="Geotab match"
+              v={`${ins.geotabSnapshot.distanceMeters}m from vehicle`}
+            />
+          )}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground mb-1">
+              Checklist
+            </div>
+            {ins.items.map((it) => (
+              <div
+                key={it.name}
+                className="flex justify-between py-1 border-b border-border/50 text-xs"
+              >
+                <span>{it.name}</span>
+                <span
+                  className={`font-mono uppercase ${it.status === "ok" ? "text-success" : "text-danger"}`}
+                >
+                  {it.status}
+                </span>
+              </div>
+            ))}
+          </div>
+          {ins.notes && (
+            <div className="p-2 rounded bg-muted/40 text-xs">{ins.notes}</div>
+          )}
         </div>
       );
   }

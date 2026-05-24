@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { offlineQueue } from "@/lib/offline-queue";
+import { geotabCoordsForVehicle } from "@/data/mockData";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/driver/end-of-day")({
   head: () => ({ meta: [{ title: "End of day — FleetOps" }] }),
@@ -25,9 +27,14 @@ const fuels = ["Empty", "1/4", "1/2", "3/4", "Full"];
 function Page() {
   const nav = useNavigate();
   const { user } = useAuth();
-  const { timeEntries } = useData();
+  const { timeEntries, drivers } = useData();
   const { isOnline } = useOffline();
-  const gps = useGpsCapture(true);
+  const me = drivers.find((d) => d.id === user.id);
+  const fallback = useMemo(() => {
+    const c = geotabCoordsForVehicle(me?.vehicleAssignmentId ?? null);
+    return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;
+  }, [me?.vehicleAssignmentId]);
+  const gps = useGpsCapture(fallback);
   const [odo, setOdo] = useState("");
   const [fuel, setFuel] = useState("1/2");
   const [summary, setSummary] = useState("");
