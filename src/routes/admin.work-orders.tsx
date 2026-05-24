@@ -24,7 +24,7 @@ function Page() {
   const { user } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState("all");
-  const [openId, setOpenId] = useState<string | null>("WO-118");
+  const [openId, setOpenId] = useState<string | null>(null);
   const filtered = workOrders.filter((w) => (tab === "all" ? true : w.status === tab));
   const woRaw = workOrders.find((w) => w.id === openId) || null;
   const wo = woRaw ? workOrderDisplay(woRaw) : null;

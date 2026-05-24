@@ -32,7 +32,6 @@ import { Route as DriverInspectionRouteImport } from './routes/driver.inspection
 import { Route as DriverFormsRouteImport } from './routes/driver.forms'
 import { Route as DriverEndOfDayRouteImport } from './routes/driver.end-of-day'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
-import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
 import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
 import { Route as AdminTicketsRouteImport } from './routes/admin.tickets'
 import { Route as AdminTendersRouteImport } from './routes/admin.tenders'
@@ -45,6 +44,7 @@ import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
 import { Route as AdminClientsRouteImport } from './routes/admin.clients'
+import { Route as AdminVehiclesIndexRouteImport } from './routes/admin.vehicles.index'
 import { Route as AdminVehiclesIdRouteImport } from './routes/admin.vehicles.$id'
 import { Route as AdminInvoicesWorkOrderIdRouteImport } from './routes/admin.invoices.$workOrderId'
 
@@ -164,11 +164,6 @@ const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
   path: '/work-orders',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminVehiclesRoute = AdminVehiclesRouteImport.update({
-  id: '/vehicles',
-  path: '/vehicles',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminTimesheetsRoute = AdminTimesheetsRouteImport.update({
   id: '/timesheets',
   path: '/timesheets',
@@ -229,10 +224,15 @@ const AdminClientsRoute = AdminClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVehiclesIndexRoute = AdminVehiclesIndexRouteImport.update({
+  id: '/vehicles/',
+  path: '/vehicles/',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminVehiclesIdRoute = AdminVehiclesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AdminVehiclesRoute,
+  id: '/vehicles/$id',
+  path: '/vehicles/$id',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminInvoicesWorkOrderIdRoute =
   AdminInvoicesWorkOrderIdRouteImport.update({
@@ -259,7 +259,6 @@ export interface FileRoutesByFullPath {
   '/admin/tenders': typeof AdminTendersRoute
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
-  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
@@ -280,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/mechanic/': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/admin/vehicles/': typeof AdminVehiclesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -296,7 +296,6 @@ export interface FileRoutesByTo {
   '/admin/tenders': typeof AdminTendersRoute
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
-  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
@@ -317,6 +316,7 @@ export interface FileRoutesByTo {
   '/mechanic': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/admin/vehicles': typeof AdminVehiclesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -337,7 +337,6 @@ export interface FileRoutesById {
   '/admin/tenders': typeof AdminTendersRoute
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
-  '/admin/vehicles': typeof AdminVehiclesRouteWithChildren
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
@@ -358,6 +357,7 @@ export interface FileRoutesById {
   '/mechanic/': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/admin/vehicles/': typeof AdminVehiclesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -379,7 +379,6 @@ export interface FileRouteTypes {
     | '/admin/tenders'
     | '/admin/tickets'
     | '/admin/timesheets'
-    | '/admin/vehicles'
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
@@ -400,6 +399,7 @@ export interface FileRouteTypes {
     | '/mechanic/'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/admin/vehicles/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -416,7 +416,6 @@ export interface FileRouteTypes {
     | '/admin/tenders'
     | '/admin/tickets'
     | '/admin/timesheets'
-    | '/admin/vehicles'
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
@@ -437,6 +436,7 @@ export interface FileRouteTypes {
     | '/mechanic'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/admin/vehicles'
   id:
     | '__root__'
     | '/'
@@ -456,7 +456,6 @@ export interface FileRouteTypes {
     | '/admin/tenders'
     | '/admin/tickets'
     | '/admin/timesheets'
-    | '/admin/vehicles'
     | '/admin/work-orders'
     | '/driver/end-of-day'
     | '/driver/forms'
@@ -477,6 +476,7 @@ export interface FileRouteTypes {
     | '/mechanic/'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/admin/vehicles/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -651,13 +651,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWorkOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/vehicles': {
-      id: '/admin/vehicles'
-      path: '/vehicles'
-      fullPath: '/admin/vehicles'
-      preLoaderRoute: typeof AdminVehiclesRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/timesheets': {
       id: '/admin/timesheets'
       path: '/timesheets'
@@ -742,12 +735,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminClientsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/vehicles/': {
+      id: '/admin/vehicles/'
+      path: '/vehicles'
+      fullPath: '/admin/vehicles/'
+      preLoaderRoute: typeof AdminVehiclesIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/vehicles/$id': {
       id: '/admin/vehicles/$id'
-      path: '/$id'
+      path: '/vehicles/$id'
       fullPath: '/admin/vehicles/$id'
       preLoaderRoute: typeof AdminVehiclesIdRouteImport
-      parentRoute: typeof AdminVehiclesRoute
+      parentRoute: typeof AdminRoute
     }
     '/admin/invoices/$workOrderId': {
       id: '/admin/invoices/$workOrderId'
@@ -758,18 +758,6 @@ declare module '@tanstack/react-router' {
     }
   }
 }
-
-interface AdminVehiclesRouteChildren {
-  AdminVehiclesIdRoute: typeof AdminVehiclesIdRoute
-}
-
-const AdminVehiclesRouteChildren: AdminVehiclesRouteChildren = {
-  AdminVehiclesIdRoute: AdminVehiclesIdRoute,
-}
-
-const AdminVehiclesRouteWithChildren = AdminVehiclesRoute._addFileChildren(
-  AdminVehiclesRouteChildren,
-)
 
 interface AdminRouteChildren {
   AdminClientsRoute: typeof AdminClientsRoute
@@ -784,10 +772,11 @@ interface AdminRouteChildren {
   AdminTendersRoute: typeof AdminTendersRoute
   AdminTicketsRoute: typeof AdminTicketsRoute
   AdminTimesheetsRoute: typeof AdminTimesheetsRoute
-  AdminVehiclesRoute: typeof AdminVehiclesRouteWithChildren
   AdminWorkOrdersRoute: typeof AdminWorkOrdersRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminInvoicesWorkOrderIdRoute: typeof AdminInvoicesWorkOrderIdRoute
+  AdminVehiclesIdRoute: typeof AdminVehiclesIdRoute
+  AdminVehiclesIndexRoute: typeof AdminVehiclesIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
@@ -803,10 +792,11 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminTendersRoute: AdminTendersRoute,
   AdminTicketsRoute: AdminTicketsRoute,
   AdminTimesheetsRoute: AdminTimesheetsRoute,
-  AdminVehiclesRoute: AdminVehiclesRouteWithChildren,
   AdminWorkOrdersRoute: AdminWorkOrdersRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminInvoicesWorkOrderIdRoute: AdminInvoicesWorkOrderIdRoute,
+  AdminVehiclesIdRoute: AdminVehiclesIdRoute,
+  AdminVehiclesIndexRoute: AdminVehiclesIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)

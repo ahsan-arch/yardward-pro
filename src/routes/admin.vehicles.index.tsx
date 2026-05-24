@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useRef } from "react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/admin/vehicles")({
+export const Route = createFileRoute("/admin/vehicles/")({
   head: () => ({ meta: [{ title: "Vehicles — FleetOps CRM" }] }),
   component: Page,
 });

@@ -30,6 +30,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTheme(t);
     setRoleState(r);
     setAuthed(a);
+    // Hydrate user identity to match the persisted role so a page reload
+    // (or a fresh tab opened from a tokenized link) shows the right driver/mechanic.
+    if (a) {
+      setUser(
+        r === "driver"
+          ? { id: "D-01", name: "Tom Morrison", email: "tom@fleetops.co" }
+          : r === "mechanic"
+            ? { id: "M-01", name: "Jamie Reyes", email: "jamie@fleetops.co" }
+            : { id: "A-01", name: "Alex Chen", email: "alex@fleetops.co" },
+      );
+    }
   }, []);
 
   useEffect(() => {
