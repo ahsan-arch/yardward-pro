@@ -15,6 +15,7 @@ const SAMPLE_ROUTES = [
   "/admin/tenders",
   "/admin/invoices/WO-115",
   "/admin/vehicles/TRK-07",
+  "/admin/map",
   "/driver",
   "/driver/jobs",
   "/driver/forms",

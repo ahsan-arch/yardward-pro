@@ -9,6 +9,7 @@ const ROUTES = [
   "/admin/drivers",
   "/admin/vehicles",
   "/admin/vehicles/TRK-07",
+  "/admin/map",
   "/admin/work-orders",
   "/admin/timesheets",
   "/admin/sms-log",

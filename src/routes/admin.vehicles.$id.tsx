@@ -8,6 +8,7 @@ import { ArrowLeft, MapPin, Wrench, Fuel, Truck, Calendar, Activity } from "luci
 import { api } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { VehicleMap } from "@/components/crm/VehicleMap";
 
 export const Route = createFileRoute("/admin/vehicles/$id")({
   head: () => ({ meta: [{ title: "Vehicle detail — FleetOps CRM" }] }),
@@ -98,6 +99,17 @@ function Page() {
           >
             <MapPin className="w-3.5 h-3.5" /> Refresh location
           </Button>
+          <div className="mt-3 -mx-4 -mb-4 border-t border-border overflow-hidden">
+            <VehicleMap
+              key={tele?.capturedAt ?? "init"}
+              vehicles={[v]}
+              height="220px"
+              autoRefreshMs={0}
+              interactive
+              showSidebar={false}
+              focusVehicleId={v.id}
+            />
+          </div>
         </Card>
 
         <Card>

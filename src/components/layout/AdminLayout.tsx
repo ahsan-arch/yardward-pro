@@ -15,6 +15,7 @@ import {
   Clock,
   ShoppingCart,
   MessageSquare,
+  MapPin,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ const navItems = [
   { to: "/admin/jobs", label: "Jobs", icon: Briefcase },
   { to: "/admin/drivers", label: "Drivers", icon: Users },
   { to: "/admin/vehicles", label: "Vehicles", icon: Truck },
+  { to: "/admin/map", label: "Live map", icon: MapPin },
   { to: "/admin/work-orders", label: "Work Orders", icon: ClipboardCheck },
   { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
   { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare },

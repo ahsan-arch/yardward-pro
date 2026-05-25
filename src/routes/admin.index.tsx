@@ -5,6 +5,7 @@ import { activityFeed, jobDisplay } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
 import { Briefcase, Users, ClipboardCheck, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VehicleMap } from "@/components/crm/VehicleMap";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({ meta: [{ title: "Dashboard — FleetOps CRM" }] }),
@@ -38,7 +39,7 @@ const toneClass: Record<string, string> = {
 };
 
 function Dashboard() {
-  const { jobs } = useData();
+  const { jobs, vehicles } = useData();
   const todays = jobs
     .map(jobDisplay)
     .filter((j) => j.day === 1)
@@ -72,6 +73,29 @@ function Dashboard() {
             <div className="text-xs text-muted-foreground mt-1">{s.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Live fleet map preview */}
+      <div className="mt-6 bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div>
+            <h2 className="font-semibold">Live fleet map</h2>
+            <p className="text-xs text-muted-foreground font-mono">Geotab · auto-refreshes</p>
+          </div>
+          <Link
+            to="/admin/map"
+            className="text-xs text-amber-brand hover:underline flex items-center gap-1"
+          >
+            Open full map <ArrowUpRight className="w-3 h-3" />
+          </Link>
+        </div>
+        <VehicleMap
+          vehicles={vehicles}
+          height="280px"
+          autoRefreshMs={60_000}
+          interactive
+          showSidebar={false}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-4">

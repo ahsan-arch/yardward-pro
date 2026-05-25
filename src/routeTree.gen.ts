@@ -40,6 +40,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPurchaseRequestsRouteImport } from './routes/admin.purchase-requests'
+import { Route as AdminMapRouteImport } from './routes/admin.map'
 import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
@@ -204,6 +205,11 @@ const AdminPurchaseRequestsRoute = AdminPurchaseRequestsRouteImport.update({
   path: '/purchase-requests',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminMapRoute = AdminMapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminJobsRoute = AdminJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
@@ -251,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/map': typeof AdminMapRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -288,6 +295,7 @@ export interface FileRoutesByTo {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/map': typeof AdminMapRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -329,6 +337,7 @@ export interface FileRoutesById {
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
+  '/admin/map': typeof AdminMapRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -371,6 +380,7 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/map'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -408,6 +418,7 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/map'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -448,6 +459,7 @@ export interface FileRouteTypes {
     | '/admin/drivers'
     | '/admin/forms'
     | '/admin/jobs'
+    | '/admin/map'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -707,6 +719,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPurchaseRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/map': {
+      id: '/admin/map'
+      path: '/map'
+      fullPath: '/admin/map'
+      preLoaderRoute: typeof AdminMapRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/jobs': {
       id: '/admin/jobs'
       path: '/jobs'
@@ -764,6 +783,7 @@ interface AdminRouteChildren {
   AdminDriversRoute: typeof AdminDriversRoute
   AdminFormsRoute: typeof AdminFormsRoute
   AdminJobsRoute: typeof AdminJobsRoute
+  AdminMapRoute: typeof AdminMapRoute
   AdminPurchaseRequestsRoute: typeof AdminPurchaseRequestsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
@@ -784,6 +804,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminDriversRoute: AdminDriversRoute,
   AdminFormsRoute: AdminFormsRoute,
   AdminJobsRoute: AdminJobsRoute,
+  AdminMapRoute: AdminMapRoute,
   AdminPurchaseRequestsRoute: AdminPurchaseRequestsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
