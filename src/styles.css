@@ -128,4 +128,8 @@
     -webkit-font-smoothing: antialiased;
   }
   .font-mono { font-family: var(--font-mono); }
+
+  /* Clamp Leaflet to its own stacking context so its tile/marker panes
+     (which use z-index 200-700) don't render on top of sticky page headers. */
+  .leaflet-container { z-index: 0; }
 }
