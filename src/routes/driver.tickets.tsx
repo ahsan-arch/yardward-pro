@@ -107,6 +107,15 @@ function Page() {
   );
   const [vehicleId, setVehicleId] = useState<string>(me?.vehicleAssignmentId ?? "");
 
+  // The driver row may not be in `drivers` on first render (DataContext
+  // hydrates asynchronously). Once the assignment resolves, pre-fill the
+  // vehicle picker so `canSubmit` doesn't require an extra manual selection.
+  useEffect(() => {
+    if (!vehicleId && me?.vehicleAssignmentId) {
+      setVehicleId(me.vehicleAssignmentId);
+    }
+  }, [vehicleId, me?.vehicleAssignmentId]);
+
   // FK-safety: the RPC rejects an unknown vehicleId with a "vehicle not found"
   // row.error. We pre-validate here so the submit button is disabled and the
   // driver gets an inline message rather than a server round-trip failure.
@@ -352,8 +361,9 @@ function Page() {
           )}
 
           <div>
-            <Label>Tickets to record</Label>
+            <Label htmlFor="tickets-qty">Tickets to record</Label>
             <Input
+              id="tickets-qty"
               inputMode="numeric"
               value={tickets}
               onChange={(e) => setTickets(e.target.value)}
@@ -367,8 +377,9 @@ function Page() {
           </div>
 
           <div>
-            <Label>Dump site</Label>
+            <Label htmlFor="dump-site">Dump site</Label>
             <Input
+              id="dump-site"
               value={dumpSite}
               onChange={(e) => setDumpSite(e.target.value)}
               className="h-12 mt-1.5"
@@ -424,6 +435,7 @@ function Page() {
 
           <Button
             type="submit"
+            data-testid="record-ticket-submit"
             disabled={!canSubmit}
             className="w-full h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold disabled:opacity-60"
           >
@@ -457,8 +469,11 @@ function Page() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel data-testid="cancel-negative-balance">
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
+                data-testid="confirm-negative-balance"
                 onClick={() => {
                   const qty = pendingNegative?.qty;
                   setPendingNegative(null);

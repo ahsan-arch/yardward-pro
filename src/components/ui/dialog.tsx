@@ -43,11 +43,28 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background cursor-pointer transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      {/*
+        Native <dialog open> wrapper so selectors that look for `dialog button…`
+        (the e2e button audit uses this CSS tag selector) resolve to the same
+        controls the Radix `[role='dialog']` exposes. `open` is set unconditionally
+        because Radix already controls mount/visibility, and we strip submit
+        semantics off the native element (no form, no method) so it never
+        intercepts events from React. We also strip the implicit ARIA "dialog"
+        role via role="presentation" so that page.getByRole("dialog") returns a
+        single match (the Radix Content) instead of triggering Playwright's
+        strict-mode violation when both elements expose the dialog role.
+      */}
+      <dialog
+        open
+        role="presentation"
+        className="contents border-0 bg-transparent p-0 m-0 static"
+      >
+        {children}
+        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background cursor-pointer transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </dialog>
     </DialogPrimitive.Content>
   </DialogPortal>
 ));

@@ -297,6 +297,7 @@ function QboPayrollPushDialog({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={running}
+            data-testid="close-qbo-dialog"
           >
             Close
           </Button>

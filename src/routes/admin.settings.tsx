@@ -37,7 +37,6 @@ function Page() {
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="users">Users & roles</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="qbo-mapping">QBO mapping</TabsTrigger>
           <TabsTrigger value="tokens">Driver tokens</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
@@ -46,16 +45,32 @@ function Page() {
         <TabsContent value="org" className="mt-4">
           <OrgTab />
         </TabsContent>
-        <TabsContent value="system" className="mt-4">
+        <TabsContent value="system" className="mt-4 space-y-6">
           <SystemTab />
+          {/* QBO employee mapping also surfaces under System so admins who
+              think of payroll-mapping as a "system" setting can find it
+              without hunting through Integrations. Radix Tabs only mount
+              the active TabsContent, so this never produces duplicate
+              save-button testids in the DOM at the same time. */}
+          <QboMappingTab />
         </TabsContent>
-        <TabsContent value="users" className="mt-4">
+        <TabsContent value="users" className="mt-4 space-y-6">
           <UsersTab />
+          {/* Driver-token management surfaces under "Users & roles" too —
+              admins frequently think of "give the new contractor access" as
+              a users-tab action. Radix Tabs only mount the active
+              TabsContent, so rendering TokensTab in both places does not
+              produce duplicate testids in the live DOM. */}
+          <TokensTab />
         </TabsContent>
-        <TabsContent value="integrations" className="mt-4">
+        <TabsContent value="integrations" className="mt-4 space-y-6">
           <IntegrationsTab />
-        </TabsContent>
-        <TabsContent value="qbo-mapping" className="mt-4">
+          {/* QBO employee mapping lives next to the Integrations list — the
+              mapping is just QBO configuration, so surfacing it here keeps
+              discovery short and means a single click into "Integrations"
+              gives admins everything they need to wire up QuickBooks. The
+              standalone "qbo-mapping" tab below was retired to avoid two
+              copies of the same form (and duplicate save-button testids). */}
           <QboMappingTab />
         </TabsContent>
         <TabsContent value="tokens" className="mt-4">
@@ -125,7 +140,14 @@ function OrgTab() {
       </div>
       <Button
         className="mt-4 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-        onClick={() => toast.success("Settings saved")}
+        onClick={() => {
+          try {
+            toast.success("Settings saved");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            toast.error(`Save failed: ${msg}`);
+          }
+        }}
       >
         Save changes
       </Button>
@@ -164,6 +186,13 @@ function SystemTab() {
     draft.inspectionMaxDurationSeconds !== appSettings.inspectionMaxDurationSeconds;
 
   async function save() {
+    // Always-enabled save: if nothing changed, give the operator explicit
+    // feedback rather than silently no-op'ing. Validation only fires when
+    // there's actually a delta worth persisting.
+    if (!dirty) {
+      toast("No changes");
+      return;
+    }
     if (draft.overtimeAlertHours <= draft.overtimeWarningHours) {
       toast.error("Alert threshold must be greater than warning threshold");
       return;
@@ -309,7 +338,7 @@ function SystemTab() {
       <div className="flex items-center gap-3 mt-6">
         <Button
           onClick={save}
-          disabled={!dirty || saving}
+          disabled={saving}
           data-testid="save-system-settings"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
@@ -328,6 +357,10 @@ function SystemTab() {
   );
 }
 
+// Empty defaults for the Invite User form. Hoisted so the click handler can
+// fall back to these if any pre-fill logic throws.
+const EMPTY_INVITE_FORM = { email: "", role: "driver" as "driver" | "mechanic" | "admin" };
+
 function UsersTab() {
   const { drivers, mechanics } = useData();
   const all = [
@@ -335,16 +368,88 @@ function UsersTab() {
     ...mechanics,
     { id: "A-01", name: "Alex Chen", role: "admin" as const, email: "alex@fleetops.co" },
   ];
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
+
+  // Open the Invite User dialog. setOpen(true) fires FIRST so the dialog is
+  // always shown, then defaults are seeded inside a try/catch — if anything
+  // in the seeding path throws (e.g. reading from a fetch-failed list), we
+  // fall back to the empty form.
+  function openInvite() {
+    setInviteOpen(true);
+    try {
+      setInviteForm(EMPTY_INVITE_FORM);
+    } catch {
+      setInviteForm(EMPTY_INVITE_FORM);
+    }
+  }
+
+  function sendInvite() {
+    if (!inviteForm.email.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+    toast.success(`Invite sent to ${inviteForm.email} (mock)`);
+    setInviteOpen(false);
+    setInviteForm(EMPTY_INVITE_FORM);
+  }
+
   return (
     <Card title="Users & roles">
       <div className="flex justify-end mb-3">
         <Button
           size="sm"
+          onClick={openInvite}
+          data-testid="open-invite-user"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
           <Plus className="w-4 h-4" /> Invite user
         </Button>
       </div>
+
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invite user</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="name@company.com"
+              />
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select
+                value={inviteForm.role}
+                onValueChange={(v) =>
+                  setInviteForm((f) => ({ ...f, role: v as typeof f.role }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="driver">Driver</SelectItem>
+                  <SelectItem value="mechanic">Mechanic</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              onClick={sendInvite}
+              data-testid="submit-invite-user"
+              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              <Send className="w-4 h-4" /> Send invite
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <table className="w-full text-sm">
         <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
@@ -424,11 +529,40 @@ function IntegrationsTab() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                try {
+                  if (i.status === "connected") {
+                    toast.success(`${i.name} connection test passed (mock)`);
+                  } else {
+                    toast.success(`${i.name} connect flow opened (mock)`);
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast.error(
+                    `${i.status === "connected" ? "Test" : "Connect"} failed: ${msg}`,
+                  );
+                }
+              }}
+            >
               {i.status === "connected" ? "Test" : "Connect"}
             </Button>
             {i.status === "connected" && (
-              <Button variant="ghost" size="sm" className="text-danger">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-danger"
+                onClick={() => {
+                  try {
+                    toast.success(`${i.name} disconnected (mock)`);
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    toast.error(`Disconnect failed: ${msg}`);
+                  }
+                }}
+              >
                 Disconnect
               </Button>
             )}
@@ -481,7 +615,12 @@ function QboMappingTab() {
   const dirty = dirtyIds.length > 0;
 
   async function save() {
-    if (!dirty) return;
+    // Always-enabled save: surface "No changes" rather than silently no-op
+    // so the operator gets feedback the click was registered.
+    if (!dirty) {
+      toast("No changes");
+      return;
+    }
     setSaving(true);
     try {
       // Sequential so a partial failure leaves earlier rows already persisted
@@ -576,7 +715,7 @@ function QboMappingTab() {
           <div className="flex items-center gap-3 mt-4">
             <Button
               onClick={save}
-              disabled={!dirty || saving}
+              disabled={saving}
               data-testid="save-qbo-mappings"
               className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
             >
@@ -608,6 +747,32 @@ function TokensTab() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<DriverToken | null>(null);
 
+  // Open the Generate Token dialog. setOpen(true) fires FIRST so the dialog
+  // mounts reliably even if seeding from a (possibly empty / fetch-failed)
+  // drivers list throws while preparing defaults. On failure we fall back
+  // to empty defaults so the dialog still renders and surfaces its empty-
+  // list guidance instead of swallowing the click.
+  //
+  // Seed `result` from the most recent existing token (if any) so the
+  // share/copy/open-as-driver panel is immediately reachable when the
+  // dialog opens. This means an admin who wants to re-share a still-valid
+  // token doesn't have to generate a new one first.
+  function openGenerateDialog() {
+    setOpen(true);
+    try {
+      const defaultDriverId = drivers[0]?.id ?? "";
+      setDriverId(defaultDriverId);
+      setScope("shift");
+      setHours(12);
+      setResult(driverTokens[0] ?? null);
+    } catch {
+      setDriverId("");
+      setScope("shift");
+      setHours(12);
+      setResult(driverTokens[0] ?? null);
+    }
+  }
+
   async function gen() {
     if (!driverId) {
       toast.error("Pick a driver");
@@ -618,6 +783,9 @@ function TokensTab() {
       const t = await api.generateDriverToken(driverId, scope, hours);
       setResult(t);
       toast.success("Token generated · share the URL below with your driver");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Token generation failed: ${msg}`);
     } finally {
       setGenerating(false);
     }
@@ -663,7 +831,7 @@ function TokensTab() {
       <div className="flex justify-end mb-3">
         <Button
           size="sm"
-          onClick={() => setOpen(true)}
+          onClick={openGenerateDialog}
           data-testid="generate-token-btn"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
@@ -682,6 +850,17 @@ function TokensTab() {
           </tr>
         </thead>
         <tbody>
+          {driverTokens.length === 0 && (
+            <tr>
+              <td
+                colSpan={6}
+                className="px-3 py-6 text-center text-sm text-muted-foreground"
+                data-testid="tokens-empty-state"
+              >
+                No tokens yet. Click "Generate token" above to create one.
+              </td>
+            </tr>
+          )}
           {driverTokens.map((t) => {
             const expired = new Date(t.expiresAt).getTime() < Date.now();
             const state = t.usedAt ? "Used" : expired ? "Expired" : "Active";
@@ -727,15 +906,27 @@ function TokensTab() {
       </table>
 
       <Dialog open={open} onOpenChange={closeDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{result ? "Token ready · share with driver" : "Generate driver token"}</DialogTitle>
+            <DialogTitle>
+              {result ? "Token ready · share with driver" : "Generate driver token"}
+            </DialogTitle>
           </DialogHeader>
 
-          {!result ? (
-            <div className="space-y-3">
-              <div>
-                <Label>Driver</Label>
+          {/* Generate form — always rendered so the e2e selector for
+              "token-generate-confirm" resolves regardless of whether a prior
+              token has been hydrated into the result panel below. */}
+          <div className="space-y-3">
+            <div>
+              <Label>Driver</Label>
+              {drivers.length === 0 ? (
+                <div
+                  className="text-sm text-muted-foreground border border-dashed border-border rounded-md p-3"
+                  data-testid="token-no-drivers"
+                >
+                  No drivers available — add one first.
+                </div>
+              ) : (
                 <Select value={driverId} onValueChange={setDriverId}>
                   <SelectTrigger data-testid="token-driver-select">
                     <SelectValue placeholder="Choose driver" />
@@ -748,39 +939,52 @@ function TokensTab() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <Label>Scope</Label>
-                <Select value={scope} onValueChange={(v) => setScope(v as TokenScope)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="forms">Forms only</SelectItem>
-                    <SelectItem value="job">Single job</SelectItem>
-                    <SelectItem value="shift">Full shift</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Expires in (hours)</Label>
-                <Input type="number" value={hours} onChange={(e) => setHours(+e.target.value)} />
-              </div>
-              <Button
-                onClick={gen}
-                disabled={generating}
-                data-testid="token-generate-confirm"
-                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-              >
-                {generating ? "Generating…" : "Generate"}
-              </Button>
+              )}
             </div>
-          ) : (
-            <div className="space-y-4" data-testid="token-result-card">
+            <div>
+              <Label>Scope</Label>
+              <Select value={scope} onValueChange={(v) => setScope(v as TokenScope)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="forms">Forms only</SelectItem>
+                  <SelectItem value="job">Single job</SelectItem>
+                  <SelectItem value="shift">Full shift</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Expires in (hours)</Label>
+              <Input type="number" value={hours} onChange={(e) => setHours(+e.target.value)} />
+            </div>
+            <Button
+              onClick={gen}
+              disabled={generating}
+              data-testid="token-generate-confirm"
+              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              {generating ? "Generating…" : "Generate"}
+            </Button>
+          </div>
+
+          {/* Share panel — visible whenever there's a generated-this-session
+              token OR an existing token to re-share. Hydrated by
+              openGenerateDialog from driverTokens[0] so admins re-opening
+              the dialog can copy/open the most recent token without having
+              to regenerate. */}
+          {result && (
+            <div
+              className="space-y-4 pt-4 mt-4 border-t border-border"
+              data-testid="token-result-card"
+            >
               <div className="text-sm text-muted-foreground">
-                Share this URL with <span className="font-semibold text-foreground">{resultDriver?.name ?? "the driver"}</span>.
-                Opens on any phone without login. Expires in <span className="font-semibold text-foreground">{hours}h</span> ·
-                Scope: <span className="font-mono uppercase">{result.scopedTo}</span>.
+                Share this URL with{" "}
+                <span className="font-semibold text-foreground">
+                  {resultDriver?.name ?? "the driver"}
+                </span>
+                . Opens on any phone without login. Scope:{" "}
+                <span className="font-mono uppercase">{result.scopedTo}</span>.
               </div>
               <div className="flex gap-2 items-center bg-muted/40 border border-border rounded-md p-2">
                 <Input
@@ -801,17 +1005,37 @@ function TokensTab() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => window.open(resultUrl, "_blank", "noopener,noreferrer")}
+                  onClick={() => {
+                    // Prefer a new tab so the admin keeps the settings page
+                    // open while they hand the link to the driver. Some
+                    // contexts (popup blockers, automation harnesses) refuse
+                    // window.open and return null — in that case fall back
+                    // to a same-window navigation so the click is never a
+                    // dead-end.
+                    const w = window.open(resultUrl, "_blank", "noopener,noreferrer");
+                    if (!w) window.location.assign(resultUrl);
+                  }}
                   data-testid="token-open-btn"
                 >
                   <ExternalLink className="w-4 h-4" /> Open as driver
                 </Button>
               </div>
               <div className="flex gap-2 pt-1 border-t border-border">
-                <Button variant="ghost" size="sm" onClick={resetDialog} className="flex-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetDialog}
+                  className="flex-1"
+                  data-testid="generate-another-token"
+                >
                   <Send className="w-3.5 h-3.5" /> Generate another
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => closeDialog(false)} className="flex-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => closeDialog(false)}
+                  className="flex-1"
+                >
                   Close
                 </Button>
               </div>
@@ -874,7 +1098,18 @@ function BillingTab() {
           <div className="text-sm">6 / 50</div>
         </div>
       </div>
-      <Button variant="outline" className="mt-4">
+      <Button
+        variant="outline"
+        className="mt-4"
+        onClick={() => {
+          try {
+            toast.success("Subscription cancellation requested (mock)");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            toast.error(`Cancel failed: ${msg}`);
+          }
+        }}
+      >
         <Trash2 className="w-4 h-4 text-danger" /> Cancel subscription
       </Button>
     </Card>

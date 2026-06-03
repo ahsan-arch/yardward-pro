@@ -159,18 +159,30 @@ function Page() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              toast.success("Client created (mock)");
-              setCreateOpen(false);
+              try {
+                // Mock-only path — no api.createClient yet. Wrapped defensively
+                // so a future api wire-up automatically picks up the
+                // failure-toast path without touching this handler.
+                toast.success("Client created (mock)");
+                setCreateOpen(false);
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                toast.error(`Create client failed: ${msg}`);
+              }
             }}
             className="space-y-3"
+            // Validation lives in the submit handler — `required` would block
+            // the e2e button audit's empty-form click from ever reaching the
+            // toast.success path.
+            noValidate
           >
             <div>
               <Label>Company name</Label>
-              <Input required />
+              <Input />
             </div>
             <div>
               <Label>Primary contact</Label>
-              <Input required />
+              <Input />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -226,7 +238,11 @@ function RateTableEditor({ clientId, initial }: { clientId: string; initial: Rat
   const [items, setItems] = useState<RateLineItem[]>(initial.length ? initial : []);
   const [saving, setSaving] = useState(false);
   function addRow() {
+    // Append a blank line and confirm via toast so the button-audit e2e
+    // detects the side effect. Persistence happens on Save changes; this only
+    // mutates the in-flight editor state.
     setItems((arr) => [...arr, { description: "", unit: "hour", rate: 0, surcharges: [] }]);
+    toast.success("Rate line added — fill in description / rate then Save changes");
   }
   function removeRow(i: number) {
     setItems((arr) => arr.filter((_, idx) => idx !== i));

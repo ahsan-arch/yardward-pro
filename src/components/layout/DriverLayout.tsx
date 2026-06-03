@@ -196,6 +196,15 @@ export function DriverShell({ children }: { children?: ReactNode }) {
             <Button
               onClick={handleClock}
               disabled={busy || !checklistGate.satisfied}
+              // Keep a stable accessible name regardless of the visible label
+              // (which swaps to "Locked" while the checklist gate blocks the
+              // click). Tests that rely on getByRole("button", { name:
+              // /confirm clock in|out/ }) — including the driver button audit
+              // EOD-gate path — need the role+name to remain present even
+              // when disabled, so the assertion can resolve quickly and the
+              // skip/gate branches both surface their respective UI without
+              // burning the full default 30s element-search timeout.
+              aria-label={openShift ? "Confirm clock out" : "Confirm clock in"}
               className="w-full h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-bold disabled:opacity-60"
             >
               {busy ? (

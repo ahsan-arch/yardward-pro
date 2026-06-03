@@ -46,5 +46,12 @@ export default defineConfig({
         timeout: 120_000,
         stdout: "ignore",
         stderr: "pipe",
+        // Force the test-only dev server onto mock data, overriding
+        // VITE_USE_SUPABASE=true in .env.local. Normal `npm run dev`
+        // (without Playwright) is unaffected. The `production` project
+        // targets the deployed URL and ignores this server entirely.
+        env: {
+          VITE_USE_SUPABASE: "false",
+        },
       },
 });

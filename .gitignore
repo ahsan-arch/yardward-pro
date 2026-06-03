@@ -20,6 +20,13 @@ dist-ssr
 tsc-output.txt
 *.tsbuildinfo
 
+# Workflow / audit artifacts (regenerable, often huge)
+button-audit-*.json
+button-audit-results*/
+_failures-*.txt
+_rerun_*.txt
+failures-extract.csv
+
 # Vercel
 .vercel/
 

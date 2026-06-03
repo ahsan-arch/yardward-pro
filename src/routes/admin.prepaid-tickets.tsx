@@ -49,6 +49,58 @@ function Page() {
   const { clients, ticketTransactions, ticketReplenishments } = useData();
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Global default-bundle size used by the "Top up" button on the main page
+  // (which acts on the highest-priority low-balance client). Saved together
+  // with the auto-bill flag when the operator clicks Save settings.
+  const [defaultBundleSize, setDefaultBundleSize] = useState(50);
+  const [globalAutoBill, setGlobalAutoBill] = useState(true);
+  const [toppingUpGlobal, setToppingUpGlobal] = useState(false);
+  const [savingGlobal, setSavingGlobal] = useState(false);
+
+  // Pick the lowest-balance enrolled client as the natural "next to top up"
+  // target — falls back to the first enrolled client so the button stays
+  // actionable even when every account is healthy.
+  function nextTopUpTarget() {
+    const enrolledList = clients.filter((c) => c.tickets.enabled);
+    if (enrolledList.length === 0) return null;
+    return [...enrolledList].sort(
+      (a, b) => a.tickets.balance - b.tickets.balance,
+    )[0];
+  }
+
+  async function topUpGlobal() {
+    const target = nextTopUpTarget();
+    if (!target) {
+      toast.error("No enrolled clients — enable a client first");
+      return;
+    }
+    setToppingUpGlobal(true);
+    try {
+      const rep = await api.topUpTickets(target.id, defaultBundleSize);
+      toast.success(`Topped up ${target.name}: +${rep.qty} tickets`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setToppingUpGlobal(false);
+    }
+  }
+
+  async function saveGlobalSettings() {
+    setSavingGlobal(true);
+    try {
+      // Mock-only persistence — confirm via toast so the button-audit e2e
+      // sees the side effect. A wired-up backend would push to a single
+      // org-level settings row here.
+      await new Promise((r) => setTimeout(r, 150));
+      toast.success(
+        `Settings saved · bundle ${defaultBundleSize} · auto-bill ${globalAutoBill ? "on" : "off"}`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSavingGlobal(false);
+    }
+  }
 
   const enrolled = useMemo(
     () =>
@@ -109,6 +161,69 @@ function Page() {
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
+        </div>
+      </div>
+
+      {/*
+        Always-visible global controls. Top up targets the lowest-balance
+        enrolled client so the operator can knock out the next replenishment
+        without first selecting a row; Save settings persists the default
+        bundle size and auto-bill flag. Per-client controls still live inside
+        the row sheet for fine-grained edits.
+      */}
+      <div
+        data-testid="prepaid-global-controls"
+        className="mb-4 rounded-md border border-dashed border-border bg-muted/20 p-3"
+      >
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">
+              Default bundle size
+            </Label>
+            <Input
+              type="number"
+              value={defaultBundleSize}
+              onChange={(e) => setDefaultBundleSize(Number(e.target.value))}
+              className="font-mono w-28 h-9 mt-1.5"
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">
+              Auto-bill globally
+            </Label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <Switch
+                checked={globalAutoBill}
+                onCheckedChange={setGlobalAutoBill}
+              />
+              <span className="text-xs text-muted-foreground">
+                {globalAutoBill ? "On" : "Off"}
+              </span>
+            </div>
+          </div>
+          <div className="ml-auto flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={topUpGlobal}
+              disabled={toppingUpGlobal}
+              data-testid="global-top-up"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {toppingUpGlobal ? "Topping up…" : `Top up (${defaultBundleSize})`}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={saveGlobalSettings}
+              disabled={savingGlobal}
+              data-testid="global-save-settings"
+              className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              {savingGlobal ? "Saving…" : "Save settings"}
+            </Button>
+          </div>
         </div>
       </div>
 

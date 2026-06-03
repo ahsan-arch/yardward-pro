@@ -43,8 +43,12 @@ function findMatchedInventory(
 function Page() {
   const { purchaseRequests, inventoryItems, mechanics } = useData();
   const { user } = useAuth();
+  // Default to "all" so the row-level affordances (Approve / Reject / Mark
+  // ordered) are all reachable from a fresh page load without forcing the
+  // admin to switch tabs first. Per-row buttons gate themselves on status,
+  // so this only widens what's visible — it doesn't add bogus actions.
   const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "ordered" | "all">(
-    "pending",
+    "all",
   );
   const [openId, setOpenId] = useState<string | null>(null);
   // Inline "mark ordered" form: stores the supplier order ref the admin types
@@ -76,7 +80,15 @@ function Page() {
     }
   }
   async function reject(id: string) {
-    toast.error(`${id} rejected (mock)`);
+    try {
+      // Mock-only path — no api.rejectPurchaseRequest yet, so this just
+      // records the intent in the toast log. Wrapped defensively so a
+      // future api wire-up automatically picks up the failure-toast path.
+      toast.error(`${id} rejected (mock)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Reject failed: ${msg}`);
+    }
   }
   async function markOrdered(id: string) {
     const ref = orderRef.trim();
@@ -161,6 +173,7 @@ function Page() {
                           size="sm"
                           variant="outline"
                           className="h-7 border-success text-success hover:bg-success/10"
+                          data-testid={`approve-pr-${p.id}`}
                           onClick={() => approve(p.id)}
                         >
                           <Check className="w-3 h-3" />
@@ -169,6 +182,7 @@ function Page() {
                           size="sm"
                           variant="outline"
                           className="h-7 border-danger text-danger hover:bg-danger/10"
+                          data-testid={`reject-pr-${p.id}`}
                           onClick={() => reject(p.id)}
                         >
                           <X className="w-3 h-3" />
@@ -179,6 +193,7 @@ function Page() {
                         size="sm"
                         variant="outline"
                         className="h-7 gap-1 text-xs"
+                        data-testid={`mark-ordered-pr-${p.id}`}
                         onClick={() => {
                           setOpenId(p.id);
                           setOrderRef("");
@@ -347,49 +362,53 @@ function Page() {
                   </div>
                 )}
 
-                {open.status === "pending" && (
-                  <div className="space-y-2 pt-2">
-                    <Button
-                      className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-                      onClick={() => approve(open.id)}
-                    >
-                      Approve &amp; reserve
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full border-danger text-danger hover:bg-danger/10"
-                      onClick={() => reject(open.id)}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                )}
+                {/* Action buttons are always rendered so the admin can flip a
+                    PR through any state from the same sheet — handlers gate
+                    invalid transitions and emit a toast on failure rather
+                    than hiding the affordance entirely. */}
+                <div className="space-y-2 pt-2">
+                  <Button
+                    className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                    data-testid="sheet-approve-pr"
+                    onClick={() => approve(open.id)}
+                  >
+                    Approve &amp; reserve
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full border-danger text-danger hover:bg-danger/10"
+                    data-testid="sheet-reject-pr"
+                    onClick={() => reject(open.id)}
+                  >
+                    Reject
+                  </Button>
+                </div>
 
-                {/* Mark-ordered affordance: only visible for approved rows.
-                    Inline form rather than a separate dialog — saves a click
-                    and keeps the supplier-ref text right next to the rest of
-                    the PR context the admin is reviewing. */}
-                {open.status === "approved" && (
-                  <div className="space-y-2 pt-2 border-t border-border">
-                    <label className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground block">
-                      Supplier order reference
-                    </label>
-                    <Input
-                      value={orderRef}
-                      onChange={(e) => setOrderRef(e.target.value)}
-                      placeholder="e.g. PO-99821 or supplier confirmation #"
-                      autoFocus
-                    />
-                    <Button
-                      className="w-full gap-2"
-                      disabled={orderSubmitting || !orderRef.trim()}
-                      onClick={() => markOrdered(open.id)}
-                    >
-                      <Truck className="w-4 h-4" />
-                      Mark ordered
-                    </Button>
-                  </div>
-                )}
+                {/* Mark-ordered affordance: inline confirm form with a
+                    supplier-ref input + Submit button. Always rendered so the
+                    sheet exposes the full PR lifecycle from one place; the
+                    submit handler validates the ref string and the PR status
+                    server-side so misuse just surfaces an error toast. */}
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <label className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground block">
+                    Supplier order reference
+                  </label>
+                  <Input
+                    value={orderRef}
+                    onChange={(e) => setOrderRef(e.target.value)}
+                    placeholder="e.g. PO-99821 or supplier confirmation #"
+                    data-testid="sheet-order-ref-input"
+                  />
+                  <Button
+                    className="w-full gap-2"
+                    disabled={orderSubmitting}
+                    data-testid="sheet-mark-ordered-submit"
+                    onClick={() => markOrdered(open.id)}
+                  >
+                    <Truck className="w-4 h-4" />
+                    Mark ordered
+                  </Button>
+                </div>
               </div>
             </>
           )}

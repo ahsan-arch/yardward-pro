@@ -90,6 +90,47 @@ function Page() {
   const [ppe, setPpe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ odo?: string; note?: string }>({});
+  // Form-scoped idempotency key — minted once when the form mounts and reused
+  // by both the online and offline submit paths so the partial unique index
+  // on time_entries (clock_in_idempotency_key) can dedupe a retried replay.
+  // Mirrors the pattern used in driver.inspection.tsx.
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `sod-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+  );
+
+  // Background submit: fires after we've already shown the success toast and
+  // navigated away. If the server call fails we surface a toast.error with a
+  // "Resubmit" CTA that re-enqueues the original payload. Because the form is
+  // unmounted by the time this catch can run, we can't read the latest input
+  // state — the payload is closed over at submit-time, which is exactly what
+  // we want for a true replay.
+  function fireAndForget(
+    payload: Parameters<typeof api.submitStartOfDay>[0],
+    finalize: () => Promise<void>,
+  ) {
+    void (async () => {
+      try {
+        await api.submitStartOfDay(payload);
+        await finalize();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        toast.error(`Start-of-day failed to sync: ${msg}`, {
+          action: {
+            label: "Resubmit",
+            onClick: () => {
+              // Re-enqueue so the offline-queue flusher (or the next online
+              // attempt) replays the payload. The idempotencyKey rides
+              // along, so even if the original write actually landed, the
+              // server will dedupe rather than double-submit.
+              void offlineQueue.enqueue({ kind: "startOfDay", payload });
+            },
+          },
+        });
+      }
+    })();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,6 +156,7 @@ function Page() {
         fuelLevel: fuel,
         condition: cond,
         gps: gps.coords,
+        idempotencyKey,
       };
       // Single-use enforcement for scope='forms' tokens: this is the entry
       // point the dispatcher hands a driver who only needs to file paperwork
@@ -122,16 +164,27 @@ function Page() {
       // burn it so the same URL can't be re-opened on another phone tomorrow.
       const token = sessionStorage.getItem("fo:driver-token");
       const tokenScope = sessionStorage.getItem("fo:driver-token-scope");
-      const isFormsToken = token && tokenScope === "forms";
+      const isFormsToken = !!(token && tokenScope === "forms");
       if (!isOnline) {
+        // Offline: must enqueue before navigating — there's no live network
+        // call to optimistically defer. The idempotencyKey on the payload is
+        // preserved by offlineQueue.enqueue (it only mints one when missing).
         await offlineQueue.enqueue({ kind: "startOfDay", payload });
         if (isFormsToken && token) {
           await offlineQueue.enqueue({ kind: "consumeDriverToken", payload: token });
         }
         toast.success("Saved offline — will sync when connection returns");
         nav({ to: "/driver" });
-      } else {
-        await api.submitStartOfDay(payload);
+        return;
+      }
+      // Online optimistic path: show the success toast and route to the next
+      // step immediately. The actual api.submitStartOfDay call runs in the
+      // background; on failure we toast a Resubmit CTA that re-enqueues the
+      // payload (the idempotencyKey makes that safe even if the write
+      // actually landed before the network blip).
+      toast.success("Start-of-day form submitted · finish the tool check next");
+      nav({ to: "/driver/tool-checklist", search: { kind: "start_of_shift" } });
+      fireAndForget(payload, async () => {
         if (isFormsToken && token) {
           const claimed = await api.consumeDriverToken(token);
           if (claimed) {
@@ -142,11 +195,7 @@ function Page() {
             );
           }
         }
-        toast.success("Start-of-day form submitted · finish the tool check next");
-        // Route into the start-of-shift tool check so the clock-in gate is
-        // satisfied without the driver having to hunt for the form tile.
-        nav({ to: "/driver/tool-checklist", search: { kind: "start_of_shift" } });
-      }
+      });
     } finally {
       setLoading(false);
     }

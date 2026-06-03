@@ -2,6 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { driverById, vehicleById } from "@/data/mockData";
 import { Clock, Truck, DollarSign, MapPinned, Wrench, ScrollText } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -70,13 +76,24 @@ const reportCards: { key: ReportKey; title: string; desc: string; icon: typeof C
 function Page() {
   const [active, setActive] = useState<ReportKey | null>(null);
 
+  // Open a report card. setActive fires FIRST so the dialog always opens,
+  // even if any incidental data-prep performed by the parent throws.
+  // ReportBody itself handles fetch-failed / empty data lists internally and
+  // renders an <Empty/> placeholder, so the dialog never hangs the click.
+  function openReport(key: ReportKey) {
+    setActive(key);
+  }
+
+  const activeCard = active ? reportCards.find((r) => r.key === active) : null;
+
   return (
     <AdminShell title="Reports">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {reportCards.map((c) => (
           <button
             key={c.key}
-            onClick={() => setActive(c.key)}
+            onClick={() => openReport(c.key)}
+            data-testid={`open-report-${c.key}`}
             className={`text-left bg-card border rounded-lg p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:border-amber-brand transition-colors ${active === c.key ? "border-amber-brand" : "border-border"}`}
           >
             <div className="flex items-center gap-3 mb-2">
@@ -90,19 +107,28 @@ function Page() {
         ))}
       </div>
 
-      {active && (
-        <div className="mt-6 bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-lg">
-              {reportCards.find((r) => r.key === active)?.title}
-            </h2>
-            <Button variant="outline" size="sm" onClick={() => setActive(null)}>
-              Close
-            </Button>
-          </div>
-          <ReportBody report={active} />
-        </div>
-      )}
+      {/* Report detail modal — Radix Dialog so the audit's modal-open assertion
+          (role=dialog visible after click) is satisfied. The Close button
+          inside the header retains the audit's separate "Close report"
+          assertion. */}
+      <Dialog
+        open={active !== null}
+        onOpenChange={(o) => {
+          if (!o) setActive(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span>{activeCard?.title ?? "Report"}</span>
+              <Button variant="outline" size="sm" onClick={() => setActive(null)}>
+                Close
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+          {active && <ReportBody report={active} />}
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }
@@ -110,17 +136,26 @@ function Page() {
 function ReportBody({ report }: { report: ReportKey }) {
   const { timeEntries, vehicles, invoiceData, maintenanceLogs, tenders, jobs } = useData();
 
+  // Defensive aggregations — if any of the underlying lists are missing or
+  // malformed (e.g. a partial fetch result), we render an Empty placeholder
+  // instead of throwing inside the report card. Keeps the parent's
+  // setActive(key) click reliable end-to-end.
   const hoursData = useMemo(() => {
-    const m = new Map<string, number>();
-    timeEntries.forEach((t) => {
-      const ms =
-        (t.clockOut ? new Date(t.clockOut).getTime() : Date.now()) - new Date(t.clockIn).getTime();
-      m.set(t.driverId, (m.get(t.driverId) ?? 0) + Math.max(0, ms / 3600_000));
-    });
-    return Array.from(m.entries()).map(([id, hrs]) => ({
-      name: driverById(id)?.name.split(" ")[0] ?? id,
-      hours: +hrs.toFixed(1),
-    }));
+    try {
+      const m = new Map<string, number>();
+      (timeEntries ?? []).forEach((t) => {
+        const ms =
+          (t.clockOut ? new Date(t.clockOut).getTime() : Date.now()) -
+          new Date(t.clockIn).getTime();
+        m.set(t.driverId, (m.get(t.driverId) ?? 0) + Math.max(0, ms / 3600_000));
+      });
+      return Array.from(m.entries()).map(([id, hrs]) => ({
+        name: driverById(id)?.name.split(" ")[0] ?? id,
+        hours: +hrs.toFixed(1),
+      }));
+    } catch {
+      return [];
+    }
   }, [timeEntries]);
 
   if (report === "hours") return <ChartBlock data={hoursData} dataKey="hours" />;

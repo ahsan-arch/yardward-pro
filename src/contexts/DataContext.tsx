@@ -195,6 +195,35 @@ type Ctx = {
 const DataCtx = createContext<Ctx | null>(null);
 
 const TOKENS_STORAGE_KEY = "fo:driver-tokens:v1";
+// Stores { vehicleId: isoTimestamp } for the most recent pre-trip stamp per
+// vehicle. We persist this so the lockout flow's "submit inspection → land on
+// /driver → bounce to /driver/start-of-day" sequence survives a full-page
+// reload (Playwright's page.goto resets React state). The seed file leaves
+// lastPretripAt null so the lockout still fires on first visit.
+const VEHICLE_PRETRIP_STORAGE_KEY = "fo:vehicle-pretrip:v1";
+
+function readPersistedPretripStamps(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(VEHICLE_PRETRIP_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePersistedPretripStamp(vehicleId: string, at: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const current = readPersistedPretripStamps();
+    current[vehicleId] = at;
+    localStorage.setItem(VEHICLE_PRETRIP_STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    /* localStorage quota / disabled — silently ignore, the in-memory stamp still works */
+  }
+}
 
 function readPersistedTokens(): DriverToken[] {
   if (typeof window === "undefined") return [];
@@ -261,10 +290,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // tables in mechanic.maintenance and admin.vehicles/$id reflect the insert.
   const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>(seed.maintenanceLogs);
   const [fuelLogs, setFuelLogs] = useState<FuelLog[]>(seed.fuelLogs);
-  // Mechanic queue. No seed array — empty in mock mode until an inspection
-  // fails or an admin opens one manually. Hydrated from Supabase below.
+  // Mechanic queue. Seeds with a small fixture so the mock-mode mechanic
+  // /work-orders surface has at least one queued row to render (the e2e
+  // Claim button audit needs a row to act on). Supabase hydration below
+  // unconditionally replaces this with the canonical server array.
   const [maintenanceWorkOrders, setMaintenanceWorkOrders] = useState<MaintenanceWorkOrder[]>(
-    [],
+    seed.maintenanceWorkOrders,
   );
   // Rate tables drive the line-item rate lookup in api.approveWorkOrder. Seed
   // values cover the two mock clients (RT-01, RT-02); Supabase hydration
@@ -273,7 +304,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Vehicles are local state so the pre-trip lockout flow can stamp
   // `lastPretripAt` reactively. Seed values keep null lastPretripAt so the
   // lockout fires on first render until a fresh circle-check is recorded.
-  const [vehicles, setVehicles] = useState<Vehicle[]>(seed.vehicles);
+  // We also merge in any persisted pretrip stamps (see
+  // VEHICLE_PRETRIP_STORAGE_KEY) so a submitted inspection survives a full
+  // page reload — without this, the lockout reappears on next navigation
+  // because React state is wiped.
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
+    const stamps = readPersistedPretripStamps();
+    if (!Object.keys(stamps).length) return seed.vehicles;
+    return seed.vehicles.map((v) =>
+      stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v,
+    );
+  });
   // App-wide tunables (inspection window, OT thresholds, GPS tolerance).
   // Defaults match the SQL seed; hydrated from public.app_settings below when
   // a Supabase session is available, and writeable via api.updateAppSettings.
@@ -647,8 +688,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
   const setVehicleLastPretrip = useCallback(
-    (vehicleId: string, at: string) =>
-      setVehicles((arr) => arr.map((v) => (v.id === vehicleId ? { ...v, lastPretripAt: at } : v))),
+    (vehicleId: string, at: string) => {
+      // Persist before the React state update so a quick page reload (e.g.
+      // Playwright's page.goto right after a navigate) still sees the stamp.
+      writePersistedPretripStamp(vehicleId, at);
+      setVehicles((arr) => arr.map((v) => (v.id === vehicleId ? { ...v, lastPretripAt: at } : v)));
+    },
     [],
   );
   const updateClientTicketSettings = useCallback(

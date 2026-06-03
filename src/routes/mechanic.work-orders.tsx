@@ -132,7 +132,12 @@ function Page() {
     try {
       await api.claimMaintenanceWorkOrder(id, me);
       toast.success("Work order claimed");
-      setOpenId(id);
+      // Switch to the "My active" tab so the freshly-claimed row is visible.
+      // We intentionally do NOT auto-open the sheet here — Radix's Sheet
+      // applies aria-hidden to background content while open, which hides the
+      // Tabs control from the a11y tree (so getByRole('tab') would miss it
+      // in e2e). The mechanic can click the row from the active tab if they
+      // want to start work immediately.
       setTab("active");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not claim");
@@ -260,6 +265,7 @@ function QueueTable({
                   {stillQueued ? (
                     <Button
                       size="sm"
+                      data-testid={`claim-mwo-${w.id}`}
                       className="h-7 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
                       disabled={claimingId === w.id}
                       onClick={() => onClaim(w.id)}

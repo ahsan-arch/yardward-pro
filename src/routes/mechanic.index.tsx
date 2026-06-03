@@ -108,6 +108,9 @@ function Page() {
       setReason("");
       setCost("");
       setOverrodeStock(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Submit failed: ${msg}`);
     } finally {
       setLoading(false);
     }

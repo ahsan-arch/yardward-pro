@@ -41,6 +41,13 @@ function Page() {
   const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ odo?: string; summary?: string }>({});
+  // Form-scoped idempotency key — stable across retries so the back-end
+  // partial unique index can dedupe replays.
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `eod-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+  );
 
   const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
   const hours = openShift
@@ -61,6 +68,45 @@ function Page() {
     );
   }, [openShift, toolChecklistSubmissions, user.id]);
 
+  // Background submit closure. We capture the payload + token state at submit
+  // time so the catch handler doesn't try to read unmounted form state. On
+  // error we surface a Resubmit CTA that re-enqueues into the offline queue
+  // (idempotent on the server via the form-scoped key).
+  function fireAndForget(
+    payload: Parameters<typeof api.submitEndOfDay>[0],
+    burnToken: string | null,
+  ) {
+    void (async () => {
+      try {
+        await api.submitEndOfDay(payload);
+        if (burnToken) {
+          const claimed = await api.consumeDriverToken(burnToken);
+          if (claimed) {
+            clearDriverTokenSession();
+          } else {
+            toast.warning(
+              "Shift closed, but the access link couldn't be revoked. Contact dispatch if it was reshared.",
+            );
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        toast.error(`End-of-day failed to sync: ${msg}`, {
+          action: {
+            label: "Resubmit",
+            onClick: () => {
+              void offlineQueue.enqueue({
+                kind: "endOfDay",
+                payload,
+                consumeTokenAfter: burnToken,
+              });
+            },
+          },
+        });
+      }
+    })();
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!endChecklistDone) {
@@ -80,6 +126,7 @@ function Page() {
         fuelLevel: fuel,
         summary,
         gps: gps.coords,
+        idempotencyKey,
       };
       const token = sessionStorage.getItem("fo:driver-token");
       // Only burn the token if its scope is shift-terminal. A "forms" scope
@@ -88,7 +135,8 @@ function Page() {
       // the next form they need on the same link. Mirrors the gating
       // pattern in driver.work-order.tsx (scope === 'job').
       const tokenScope = sessionStorage.getItem("fo:driver-token-scope");
-      const isShiftToken = tokenScope === "shift";
+      const isShiftToken = !!(token && tokenScope === "shift");
+      const burnToken = isShiftToken && token ? token : null;
       if (!isOnline) {
         // Couple the consume to the submission via consumeTokenAfter so the
         // token is burned only after the EOD lands on the server. A separate
@@ -97,34 +145,18 @@ function Page() {
         await offlineQueue.enqueue({
           kind: "endOfDay",
           payload,
-          consumeTokenAfter: token && isShiftToken ? token : null,
+          consumeTokenAfter: burnToken,
         });
         toast.success("Saved offline — will sync when connection returns");
-      } else {
-        await api.submitEndOfDay(payload);
-        // Single-use enforcement: only NOW (after a successful submit) AND
-        // only when the token was scoped to "shift" do we burn it.
-        if (token && isShiftToken) {
-          const claimed = await api.consumeDriverToken(token);
-          if (claimed) {
-            // Clears every fo:driver-token-* key including the new
-            // -expires-at / -driver-id slots written by /t/<token>.
-            // Routes used to clear the three legacy keys by name, which
-            // would leave the new keys dangling and keep the scope-gate
-            // guard happy for the rest of the tab's lifetime.
-            clearDriverTokenSession();
-          } else {
-            // The submit succeeded but the token wasn't burned (already used,
-            // expired, or RPC error). The shift IS closed; surface a warning
-            // so the dispatcher knows the link couldn't be revoked atomically.
-            toast.warning(
-              "Shift closed, but the access link couldn't be revoked. Contact dispatch if it was reshared.",
-            );
-          }
-        }
-        toast.success("End-of-day submitted · shift closed");
+        nav({ to: "/driver" });
+        return;
       }
+      // Online optimistic path: navigate immediately so the driver isn't
+      // stuck on a spinner if the network is slow. The fireAndForget call
+      // handles success-side token burn and error-side Resubmit CTA.
+      toast.success("End-of-day submitted · shift closed");
       nav({ to: "/driver" });
+      fireAndForget(payload, burnToken);
     } finally {
       setLoading(false);
     }

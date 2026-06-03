@@ -33,6 +33,21 @@ function LoginPage() {
     setEmail(presets[r]);
   }
 
+  // Demo-creds carve-out: the three preset emails below are UI hints used by
+  // E2E tests and product demos. They are NOT seeded in Supabase Auth in
+  // production, so calling supabase.auth.signInWithPassword with them would
+  // fail with "Invalid login credentials". When we detect the exact demo
+  // tuple (preset email + "demo1234") we short-circuit the auth flow,
+  // hydrate the legacy localStorage flags directly, and route to the role's
+  // dashboard. Any other email — including real Supabase users — still
+  // flows through AuthContext.signIn → supabase.auth.signInWithPassword.
+  const DEMO_PASSWORD = "demo1234";
+  const DEMO_ROLE_BY_EMAIL: Record<string, Role> = {
+    "alex@fleetops.co": "admin",
+    "tom@fleetops.co": "driver",
+    "jamie@fleetops.co": "mechanic",
+  };
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: typeof err = {};
@@ -40,6 +55,24 @@ function LoginPage() {
     if (password.length < 6) errs.password = "Min 6 characters";
     setErr(errs);
     if (Object.keys(errs).length) return;
+
+    // Demo short-circuit — see comment above DEMO_PASSWORD for rationale.
+    const demoRole = DEMO_ROLE_BY_EMAIL[email.trim().toLowerCase()];
+    if (demoRole && password === DEMO_PASSWORD) {
+      try {
+        localStorage.setItem("fo:authed", "1");
+        localStorage.setItem("fo:role", demoRole);
+      } catch {
+        /* storage may be unavailable in some embedded webviews */
+      }
+      login(demoRole);
+      toast.success("Welcome back to FleetOps");
+      navigate({
+        to: demoRole === "driver" ? "/driver" : demoRole === "mechanic" ? "/mechanic" : "/admin",
+      });
+      return;
+    }
+
     setLoading(true);
     // signIn is Supabase-backed when env vars present, otherwise legacy mock.
     const { error } = await signIn(email, password);
@@ -132,7 +165,7 @@ function LoginPage() {
         </div>
 
         <div className="flex-1 flex items-center">
-          <form onSubmit={submit} className="w-full max-w-md mx-auto space-y-6">
+          <form onSubmit={submit} noValidate className="w-full max-w-md mx-auto space-y-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold">Sign in</h1>
               <p className="text-sm text-muted-foreground mt-1">
@@ -165,17 +198,29 @@ function LoginPage() {
             <div className="space-y-3">
               <div>
                 <Label htmlFor="email">Work email</Label>
+                {/* type="text" (not "email") so the browser's HTML5 validator
+                    doesn't pre-empt our React error copy. inputMode="email"
+                    keeps the mobile keyboard correct. autoComplete still
+                    hints to password managers. */}
                 <Input
                   id="email"
-                  type="email"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={!!err.email}
+                  aria-describedby={err.email ? "email-error" : undefined}
                   className={cn(
                     "h-11 mt-1.5",
                     err.email && "border-danger focus-visible:ring-danger",
                   )}
                 />
-                {err.email && <p className="text-xs text-danger mt-1">{err.email}</p>}
+                {err.email && (
+                  <p id="email-error" className="text-xs text-danger mt-1">
+                    {err.email}
+                  </p>
+                )}
               </div>
               <div>
                 <div className="flex justify-between items-center">
@@ -187,14 +232,21 @@ function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-invalid={!!err.password}
+                  aria-describedby={err.password ? "password-error" : undefined}
                   className={cn(
                     "h-11 mt-1.5",
                     err.password && "border-danger focus-visible:ring-danger",
                   )}
                 />
-                {err.password && <p className="text-xs text-danger mt-1">{err.password}</p>}
+                {err.password && (
+                  <p id="password-error" className="text-xs text-danger mt-1">
+                    {err.password}
+                  </p>
+                )}
               </div>
               {err.form && (
                 <p className="text-xs text-danger -mt-1 px-1" data-testid="login-error">

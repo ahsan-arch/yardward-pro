@@ -97,6 +97,75 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+// Mock error_log rows used when Supabase isn't wired up. Kept small but
+// covers a couple of severities + sources so the filters have something
+// meaningful to operate on.
+const MOCK_ERROR_ROWS: ErrorRow[] = [
+  {
+    id: "ERR-MOCK-1",
+    created_at: new Date(Date.now() - 35 * 60_000).toISOString(),
+    source: "frontend",
+    severity: "error",
+    error_code: "MOCK_RENDER",
+    message: "TypeError reading 'name' of undefined in DriverCard",
+    stack: "at DriverCard (driver-card.tsx:42:18)\nat renderWithHooks (...)",
+    user_id: "U-1",
+    session_id: "S-abc",
+    url: "/admin/drivers",
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/124",
+    function_name: null,
+    context: { route: "/admin/drivers", driverId: "D-99" },
+    resolved_at: null,
+    resolved_by: null,
+    resolution_notes: null,
+    profiles: { name: "Alex Chen", email: "alex@fleetops.co" },
+  },
+  {
+    id: "ERR-MOCK-2",
+    created_at: new Date(Date.now() - 6 * 3600_000).toISOString(),
+    source: "edge_function",
+    severity: "critical",
+    error_code: "QBO_PUSH_TIMEOUT",
+    message: "Edge function qbo-push timed out after 30s",
+    stack: null,
+    user_id: null,
+    session_id: null,
+    url: null,
+    user_agent: null,
+    function_name: "qbo-push",
+    context: { periodStart: "2026-05-18", periodEnd: "2026-05-25" },
+    resolved_at: null,
+    resolved_by: null,
+    resolution_notes: null,
+    profiles: null,
+  },
+];
+
+// Mock dead_letter_submissions rows used when Supabase isn't wired up so
+// the Requeue admin flow is exercisable without a backend.
+const MOCK_DLQ_ROWS: DeadLetterRow[] = [
+  {
+    id: "DLQ-MOCK-1",
+    kind: "tool_checklist",
+    payload: {
+      kind: "start_of_shift",
+      driverId: "D-04",
+      items: [
+        { id: "wrench-15mm", status: "missing" },
+        { id: "tape-measure", status: "ok" },
+      ],
+      submittedAt: new Date(Date.now() - 25 * 3600_000).toISOString(),
+    },
+    queued_at: new Date(Date.now() - 25 * 3600_000).toISOString(),
+    retry_count: 5,
+    last_error: "Network request failed (offline)",
+    last_attempt_at: new Date(Date.now() - 24 * 3600_000).toISOString(),
+    moved_to_dead_letter_at: new Date(Date.now() - 24 * 3600_000).toISOString(),
+    user_id: "U-2",
+    profiles: { name: "Sam Patel", email: "sam@fleetops.co" },
+  },
+];
+
 function truncate(s: string, n: number): string {
   if (!s) return "";
   return s.length > n ? s.slice(0, n) + "…" : s;
@@ -221,7 +290,10 @@ function ErrorsTab() {
 
   const load = useCallback(async () => {
     if (!USE_SUPABASE || !supabase) {
-      setRows([]);
+      // Mock-mode rows so admins (and e2e) can exercise the resolve flow
+      // without a live Supabase. These get re-filtered by the same
+      // search / source / severity controls as real rows would.
+      setRows(MOCK_ERROR_ROWS);
       return;
     }
     setLoading(true);
@@ -282,8 +354,14 @@ function ErrorsTab() {
   }, [rows]);
 
   async function markResolved(id: string) {
+    // Mock-mode path: there's no Supabase to write to, but the operator
+    // still clicked "Mark resolved", so we optimistically drop the row
+    // from the local view and emit a success toast. This keeps the UI
+    // exercised in tests / demos without pretending we hit a real DB.
     if (!USE_SUPABASE || !supabase) {
-      toast.error("Supabase is not configured");
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      setOpenId(null);
+      toast.success("Error marked resolved (mock)");
       return;
     }
     if (!user?.id) {
@@ -291,29 +369,38 @@ function ErrorsTab() {
       return;
     }
     setSubmitting(true);
-    const sb = supabase as unknown as {
-      from: (t: string) => {
-        update: (vals: Record<string, unknown>) => {
-          eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>;
+    try {
+      const sb = supabase as unknown as {
+        from: (t: string) => {
+          update: (vals: Record<string, unknown>) => {
+            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>;
+          };
         };
       };
-    };
-    const { error } = await sb
-      .from("error_log")
-      .update({
-        resolved_at: nowIso(),
-        resolved_by: user.id,
-        resolution_notes: resolutionNotes || null,
-      })
-      .eq("id", id);
-    setSubmitting(false);
-    if (error) {
-      toast.error(`Could not resolve: ${error.message}`);
-      return;
+      const { error } = await sb
+        .from("error_log")
+        .update({
+          resolved_at: nowIso(),
+          resolved_by: user.id,
+          resolution_notes: resolutionNotes || null,
+        })
+        .eq("id", id);
+      if (error) {
+        toast.error(`Could not resolve: ${error.message}`);
+        return;
+      }
+      // Real-write success path: toast unconditionally before refreshing
+      // so the operator gets immediate feedback even if the subsequent
+      // reload fetch is slow or itself throws.
+      toast.success("Error marked resolved");
+      setOpenId(null);
+      load();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Could not resolve: ${msg}`);
+    } finally {
+      setSubmitting(false);
     }
-    toast.success("Error marked resolved");
-    setOpenId(null);
-    load();
   }
 
   return (
@@ -392,11 +479,13 @@ function ErrorsTab() {
         <table className="w-full text-sm min-w-[900px]" data-testid="error-log-table">
           <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
-              {["Created", "Source", "Severity", "Code", "Message", "User", "Status"].map((h) => (
-                <th key={h} className="text-left font-medium px-4 py-3">
-                  {h}
-                </th>
-              ))}
+              {["Created", "Source", "Severity", "Code", "Message", "User", "Status", ""].map(
+                (h) => (
+                  <th key={h} className="text-left font-medium px-4 py-3">
+                    {h}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
@@ -437,13 +526,32 @@ function ErrorsTab() {
                       {isResolved ? "Resolved" : "Open"}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    {!isResolved && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          // Stop the row's onClick from also opening the
+                          // sheet — the inline resolve action is meant to
+                          // be a one-click triage from the table.
+                          e.stopPropagation();
+                          markResolved(r.id);
+                        }}
+                        data-testid={`mark-resolved-${r.id}`}
+                        disabled={submitting}
+                      >
+                        Mark resolved
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-10 text-center text-sm text-muted-foreground"
                 >
                   {loading
@@ -581,7 +689,9 @@ function DeadLetterTab() {
 
   const load = useCallback(async () => {
     if (!USE_SUPABASE || !supabase) {
-      setRows([]);
+      // Mock-mode rows so the DLQ tab has something to act on without
+      // a real Supabase connection (e2e + demo + designer review).
+      setRows(MOCK_DLQ_ROWS);
       return;
     }
     setLoading(true);
@@ -609,6 +719,17 @@ function DeadLetterTab() {
   );
 
   async function requeue(id: string) {
+    // Mock-mode shortcut: api.requeueDeadLetter returns
+    // { ok: false, reason: "supabase unavailable" } when supabase is
+    // off, which would surface as a toast.error. For the in-memory
+    // path we treat the click as success — the row is removed locally
+    // and the operator gets a success toast so the UI is exercisable.
+    if (!USE_SUPABASE || !supabase) {
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      setOpenId(null);
+      toast.success("Requeued (mock) — will retry on next flush");
+      return;
+    }
     setRequeueing(true);
     try {
       const result = await api.requeueDeadLetter(id);
@@ -654,6 +775,7 @@ function DeadLetterTab() {
                 "Last error",
                 "Queued at",
                 "User",
+                "",
               ].map((h) => (
                 <th key={h} className="text-left font-medium px-4 py-3">
                   {h}
@@ -684,13 +806,30 @@ function DeadLetterTab() {
                     {new Date(r.queued_at).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-xs">{profileName}</td>
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        // Inline requeue from the row so admins can act
+                        // without opening the sheet for every payload.
+                        e.stopPropagation();
+                        requeue(r.id);
+                      }}
+                      data-testid="dlq-requeue"
+                      disabled={requeueing}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Requeue
+                    </Button>
+                  </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-sm text-muted-foreground"
                 >
                   {loading ? "Loading…" : "No rows."}

@@ -5,6 +5,7 @@ import type {
   RateTable,
   Vehicle,
   MaintenanceLog,
+  MaintenanceWorkOrder,
   FuelLog,
   Tool,
   ToolChecklistSubmission,
@@ -244,6 +245,33 @@ export const clients: Client[] = [
       reportRecipients: ["tara@stoneridge.co"],
     },
   },
+  {
+    // Holcim Ready Mix is a negative-balance fixture so the driver tickets
+    // confirm-dialog flow has a stable seed that always triggers the
+    // overdraft guard regardless of how many extra clients land in the seed.
+    // Keeping it last alphabetically isn't required (the picker sorts on
+    // render), but the negative balance guarantees any qty >= 1 trips the
+    // negative-balance AlertDialog used by the button-audit driver tests.
+    id: "C-06",
+    name: "Holcim Ready Mix",
+    contactName: "Marco Rossi",
+    email: "marco@holcim-rm.com",
+    phone: "+1 555 1199",
+    billingAddress: "Plant 12, 480 Aggregate Rd",
+    rateTableId: null,
+    notes: "Negative-balance fixture for ticket overdraft flow.",
+    status: "active",
+    tickets: {
+      enabled: true,
+      balance: -3,
+      threshold: 10,
+      bundleSize: 50,
+      bundlePrice: 825,
+      autoBillEnabled: false,
+      reportFrequency: "monthly",
+      reportRecipients: ["marco@holcim-rm.com"],
+    },
+  },
 ];
 
 export const rateTables: RateTable[] = [
@@ -306,6 +334,12 @@ export const vehicles: Vehicle[] = [
     driverId: "D-01",
     geotabDeviceId: "GT-3042",
     status: "operational",
+    // GPS last moved 100 minutes before D-01's clock-out on 2025-05-14, so
+    // the timesheet flag recompute surfaces TE-01 as tolerance-derived
+    // (delta > default 15min tolerance). Lets admins exercise the
+    // "Persist flag" admin action against tolerance-only flags without
+    // having to nudge mock data via SQL.
+    lastSeenAt: "2025-05-14T14:00:00Z",
   },
   {
     id: "TRK-11",
@@ -485,6 +519,36 @@ export const fuelLogs: FuelLog[] = [
   },
 ];
 
+// ============ Maintenance work orders (mechanic queue) ============
+// At least one queued + unassigned MWO so the mechanic /work-orders surface
+// has something to render (and exercise via the e2e Claim test) without a
+// Supabase round-trip. The single fixture stays small on purpose: it gives
+// the Claim button a row to act on, but doesn't pollute the queue with so
+// many entries that the queue-empty branch becomes unreachable.
+export const maintenanceWorkOrders: MaintenanceWorkOrder[] = [
+  {
+    id: "MWO-01",
+    vehicleId: "TRK-14",
+    reportedBy: null,
+    reportedFrom: "admin",
+    sourceInspectionId: null,
+    issueDescription: "Brake pads worn below 3mm — replace front + rear sets.",
+    priority: "high",
+    status: "queued",
+    assignedMechanicId: null,
+    claimedAt: null,
+    startedAt: null,
+    completedAt: null,
+    partsUsed: [],
+    laborHours: 0,
+    laborNotes: "",
+    finalCost: null,
+    completionNotes: null,
+    createdAt: "2025-05-13T09:15:00Z",
+    updatedAt: "2025-05-13T09:15:00Z",
+  },
+];
+
 // ============ Tools ============
 export const tools: Tool[] = [
   { id: "TL-01", name: "Safety cones (4x)", condition: "ok", vehicleId: "TRK-07" },
@@ -503,7 +567,13 @@ export const toolChecklistSubmissions: ToolChecklistSubmission[] = [
     driverId: "D-01",
     vehicleId: "TRK-07",
     kind: "start_of_shift",
-    submittedAt: "2025-05-14T08:42:00Z",
+    // Stamped well after D-01's most recent clock_out (TE-01 ended
+    // 2025-05-14T15:40Z). The clock-in checklist gate compares the
+    // submission timestamp against the driver's last clock_out, so we need
+    // the seed value to be more recent than that — otherwise the
+    // "Confirm clock in" button stays locked and the EOD-gate test path
+    // can't open a shift to trigger the end-of-shift gate.
+    submittedAt: "2025-05-15T08:42:00Z",
     gpsLat: 43.6532,
     gpsLng: -79.3832,
     items: tools.map((t) => ({
@@ -639,6 +709,22 @@ export const jobs: Job[] = [
     notes: "",
     createdBy: "A-01",
     createdAt: "2025-05-12T10:35:00Z",
+  },
+  // Seed draft so the schedule / jobs lists always have at least one
+  // unpublished row. Drives the Publish (draft row) e2e button audit and
+  // the empty-state copy on /admin/schedule's draft panel.
+  {
+    id: "JOB-049",
+    clientId: "C-01",
+    location: { address: "Site E, West", lat: 43.6532, lng: -79.4 },
+    scheduledAt: "2025-05-19T07:00:00Z",
+    durationMin: 240,
+    driverId: "D-02",
+    vehicleId: "TRK-03",
+    status: "draft",
+    notes: "Awaiting client confirmation on access.",
+    createdBy: "A-01",
+    createdAt: "2025-05-12T10:40:00Z",
   },
 ];
 

@@ -52,7 +52,13 @@ function Page() {
   const [fuelOpen, setFuelOpen] = useState(false);
 
   useEffect(() => {
-    if (v) api.fetchGeotabLocation(v.id).then(setTele);
+    // Swallow telematics fetch failures so the rest of the page still
+    // renders. A missing Geotab row should not turn the vehicle detail
+    // page into a blank screen — the Refresh location button stays
+    // reachable so the admin can retry.
+    if (v) {
+      api.fetchGeotabLocation(v.id).then(setTele).catch(() => setTele(null));
+    }
   }, [v]);
 
   if (!v)
@@ -121,12 +127,16 @@ function Page() {
             variant="outline"
             size="sm"
             className="mt-3"
-            onClick={() =>
-              api
-                .fetchGeotabLocation(v.id)
-                .then(setTele)
-                .then(() => toast.success("Refreshed from Geotab"))
-            }
+            onClick={async () => {
+              try {
+                const fresh = await api.fetchGeotabLocation(v.id);
+                setTele(fresh);
+                toast.success("Refreshed from Geotab");
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                toast.error(`Refresh failed: ${msg}`);
+              }
+            }}
           >
             <MapPin className="w-3.5 h-3.5" /> Refresh location
           </Button>
@@ -366,11 +376,16 @@ function ScheduleServiceDialog({
         <DialogHeader>
           <DialogTitle>Schedule service — {vehicleId}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
+        {/*
+          Validation lives in handleSubmit() rather than HTML5 `required` so the
+          button-audit e2e (which clicks Submit on an empty form) still sees a
+          toast.error response instead of being blocked silently by the browser's
+          built-in form validation.
+        */}
+        <form onSubmit={handleSubmit} className="space-y-3" noValidate>
           <div>
             <Label>Service type</Label>
             <Input
-              required
               placeholder="e.g. Oil change"
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -381,7 +396,6 @@ function ScheduleServiceDialog({
               <Label>Date</Label>
               <Input
                 type="date"
-                required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />
@@ -390,7 +404,6 @@ function ScheduleServiceDialog({
               <Label>Mileage</Label>
               <Input
                 type="number"
-                required
                 className="font-mono"
                 value={mileage}
                 onChange={(e) => setMileage(e.target.value)}
@@ -402,7 +415,6 @@ function ScheduleServiceDialog({
             <Input
               type="number"
               step="0.01"
-              required
               className="font-mono"
               value={cost}
               onChange={(e) => setCost(e.target.value)}
@@ -502,13 +514,17 @@ function AddFuelDialog({
         <DialogHeader>
           <DialogTitle>Add fuel entry — {vehicleId}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
+        {/*
+          See note in ScheduleServiceDialog: handler-side validation only so the
+          button audit's empty-form click surfaces a toast instead of being
+          blocked by HTML5 form validation.
+        */}
+        <form onSubmit={handleSubmit} className="space-y-3" noValidate>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Date</Label>
               <Input
                 type="date"
-                required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />
@@ -518,7 +534,6 @@ function AddFuelDialog({
               <Input
                 type="number"
                 step="0.01"
-                required
                 className="font-mono"
                 value={gallons}
                 onChange={(e) => setGallons(e.target.value)}
@@ -530,7 +545,6 @@ function AddFuelDialog({
             <Input
               type="number"
               step="0.01"
-              required
               className="font-mono"
               value={cost}
               onChange={(e) => setCost(e.target.value)}
@@ -539,7 +553,6 @@ function AddFuelDialog({
           <div>
             <Label>Location</Label>
             <Input
-              required
               placeholder="e.g. Petro-Canada · QEW"
               value={location}
               onChange={(e) => setLocation(e.target.value)}

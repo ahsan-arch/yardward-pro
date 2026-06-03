@@ -59,10 +59,41 @@ function Page() {
     })),
   );
   const [loading, setLoading] = useState(false);
+  // Form-scoped idempotency key — minted once at mount so a retried submit
+  // (online flake, fail-then-Resubmit, or offline replay) carries the same
+  // key. Server-side dedupe uses the partial unique index on
+  // tool_checklist_submissions.idempotency_key.
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `tcl-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+  );
   const flagged = items.filter((i) => i.status !== "ok").length;
 
   function setStatus(idx: number, next: ToolCondition) {
     setItems((arr) => arr.map((x, i) => (i === idx ? { ...x, status: next } : x)));
+  }
+
+  // Background submit: fire after we've optimistically advanced the driver to
+  // the next screen. On failure, surface a Resubmit toast that re-enqueues —
+  // the idempotencyKey on the payload makes that safe even if the original
+  // write actually landed before the network blip.
+  function fireAndForget(payload: Parameters<typeof api.submitToolChecklist>[0]) {
+    void (async () => {
+      try {
+        await api.submitToolChecklist(payload);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        toast.error(`Tool checklist failed to sync: ${msg}`, {
+          action: {
+            label: "Resubmit",
+            onClick: () => {
+              void offlineQueue.enqueue({ kind: "toolChecklist", payload });
+            },
+          },
+        });
+      }
+    })();
   }
 
   async function submit() {
@@ -75,13 +106,15 @@ function Page() {
         gpsLat: gps.coords?.lat ?? null,
         gpsLng: gps.coords?.lng ?? null,
         items: items.map(({ toolId, status, notes }) => ({ toolId, status, notes })),
+        idempotencyKey,
       };
       if (!isOnline) {
         await offlineQueue.enqueue({ kind: "toolChecklist", payload });
         toast.success("Saved offline — will sync when connection returns");
       } else {
-        await api.submitToolChecklist(payload);
+        // Optimistic: toast + nav immediately, with the network call backgrounded.
         toast.success(flagged ? `Checklist submitted · ${flagged} flagged` : "Checklist submitted");
+        fireAndForget(payload);
       }
       // After end-of-shift checklist, route back to the end-of-day flow so the
       // driver can finish clocking out. Start-of-shift returns home.
@@ -128,6 +161,21 @@ function Page() {
           </div>
           <GpsBadge result={gps.result} loading={gps.loading} onRetry={gps.refresh} />
         </div>
+
+        {items.length === 0 && (
+          // Empty-state guard: if the tool roster didn't load (Supabase fetch
+          // failed or the truck has no assigned tools yet) we still need to
+          // render the chrome + Back link instead of a blank body. The submit
+          // button stays disabled because there's nothing to attest to.
+          <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center">
+            <Wrench className="w-6 h-6 mx-auto text-muted-foreground" />
+            <div className="mt-2 text-sm font-medium">No tools loaded</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The tool roster for this vehicle hasn't loaded yet. Check back in
+              a moment, or contact dispatch if this persists.
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 space-y-2">
           {items.map((it, i) => (
@@ -213,8 +261,8 @@ function Page() {
 
         <Button
           onClick={submit}
-          disabled={loading}
-          className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold"
+          disabled={loading || items.length === 0}
+          className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold disabled:opacity-60"
         >
           {loading ? (
             <>

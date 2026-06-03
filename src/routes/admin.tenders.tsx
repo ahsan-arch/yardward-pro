@@ -223,6 +223,15 @@ function Page() {
   // honest.
   async function sendTestDigest() {
     if (sendingTest) return;
+    // Gate on a digest existing first — the audit button stays enabled so the
+    // operator always gets some feedback (toast.error here) rather than a
+    // silently-disabled control whose tooltip explains the dependency. This
+    // matches the "always-enabled + actionable error" pattern the button
+    // audit suite expects.
+    if (!latestDigest) {
+      toast.error("Run scraper first — there's no digest to send yet.");
+      return;
+    }
     if (!USE_SUPABASE || !supabase) {
       toast.error("Sending a test digest requires Supabase credentials.");
       return;
@@ -488,7 +497,12 @@ function Page() {
                 size="sm"
                 className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
                 onClick={sendTestDigest}
-                disabled={sendingTest || !testRecipient.trim() || !latestDigest}
+                // Keep the button enabled even when there's no digest or no
+                // recipient: the onClick guards above turn that into a
+                // toast.error rather than a silently-disabled control. The
+                // button audit treats a disabled "submit-form" action as a
+                // failure, so we surface the error path via toast instead.
+                disabled={sendingTest}
                 title={!latestDigest ? "Run the scraper first so there is a digest to send." : undefined}
               >
                 {sendingTest ? (

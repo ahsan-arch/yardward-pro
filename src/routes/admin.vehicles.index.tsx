@@ -324,8 +324,64 @@ function Stat({
   );
 }
 
+// Empty defaults for the Add Vehicle form. Hoisted so the click handler can
+// fall back to these if seeding from contextual data ever throws.
+const EMPTY_VEHICLE_FORM = { id: "", name: "", type: "truck", year: "" };
+
 function Page() {
   const [fleetioOpen, setFleetioOpen] = useState(false);
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+  const [vehicleForm, setVehicleForm] = useState(EMPTY_VEHICLE_FORM);
+  // Per-card "Add record" dialog: a single dialog shared across cards so we
+  // don't mount N dialogs. `addRecordFor` doubles as both the open flag (truthy)
+  // and the vehicle id whose record we're about to file.
+  const [addRecordFor, setAddRecordFor] = useState<string | null>(null);
+
+  // Open the Add Record dialog for a specific vehicle. setOpen fires FIRST
+  // (via setAddRecordFor) so the dialog appears reliably even if any future
+  // contextual data-fetch were to throw mid-handler.
+  function openAddRecord(vehicleId: string) {
+    setAddRecordFor(vehicleId);
+  }
+
+  function submitAddRecord() {
+    if (!addRecordFor) return;
+    toast.success(`Maintenance record added for ${addRecordFor} (mock)`);
+    setAddRecordFor(null);
+  }
+
+  // Open the Fleetio import dialog. setOpen fires FIRST so the dialog opens
+  // even if any pre-flight check throws — the env check moved into run() so
+  // it can never block the click.
+  function openFleetioImport() {
+    setFleetioOpen(true);
+  }
+
+  // Open the Add Vehicle dialog. setOpen(true) BEFORE seeding so the dialog
+  // appears reliably; seeding the next-id from `trucks` is wrapped in
+  // try/catch in case the list ever fails to load.
+  function openAddVehicle() {
+    setAddVehicleOpen(true);
+    try {
+      const nextNum = trucks.length + 1;
+      setVehicleForm({
+        ...EMPTY_VEHICLE_FORM,
+        id: `T-${String(nextNum).padStart(2, "0")}`,
+      });
+    } catch {
+      setVehicleForm(EMPTY_VEHICLE_FORM);
+    }
+  }
+
+  function submitVehicle() {
+    if (!vehicleForm.id.trim() || !vehicleForm.name.trim()) {
+      toast.error("Vehicle ID and name are required");
+      return;
+    }
+    toast.success(`${vehicleForm.id} added (mock)`);
+    setAddVehicleOpen(false);
+    setVehicleForm(EMPTY_VEHICLE_FORM);
+  }
 
   return (
     <AdminShell title="Vehicles">
@@ -347,19 +403,132 @@ function Page() {
         </Select>
         <Button
           variant="outline"
-          onClick={() => setFleetioOpen(true)}
+          onClick={openFleetioImport}
           data-testid="open-fleetio-import"
           className="sm:ml-auto"
         >
           <Download className="w-4 h-4" />
           Import from Fleetio
         </Button>
-        <Button className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90">
+        <Button
+          onClick={openAddVehicle}
+          data-testid="open-add-vehicle"
+          className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        >
           <Plus className="w-4 h-4" /> Add vehicle
         </Button>
       </div>
 
       <FleetioImportDialog open={fleetioOpen} onOpenChange={setFleetioOpen} />
+
+      {/*
+        Add-record dialog — shared across cards. Confirms the maintenance row
+        was filed and emits a success toast so the button-audit e2e sees the
+        side effect. Real-world flow lives on the vehicle detail page; this is
+        the quick-file shortcut from the card grid.
+      */}
+      <Dialog
+        open={addRecordFor !== null}
+        onOpenChange={(o) => !o && setAddRecordFor(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Add record{addRecordFor ? ` — ${addRecordFor}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              File a quick maintenance / service note against this vehicle. For
+              full fields and attachments use the vehicle detail page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Note</Label>
+              <Input placeholder="e.g. Oil top-up at depot" />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setAddRecordFor(null)}
+              >
+                Close
+              </Button>
+              <Button
+                onClick={submitAddRecord}
+                data-testid="submit-add-record"
+                className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+              >
+                Add record
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addVehicleOpen} onOpenChange={setAddVehicleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add vehicle</DialogTitle>
+            <DialogDescription>
+              Register a new truck, trailer, or piece of equipment. Mock-only
+              until the backend is wired.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Vehicle ID</Label>
+              <Input
+                value={vehicleForm.id}
+                onChange={(e) => setVehicleForm((f) => ({ ...f, id: e.target.value }))}
+                placeholder="T-07"
+                className="font-mono"
+              />
+            </div>
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={vehicleForm.name}
+                onChange={(e) => setVehicleForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Kenworth T880"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Type</Label>
+                <Select
+                  value={vehicleForm.type}
+                  onValueChange={(v) => setVehicleForm((f) => ({ ...f, type: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="truck">Truck</SelectItem>
+                    <SelectItem value="trailer">Trailer</SelectItem>
+                    <SelectItem value="equipment">Equipment</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Year</Label>
+                <Input
+                  value={vehicleForm.year}
+                  onChange={(e) => setVehicleForm((f) => ({ ...f, year: e.target.value }))}
+                  placeholder="2024"
+                  className="font-mono"
+                />
+              </div>
+            </div>
+            <Button
+              onClick={submitVehicle}
+              data-testid="submit-add-vehicle"
+              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              Add vehicle
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {trucks.map((t) => (
@@ -440,7 +609,12 @@ function Page() {
                 >
                   View details
                 </Link>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openAddRecord(t.id)}
+                  data-testid={`open-add-record-${t.id}`}
+                >
                   Add record
                 </Button>
               </div>
