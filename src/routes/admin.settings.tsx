@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -18,8 +19,8 @@ import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
 import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send } from "lucide-react";
-import { useState } from "react";
-import type { TokenScope, DriverToken } from "@/types/domain";
+import { useEffect, useState } from "react";
+import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/settings")({
@@ -33,8 +34,10 @@ function Page() {
       <Tabs defaultValue="org">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="org">Organization</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="users">Users & roles</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="qbo-mapping">QBO mapping</TabsTrigger>
           <TabsTrigger value="tokens">Driver tokens</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
@@ -43,11 +46,17 @@ function Page() {
         <TabsContent value="org" className="mt-4">
           <OrgTab />
         </TabsContent>
+        <TabsContent value="system" className="mt-4">
+          <SystemTab />
+        </TabsContent>
         <TabsContent value="users" className="mt-4">
           <UsersTab />
         </TabsContent>
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsTab />
+        </TabsContent>
+        <TabsContent value="qbo-mapping" className="mt-4">
+          <QboMappingTab />
         </TabsContent>
         <TabsContent value="tokens" className="mt-4">
           <TokensTab />
@@ -120,6 +129,201 @@ function OrgTab() {
       >
         Save changes
       </Button>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SystemTab — admin-tunable thresholds backed by public.app_settings.
+//
+// Bound to DataContext.appSettings (hydrated by db-queries on mount). Saving
+// fires api.updateAppSettings which writes the singleton row and refreshes
+// the in-memory store, so downstream views (timesheets flag recompute,
+// dashboard OT widget, driver inspection lockouts) react immediately.
+// ---------------------------------------------------------------------------
+function SystemTab() {
+  const { appSettings } = useData();
+  // Local form state — we don't write to the store until the admin clicks
+  // Save, so the form behaves like a draft without surprising downstream
+  // consumers mid-edit.
+  const [draft, setDraft] = useState<AppSettings>(appSettings);
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync local draft when the context's settings update (e.g. another tab
+  // saved). Keeps the form honest without clobbering an in-progress edit
+  // unless the upstream updatedAt actually changes.
+  useEffect(() => {
+    setDraft(appSettings);
+  }, [appSettings.updatedAt, appSettings]);
+
+  const dirty =
+    draft.gpsToleranceMinutes !== appSettings.gpsToleranceMinutes ||
+    draft.overtimeWarningHours !== appSettings.overtimeWarningHours ||
+    draft.overtimeAlertHours !== appSettings.overtimeAlertHours ||
+    draft.inspectionMinDurationSeconds !== appSettings.inspectionMinDurationSeconds ||
+    draft.inspectionMaxDurationSeconds !== appSettings.inspectionMaxDurationSeconds;
+
+  async function save() {
+    if (draft.overtimeAlertHours <= draft.overtimeWarningHours) {
+      toast.error("Alert threshold must be greater than warning threshold");
+      return;
+    }
+    if (draft.inspectionMaxDurationSeconds <= draft.inspectionMinDurationSeconds) {
+      toast.error("Inspection max must be greater than min");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateAppSettings({
+        gpsToleranceMinutes: draft.gpsToleranceMinutes,
+        overtimeWarningHours: draft.overtimeWarningHours,
+        overtimeAlertHours: draft.overtimeAlertHours,
+        inspectionMinDurationSeconds: draft.inspectionMinDurationSeconds,
+        inspectionMaxDurationSeconds: draft.inspectionMaxDurationSeconds,
+      });
+      toast.success("System settings saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card title="System thresholds">
+      <p className="text-xs text-muted-foreground mb-5 max-w-xl">
+        These values drive automated flagging, overtime alerts, and the driver
+        circle-check lockout window. Changes take effect immediately for all
+        admins and drivers.
+      </p>
+      <div className="space-y-7 max-w-xl">
+        {/* GPS tolerance */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <Label>GPS correlation tolerance</Label>
+            <span className="font-mono text-sm tabular-nums">
+              {draft.gpsToleranceMinutes} min
+            </span>
+          </div>
+          <Slider
+            min={5}
+            max={60}
+            step={1}
+            value={[draft.gpsToleranceMinutes]}
+            onValueChange={(v) =>
+              setDraft((d) => ({ ...d, gpsToleranceMinutes: v[0] ?? d.gpsToleranceMinutes }))
+            }
+            data-testid="setting-gps-tolerance"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Time entries are flagged when the vehicle's last GPS movement is more than this many
+            minutes from the driver's clock-out.
+          </p>
+        </div>
+
+        {/* Overtime warning */}
+        <div>
+          <Label>Overtime warning threshold (hours / week)</Label>
+          <Input
+            type="number"
+            min={1}
+            max={168}
+            step={0.5}
+            value={draft.overtimeWarningHours}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, overtimeWarningHours: Number(e.target.value) }))
+            }
+            data-testid="setting-ot-warning"
+            className="font-mono"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Drivers approaching this many hours per week show in the dashboard warning widget.
+            Default: 40h.
+          </p>
+        </div>
+
+        {/* Overtime alert */}
+        <div>
+          <Label>Overtime alert threshold (hours / week)</Label>
+          <Input
+            type="number"
+            min={1}
+            max={168}
+            step={0.5}
+            value={draft.overtimeAlertHours}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, overtimeAlertHours: Number(e.target.value) }))
+            }
+            data-testid="setting-ot-alert"
+            className="font-mono"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            When a driver crosses this many hours we fire an admin notification (deduplicated per
+            driver per week). Default: 44h.
+          </p>
+        </div>
+
+        {/* Inspection min */}
+        <div>
+          <Label>Inspection minimum duration (seconds)</Label>
+          <Input
+            type="number"
+            min={60}
+            max={3600}
+            step={15}
+            value={draft.inspectionMinDurationSeconds}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, inspectionMinDurationSeconds: Number(e.target.value) }))
+            }
+            data-testid="setting-insp-min"
+            className="font-mono"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Pre-trip inspections finishing faster than this raise an audit flag. Default: 780s
+            (13 min).
+          </p>
+        </div>
+
+        {/* Inspection max */}
+        <div>
+          <Label>Inspection maximum duration (seconds)</Label>
+          <Input
+            type="number"
+            min={60}
+            max={7200}
+            step={15}
+            value={draft.inspectionMaxDurationSeconds}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, inspectionMaxDurationSeconds: Number(e.target.value) }))
+            }
+            data-testid="setting-insp-max"
+            className="font-mono"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Pre-trip inspections taking longer than this raise an audit flag. Default: 1200s
+            (20 min).
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mt-6">
+        <Button
+          onClick={save}
+          disabled={!dirty || saving}
+          data-testid="save-system-settings"
+          className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+        {dirty && !saving && (
+          <Button variant="ghost" size="sm" onClick={() => setDraft(appSettings)}>
+            Discard
+          </Button>
+        )}
+        <span className="text-[11px] font-mono text-muted-foreground ml-auto">
+          updated {new Date(appSettings.updatedAt).toLocaleString()}
+        </span>
+      </div>
     </Card>
   );
 }
@@ -232,6 +436,161 @@ function IntegrationsTab() {
         </div>
       ))}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// QboMappingTab — driver -> QBO Employee id lookup table.
+//
+// Reads drivers from DataContext and the existing mappings via
+// api.getQboEmployeeMappings on mount. The "Save" button only fires upserts
+// for rows whose value actually changed since load (or the last save) so a
+// 25-row table doesn't re-write every row on every click.
+// ---------------------------------------------------------------------------
+function QboMappingTab() {
+  const { drivers } = useData();
+  const [original, setOriginal] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const map = await api.getQboEmployeeMappings();
+        if (!alive) return;
+        setOriginal(map);
+        setDraft(map);
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? `Couldn't load mappings: ${e.message}` : "Couldn't load mappings",
+        );
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const dirtyIds = drivers
+    .filter((d) => (draft[d.id] ?? "").trim() !== (original[d.id] ?? "").trim())
+    .map((d) => d.id);
+  const dirty = dirtyIds.length > 0;
+
+  async function save() {
+    if (!dirty) return;
+    setSaving(true);
+    try {
+      // Sequential so a partial failure leaves earlier rows already persisted
+      // and the rest visibly un-saved. We bail on the first error so we can
+      // surface it accurately.
+      for (const driverId of dirtyIds) {
+        await api.upsertQboEmployeeMapping(driverId, draft[driverId] ?? "");
+      }
+      // Roll forward the baseline so the dirty diff resets.
+      const next: Record<string, string> = { ...original };
+      for (const id of dirtyIds) {
+        const v = (draft[id] ?? "").trim();
+        if (v) next[id] = v;
+        else delete next[id];
+      }
+      setOriginal(next);
+      setDraft(next);
+      toast.success(`Saved ${dirtyIds.length} mapping${dirtyIds.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card title="QuickBooks employee mapping">
+      <p className="text-xs text-muted-foreground mb-4 max-w-2xl">
+        Map each driver to their QuickBooks Online Employee Id so the payroll
+        sync (Timesheets → Export to QuickBooks) can route hours to the right
+        person. Leave the field blank to unmap a driver.
+      </p>
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground py-6">Loading mappings…</div>
+      ) : (
+        <>
+          <div className="border border-border rounded-md overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">Driver</th>
+                  <th className="text-left font-medium px-3 py-2">Driver id</th>
+                  <th className="text-left font-medium px-3 py-2 w-64">QBO employee id</th>
+                  <th className="text-left font-medium px-3 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drivers.map((d) => {
+                  const current = draft[d.id] ?? "";
+                  const before = original[d.id] ?? "";
+                  const changed = current.trim() !== before.trim();
+                  return (
+                    <tr key={d.id} className="border-t border-border">
+                      <td className="px-3 py-2 font-medium">{d.name}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {d.id}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Input
+                          value={current}
+                          onChange={(e) =>
+                            setDraft((prev) => ({ ...prev, [d.id]: e.target.value }))
+                          }
+                          placeholder="e.g. 42"
+                          data-testid={`qbo-employee-input-${d.id}`}
+                          className="font-mono"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {changed ? (
+                          <span className="text-amber-brand font-medium">Unsaved</span>
+                        ) : current ? (
+                          <span className="text-success">Mapped</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {drivers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      No drivers to map.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-3 mt-4">
+            <Button
+              onClick={save}
+              disabled={!dirty || saving}
+              data-testid="save-qbo-mappings"
+              className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              {saving ? "Saving…" : `Save${dirty ? ` (${dirtyIds.length})` : ""}`}
+            </Button>
+            {dirty && !saving && (
+              <Button variant="ghost" size="sm" onClick={() => setDraft(original)}>
+                Discard
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

@@ -15,7 +15,7 @@ function Page() {
   const nav = useNavigate();
   const { user, logout } = useAuth();
   const { drivers, timeEntries } = useData();
-  const me = drivers.find((d) => d.id === user.id) ?? drivers[0];
+  const me = drivers.find((d) => d.id === user.id || d.email === user.email) ?? drivers[0];
   const openShift = timeEntries.find((t) => t.driverId === me.id && !t.clockOut);
   const v = openShift ? vehicleById(me.vehicleAssignmentId) : undefined;
   const hoursSoFar = openShift

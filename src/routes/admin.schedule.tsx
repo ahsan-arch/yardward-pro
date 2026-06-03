@@ -12,13 +12,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Filter, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { Plus, Filter, Loader2, Send } from "lucide-react";
+import { useMemo, useState } from "react";
 import { jobDisplay } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import type { JobStatus } from "@/types/domain";
 
 export const Route = createFileRoute("/admin/schedule")({
   head: () => ({ meta: [{ title: "Schedule — FleetOps CRM" }] }),
@@ -31,14 +32,26 @@ const statusBorder: Record<string, string> = {
   Scheduled: "border-l-amber-brand",
   Completed: "border-l-muted-foreground/40",
   Delayed: "border-l-danger",
+  Draft: "border-l-muted-foreground/30",
 };
+
+type StatusFilter = "all" | JobStatus;
 
 function Page() {
   const { drivers, vehicles, clients, jobs } = useData();
   const nav = useNavigate();
-  const display = jobs.map(jobDisplay);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const filteredJobs = useMemo(
+    () => (statusFilter === "all" ? jobs : jobs.filter((j) => j.status === statusFilter)),
+    [jobs, statusFilter],
+  );
+  const display = filteredJobs.map((j) => ({ ...jobDisplay(j), rawStatus: j.status }));
+  const draftCount = useMemo(() => jobs.filter((j) => j.status === "draft").length, [jobs]);
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  // `saving` carries which button is mid-flight so we can show the right
+  // spinner without disabling the other action entirely.
+  const [saving, setSaving] = useState<null | "draft" | "publish">(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     clientId: "",
     address: "",
@@ -49,14 +62,14 @@ function Page() {
     notes: "",
   });
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(target: "draft" | "publish") {
     if (!form.clientId || !form.driverId || !form.vehicleId || !form.date || !form.time) {
       toast.error("Fill all required fields");
       return;
     }
-    setSaving(true);
+    setSaving(target);
     try {
+      const status: JobStatus = target === "draft" ? "draft" : "scheduled";
       const job = await api.createJob({
         clientId: form.clientId,
         location: { address: form.address || "TBD", lat: null, lng: null },
@@ -64,23 +77,27 @@ function Page() {
         durationMin: 240,
         driverId: form.driverId,
         vehicleId: form.vehicleId,
-        status: "scheduled",
+        status,
         notes: form.notes,
         createdBy: "A-01",
       });
       const driver = drivers.find((d) => d.id === form.driverId);
-      const sms = await api.sendSms(
-        form.driverId,
-        `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`,
-        job.id,
-      );
-      toast.success(`${job.id} created · SMS ${sms.id} sent to ${driver?.name ?? "driver"}`, {
-        action: {
-          label: "View SMS log",
-          onClick: () => nav({ to: "/admin/sms-log" }),
-        },
-        duration: 8000,
-      });
+      if (target === "publish") {
+        const sms = await api.sendSms(
+          form.driverId,
+          `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`,
+          job.id,
+        );
+        toast.success(`${job.id} created · SMS ${sms.id} sent to ${driver?.name ?? "driver"}`, {
+          action: {
+            label: "View SMS log",
+            onClick: () => nav({ to: "/admin/sms-log" }),
+          },
+          duration: 8000,
+        });
+      } else {
+        toast.success(`${job.id} saved as draft · no SMS sent`, { duration: 6000 });
+      }
       setOpen(false);
       setForm({
         clientId: "",
@@ -92,7 +109,24 @@ function Page() {
         notes: "",
       });
     } finally {
-      setSaving(false);
+      setSaving(null);
+    }
+  }
+
+  async function publishDraft(jobId: string) {
+    setPublishingId(jobId);
+    try {
+      const res = await api.publishJob(jobId);
+      if ("alreadyPublished" in res && res.alreadyPublished) {
+        toast.info(`${jobId} is already published`);
+      } else {
+        toast.success(`${jobId} published · SMS sent to driver`, {
+          action: { label: "View SMS log", onClick: () => nav({ to: "/admin/sms-log" }) },
+          duration: 6000,
+        });
+      }
+    } finally {
+      setPublishingId(null);
     }
   }
 
@@ -136,14 +170,23 @@ function Page() {
               ))}
             </SelectContent>
           </Select>
-          <Select>
-            <SelectTrigger className="w-[120px] h-9">
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+          >
+            <SelectTrigger className="w-[140px] h-9" data-testid="status-filter">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="draft">
+                Drafts only{draftCount ? ` (${draftCount})` : ""}
+              </SelectItem>
               <SelectItem value="scheduled">Scheduled</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="delayed">Delayed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -184,15 +227,26 @@ function Page() {
               </div>
               {days.map((_, di) => {
                 const job = display.find((j) => j.driver === driver.name && j.day === di);
+                const isDraft = job?.rawStatus === "draft";
                 return (
                   <div key={di} className="p-2 border-l border-border min-h-[80px] group">
                     {job ? (
                       <div
+                        data-testid={isDraft ? "schedule-card-draft" : "schedule-card"}
                         className={cn(
                           "border-l-4 bg-background border border-border rounded-md p-2 text-xs shadow-sm",
                           statusBorder[job.status],
+                          // Drafts read as private / not-yet-live: faded, dashed border,
+                          // and the explicit "DRAFT" pill so they can't be mistaken
+                          // for a published assignment at a glance.
+                          isDraft && "opacity-60 border-dashed bg-muted/30",
                         )}
                       >
+                        {isDraft && (
+                          <span className="inline-block mb-1 px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase rounded bg-muted-foreground/15 text-muted-foreground border border-muted-foreground/20">
+                            Draft
+                          </span>
+                        )}
                         <div className="font-semibold truncate">{job.client}</div>
                         <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
                           {job.time} · {job.truck}
@@ -211,12 +265,83 @@ function Page() {
         </div>
       </div>
 
+      {draftCount > 0 && (
+        <section className="mt-6" data-testid="drafts-panel">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold">
+              Drafts <span className="text-muted-foreground">({draftCount})</span>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Drafts are private — drivers don't see them and no SMS is sent until you publish.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {jobs
+              .filter((j) => j.status === "draft")
+              .map((j) => {
+                const d = drivers.find((dr) => dr.id === j.driverId);
+                const v = vehicles.find((vh) => vh.id === j.vehicleId);
+                const c = clients.find((cl) => cl.id === j.clientId);
+                const dt = new Date(j.scheduledAt);
+                return (
+                  <div
+                    key={j.id}
+                    data-testid="draft-row"
+                    className="flex items-center justify-between gap-3 border border-dashed border-border rounded-md p-3 bg-muted/30 opacity-90"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded bg-muted-foreground/15 text-muted-foreground border border-muted-foreground/20">
+                        Draft
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-amber-brand">{j.id}</div>
+                        <div className="text-sm font-medium truncate">
+                          {c?.name ?? "—"} · {j.location.address || "TBD"}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {dt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} ·{" "}
+                          {d?.name ?? "Unassigned"} · {v?.id ?? "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      data-testid={`publish-draft-${j.id}`}
+                      onClick={() => publishDraft(j.id)}
+                      disabled={publishingId === j.id}
+                      className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                    >
+                      {publishingId === j.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing…
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" /> Publish
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+          </div>
+        </section>
+      )}
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create new job</DialogTitle>
           </DialogHeader>
-          <form onSubmit={submit} className="space-y-3">
+          <form
+            onSubmit={(e) => {
+              // Enter-to-submit defaults to Draft — the safer of the two actions,
+              // since Publish has the irreversible side effect of sending SMS.
+              e.preventDefault();
+              void submit("draft");
+            }}
+            className="space-y-3"
+          >
             <div>
               <Label>Job ID</Label>
               <Input value="JOB-044" readOnly className="font-mono bg-muted" />
@@ -310,23 +435,44 @@ function Page() {
                 rows={3}
               />
             </div>
-            <Button
-              type="submit"
-              disabled={saving}
-              data-testid="submit-create-job"
-              className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Creating…
-                </>
-              ) : (
-                "Create job + notify driver"
-              )}
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              An SMS will be sent to the assigned driver automatically
-            </p>
+            <div className="flex flex-col gap-2 pt-1">
+              {/* Default + primary action: save as draft (no SMS, no driver notification). */}
+              <Button
+                type="submit"
+                disabled={saving !== null}
+                data-testid="submit-save-draft"
+                className="w-full h-11 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold"
+              >
+                {saving === "draft" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  "Save as draft"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving !== null}
+                onClick={() => void submit("publish")}
+                data-testid="submit-publish-job"
+                className="w-full h-11 font-semibold"
+              >
+                {saving === "publish" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Publishing…
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" /> Publish + notify driver
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">
+                Drafts are private. Publish sends an SMS to the assigned driver.
+              </p>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

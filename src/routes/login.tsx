@@ -14,13 +14,13 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login, theme, toggleTheme } = useApp();
+  const { login, signIn, theme, toggleTheme } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>("admin");
   const [email, setEmail] = useState("alex@fleetops.co");
   const [password, setPassword] = useState("demo1234");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<{ email?: string; password?: string }>({});
+  const [err, setErr] = useState<{ email?: string; password?: string; form?: string }>({});
 
   const presets: Record<Role, string> = {
     admin: "alex@fleetops.co",
@@ -33,7 +33,7 @@ function LoginPage() {
     setEmail(presets[r]);
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: typeof err = {};
     if (!/^\S+@\S+\.\S+$/.test(email)) errs.email = "Enter a valid email";
@@ -41,13 +41,27 @@ function LoginPage() {
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
-    setTimeout(() => {
-      login(role);
-      toast.success("Welcome back to FleetOps");
-      navigate({
-        to: role === "driver" ? "/driver" : role === "mechanic" ? "/mechanic" : "/admin",
-      });
-    }, 700);
+    // signIn is Supabase-backed when env vars present, otherwise legacy mock.
+    const { error } = await signIn(email, password);
+    setLoading(false);
+    if (error) {
+      setErr({ form: error });
+      toast.error(error);
+      return;
+    }
+    // Legacy fallback: when no Supabase env is set, hydrate role from the picker.
+    if (!import.meta.env.VITE_SUPABASE_URL) login(role);
+    toast.success("Welcome back to FleetOps");
+    // Prefer the user's actual role from Supabase (written to localStorage
+    // by AuthContext.signIn) over the form picker, since the picker is just
+    // a UI hint and may not match the real profile.role.
+    const resolved =
+      typeof window !== "undefined"
+        ? ((localStorage.getItem("fo:role") as Role | null) ?? role)
+        : role;
+    navigate({
+      to: resolved === "driver" ? "/driver" : resolved === "mechanic" ? "/mechanic" : "/admin",
+    });
   }
 
   const opts: { value: Role; label: string; icon: any; desc: string }[] = [
@@ -182,6 +196,11 @@ function LoginPage() {
                 />
                 {err.password && <p className="text-xs text-danger mt-1">{err.password}</p>}
               </div>
+              {err.form && (
+                <p className="text-xs text-danger -mt-1 px-1" data-testid="login-error">
+                  {err.form}
+                </p>
+              )}
             </div>
 
             <Button

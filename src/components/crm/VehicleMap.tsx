@@ -24,18 +24,56 @@ const STATUS_COLOR: Record<Vehicle["status"], string> = {
   "out-of-service": "#6b7280", // gray
 };
 
+const MOVING_COLOR = "#10b981"; // green
+const STOPPED_COLOR = "#6b7280"; // gray
+
+const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Decide whether a vehicle is currently moving. Prefer the `isDriving` flag
+ * written by the Geotab cron; fall back to a speed threshold when it's null
+ * (and finally to `false` when we have no telematics at all).
+ */
+export function isVehicleMoving(vehicle: Vehicle): boolean {
+  if (vehicle.isDriving === true) return true;
+  if (vehicle.isDriving === false) return false;
+  if (typeof vehicle.speedKmh === "number") return vehicle.speedKmh > 5;
+  return false;
+}
+
+/** Stale = we haven't seen a Geotab ping in over 30 minutes, or never. */
+export function isVehicleStale(vehicle: Vehicle): boolean {
+  const ts = vehicle.lastSeenAt ?? vehicle.locationUpdatedAt;
+  if (!ts) return true; // never reported → most-stale
+  return Date.now() - new Date(ts).getTime() > STALE_THRESHOLD_MS;
+}
+
 function buildIcon(vehicle: Vehicle): DivIcon {
-  const color = STATUS_COLOR[vehicle.status];
+  const moving = isVehicleMoving(vehicle);
+  const color = moving ? MOVING_COLOR : STOPPED_COLOR;
+  // Moving pins get a pulsing translucent ring; stopped pins are solid.
+  const pulseRing = moving
+    ? `<div style="
+         position:absolute;inset:-6px;border-radius:50%;
+         border:2px solid ${color};opacity:0.7;
+         animation:vehicle-pulse 1.6s ease-out infinite;
+         pointer-events:none;
+       "></div>`
+    : "";
   const html = `
     <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);">
-      <div style="
-        width:34px;height:34px;border-radius:50%;
-        background:${color};border:3px solid white;
-        box-shadow:0 2px 6px rgba(0,0,0,0.35);
-        display:flex;align-items:center;justify-content:center;
-        color:white;font-weight:700;font-size:10px;font-family:'DM Mono',ui-monospace,monospace;
-        white-space:nowrap;
-      ">${vehicle.id.replace(/-/g, "")}</div>
+      <div style="position:relative;">
+        ${pulseRing}
+        <div style="
+          position:relative;
+          width:34px;height:34px;border-radius:50%;
+          background:${color};border:3px solid white;
+          box-shadow:0 2px 6px rgba(0,0,0,0.35);
+          display:flex;align-items:center;justify-content:center;
+          color:white;font-weight:700;font-size:10px;font-family:'DM Mono',ui-monospace,monospace;
+          white-space:nowrap;
+        ">${vehicle.id.replace(/-/g, "")}</div>
+      </div>
       <div style="
         width:0;height:0;
         border-left:6px solid transparent;border-right:6px solid transparent;
@@ -100,10 +138,31 @@ export type VehicleMapProps = {
   autoRefreshMs?: number;
   interactive?: boolean;
   showSidebar?: boolean;
+  /** Show a "X moving · Y stopped · Z stale" bar above the map header. */
+  showStatsBar?: boolean;
   focusVehicleId?: string | null;
   onVehicleClick?: (id: string) => void;
   className?: string;
 };
+
+export type VehicleFleetStats = {
+  moving: number;
+  stopped: number;
+  stale: number;
+};
+
+/** Summarize a vehicle list for the stats bar. Exported for reuse + tests. */
+export function computeFleetStats(vehicles: Vehicle[]): VehicleFleetStats {
+  let moving = 0;
+  let stopped = 0;
+  let stale = 0;
+  for (const v of vehicles) {
+    if (isVehicleStale(v)) stale += 1;
+    if (isVehicleMoving(v)) moving += 1;
+    else stopped += 1;
+  }
+  return { moving, stopped, stale };
+}
 
 export function VehicleMap({
   vehicles,
@@ -111,6 +170,7 @@ export function VehicleMap({
   autoRefreshMs = 30_000,
   interactive = true,
   showSidebar = false,
+  showStatsBar = false,
   focusVehicleId = null,
   onVehicleClick,
   className,
@@ -166,10 +226,53 @@ export function VehicleMap({
     .map((v) => ({ vehicle: v, coord: liveCoords[v.id] }))
     .filter((x): x is { vehicle: Vehicle; coord: LiveCoord } => !!x.coord);
 
+  const stats = useMemo(() => computeFleetStats(vehicles), [vehicles]);
+
   return (
     <div className={cn("flex flex-col", className)} data-testid="vehicle-map">
+      {/* Pulsing-ring keyframes for moving-vehicle markers. Scoped to this
+          component so it doesn't leak into the global stylesheet. */}
+      <style>{`
+        @keyframes vehicle-pulse {
+          0%   { transform: scale(1);   opacity: 0.7; }
+          70%  { transform: scale(1.6); opacity: 0;   }
+          100% { transform: scale(1.6); opacity: 0;   }
+        }
+      `}</style>
+
+      {/* Stats bar (only on the full /admin/map page) */}
+      {showStatsBar && (
+        <div
+          className="flex items-center gap-4 px-3 py-2 border-b border-border bg-card text-xs font-mono"
+          data-testid="vehicle-map-stats"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <strong className="text-foreground">{stats.moving}</strong>
+            <span className="text-muted-foreground">moving</span>
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gray-500" />
+            <strong className="text-foreground">{stats.stopped}</strong>
+            <span className="text-muted-foreground">stopped</span>
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500" />
+            <strong className="text-foreground">{stats.stale}</strong>
+            <span className="text-muted-foreground">stale (&gt;30 min)</span>
+          </span>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30 rounded-t-lg">
+      <div
+        className={cn(
+          "flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30",
+          !showStatsBar && "rounded-t-lg",
+        )}
+      >
         <div className="text-xs text-muted-foreground font-mono">
           {pinList.length} vehicle{pinList.length === 1 ? "" : "s"} · last update{" "}
           <span data-testid="vehicle-map-last-update">{relativeTime(lastUpdate)}</span>
@@ -235,8 +338,35 @@ export function VehicleMap({
                     <div className="text-muted-foreground">
                       Driver: {driverById(vehicle.driverId)?.name ?? "Unassigned"}
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold",
+                          isVehicleMoving(vehicle)
+                            ? "bg-emerald-500/15 text-emerald-700"
+                            : "bg-gray-500/15 text-gray-700",
+                        )}
+                        data-testid={`vehicle-popup-state-${vehicle.id}`}
+                      >
+                        <span
+                          className={cn(
+                            "w-1.5 h-1.5 rounded-full",
+                            isVehicleMoving(vehicle) ? "bg-emerald-500" : "bg-gray-500",
+                          )}
+                        />
+                        {isVehicleMoving(vehicle) ? "Moving" : "Stopped"}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {typeof vehicle.speedMph === "number"
+                          ? `${Math.round(vehicle.speedMph)} mph`
+                          : "— mph"}
+                      </span>
+                    </div>
                     <div className="text-muted-foreground font-mono">
-                      Last seen: {relativeTime(coord.capturedAt)}
+                      Last seen:{" "}
+                      {relativeTime(
+                        vehicle.lastSeenAt ?? vehicle.locationUpdatedAt ?? coord.capturedAt,
+                      )}
                     </div>
                     <Link
                       to="/admin/vehicles/$id"

@@ -16,6 +16,8 @@ import {
   ShoppingCart,
   MessageSquare,
   MapPin,
+  Ticket,
+  Bug,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -33,8 +35,10 @@ const navItems = [
   { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
   { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare },
   { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart },
+  { to: "/admin/prepaid-tickets", label: "Prepaid tickets", icon: Ticket },
   { to: "/admin/clients", label: "Clients", icon: Building2 },
   { to: "/admin/forms", label: "Forms & Submissions", icon: FileText },
+  { to: "/admin/errors", label: "Error log", icon: Bug },
   { to: "/admin/reports", label: "Reports", icon: BarChart2 },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];

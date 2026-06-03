@@ -19,7 +19,14 @@ function Page() {
   const [tab, setTab] = useState<"today" | "upcoming" | "past">("today");
 
   const mine = useMemo(
-    () => jobs.filter((j) => j.driverId === user.id || user.id.startsWith("D-")),
+    () =>
+      jobs.filter(
+        (j) =>
+          // Drafts are admin-private — drivers must never see them, even when
+          // they're the assigned driver. This is the hard guarantee Shayne asked for.
+          j.status !== "draft" &&
+          (j.driverId === user.id || user.id.startsWith("D-")),
+      ),
     [jobs, user.id],
   );
   const today = new Date().toISOString().slice(0, 10);

@@ -25,6 +25,7 @@ function Page() {
           autoRefreshMs={30_000}
           interactive
           showSidebar
+          showStatsBar
           focusVehicleId={focusVehicleId}
           onVehicleClick={(id) => setFocusVehicleId(id)}
         />

@@ -7,12 +7,15 @@ import {
   HeadContent,
   Link,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DataProvider, DataBridge } from "@/contexts/DataContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { RoleSwitcher } from "@/components/crm/RoleSwitcher";
 import { OfflineBanner } from "@/components/crm/OfflineBanner";
+import { PwaUpdateBanner } from "@/components/crm/PwaUpdateBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { reportErrorToServer } from "@/lib/error-capture";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -34,6 +37,15 @@ function NotFoundComponent() {
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+  useEffect(() => {
+    void reportErrorToServer({
+      severity: "error",
+      errorCode: "ROUTER_ERROR",
+      message: error.message || "Router error",
+      stack: error.stack ?? null,
+      context: { from: "tanstack_router_error_component" },
+    });
+  }, [error]);
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -69,6 +81,7 @@ function Chrome() {
         <Outlet />
       </ErrorBoundary>
       <Toaster position="top-right" />
+      <PwaUpdateBanner />
     </>
   );
 }

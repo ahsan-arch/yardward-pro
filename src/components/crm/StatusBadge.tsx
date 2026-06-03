@@ -17,6 +17,8 @@ const map: Record<string, string> = {
   High: "bg-danger/15 text-danger border-danger/30",
   Inactive: "bg-muted text-muted-foreground border-border",
   Low: "bg-muted text-muted-foreground border-border",
+  Draft: "bg-muted-foreground/15 text-muted-foreground border-muted-foreground/20",
+  draft: "bg-muted-foreground/15 text-muted-foreground border-muted-foreground/20",
   // lowercase aliases (new domain enums)
   active: "bg-success/15 text-success border-success/30",
   completed: "bg-success/15 text-success border-success/30",
@@ -31,6 +33,11 @@ const map: Record<string, string> = {
   delayed: "bg-danger/15 text-danger border-danger/30",
   rejected: "bg-danger/15 text-danger border-danger/30",
   failed: "bg-danger/15 text-danger border-danger/30",
+  // PR ordered: distinct from approved (green) so admins can tell at a glance
+  // which approved PRs still need a supplier order placed vs. which are
+  // already fully reconciled.
+  Ordered: "bg-blue-500/15 text-blue-600 border-blue-500/30",
+  ordered: "bg-blue-500/15 text-blue-600 border-blue-500/30",
   high: "bg-danger/15 text-danger border-danger/30",
   low: "bg-muted text-muted-foreground border-border",
   inactive: "bg-muted text-muted-foreground border-border",

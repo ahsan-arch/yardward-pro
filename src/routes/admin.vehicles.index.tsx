@@ -2,6 +2,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -9,32 +19,313 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, AlertTriangle, Truck as TruckIcon, Upload } from "lucide-react";
+import { Plus, Search, AlertTriangle, Truck as TruckIcon, Download, Loader2 } from "lucide-react";
 import { trucks } from "@/data/mockData";
 import { cn } from "@/lib/utils";
-import { useRef } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { USE_SUPABASE } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/vehicles/")({
   head: () => ({ meta: [{ title: "Vehicles — FleetOps CRM" }] }),
   component: Page,
 });
 
-function Page() {
-  const fileRef = useRef<HTMLInputElement>(null);
+type FleetioImportKind = "vehicles" | "maintenance_logs" | "fuel_logs";
 
-  function onCsv(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const rows = text.split(/\r?\n/).filter(Boolean).length - 1;
-      toast.success(`Parsed ${rows} rows from Fleetio CSV (mock import — would add to DB)`);
+interface FleetioImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+  importId: string | null;
+  durationMs: number;
+  dryRun: boolean;
+  planned: {
+    vehiclesToCreate?: number;
+    vehiclesToUpdate?: number;
+    maintenanceLogsToImport?: number;
+    fuelLogsToImport?: number;
+    samples: {
+      vehiclesToCreate?: unknown[];
+      vehiclesToUpdate?: unknown[];
+      maintenanceLogsToImport?: unknown[];
+      fuelLogsToImport?: unknown[];
     };
-    reader.readAsText(f);
-    e.target.value = "";
+  } | null;
+}
+
+// Dialog wrapping api.importFromFleetio. Mirrors the QBO push-payroll dialog
+// shape: kind picker on the left, dryRun toggle on the right, and a counter
+// summary inline after each run so the operator can compare a preview run to
+// the live run without dismissing the dialog.
+function FleetioImportDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [kind, setKind] = useState<FleetioImportKind>("vehicles");
+  // Default to dryRun=true so an admin opening the dialog can't double-tap
+  // through to a live mutation. Matches the QBO push-payroll default.
+  const [dryRun, setDryRun] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<FleetioImportResult | null>(null);
+
+  async function run() {
+    if (!USE_SUPABASE) {
+      toast.error(
+        "Fleetio import requires Supabase credentials. Set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY.",
+      );
+      return;
+    }
+    setRunning(true);
+    setResult(null);
+    const toastId = toast.loading(
+      dryRun ? "Running Fleetio dry run…" : "Importing from Fleetio…",
+    );
+    try {
+      const r = await api.importFromFleetio(kind, dryRun);
+      setResult(r);
+      const seconds = (r.durationMs / 1000).toFixed(1);
+      if (r.dryRun) {
+        // Build a kind-specific summary. For vehicles we have create/update
+        // splits; for the log kinds it's a single import count. The trailing
+        // "(no changes made)" badge is the visual equivalent of the toggle
+        // for operators reading toasts in passing.
+        const planned = r.planned;
+        let summary: string;
+        if (kind === "vehicles") {
+          const created = planned?.vehiclesToCreate ?? 0;
+          const updated = planned?.vehiclesToUpdate ?? 0;
+          summary = `would import ${created + updated} vehicles (${created} new, ${updated} updated)`;
+        } else if (kind === "maintenance_logs") {
+          summary = `would import ${planned?.maintenanceLogsToImport ?? r.imported} maintenance logs`;
+        } else {
+          summary = `would import ${planned?.fuelLogsToImport ?? r.imported} fuel logs`;
+        }
+        toast.success(
+          `Dry run complete — ${summary} (no changes made)`,
+          { id: toastId, duration: 6000 },
+        );
+      } else if (r.errors.length) {
+        toast.warning(
+          `Imported ${r.imported} from Fleetio (skipped ${r.skipped}, ${r.errors.length} error${r.errors.length === 1 ? "" : "s"}) in ${seconds}s`,
+          { id: toastId },
+        );
+      } else {
+        toast.success(
+          `Imported ${r.imported} from Fleetio (skipped ${r.skipped}) in ${seconds}s`,
+          { id: toastId },
+        );
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Fleetio import failed";
+      toast.error(message, { id: toastId });
+    } finally {
+      setRunning(false);
+    }
   }
+
+  function reset() {
+    setResult(null);
+    setRunning(false);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Import from Fleetio</DialogTitle>
+          <DialogDescription>
+            Pulls the selected dataset from Fleetio and upserts into our DB.
+            Use dry run first to preview the create/update counts before
+            committing.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="fleetio-kind">Dataset</Label>
+            <Select
+              value={kind}
+              onValueChange={(v) => setKind(v as FleetioImportKind)}
+            >
+              <SelectTrigger id="fleetio-kind" data-testid="fleetio-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vehicles">Vehicles</SelectItem>
+                <SelectItem value="maintenance_logs">Maintenance logs</SelectItem>
+                <SelectItem value="fuel_logs">Fuel logs</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-border pt-3">
+            <div>
+              <Label htmlFor="fleetio-dry-run" className="cursor-pointer">
+                Dry run
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Preview only — no rows are upserted. Writes a summary row to
+                integration_alerts (kind=fleetio_dryrun_summary).
+              </p>
+            </div>
+            <Switch
+              id="fleetio-dry-run"
+              checked={dryRun}
+              onCheckedChange={setDryRun}
+              data-testid="fleetio-dry-run"
+            />
+          </div>
+
+          {result && (
+            <div
+              className="bg-muted/40 border border-border rounded-md p-3 text-sm space-y-2"
+              data-testid="fleetio-result"
+            >
+              <div className="flex items-center justify-between">
+                <div className="font-medium">
+                  {result.dryRun ? "Dry run summary" : "Import summary"}
+                </div>
+                {result.dryRun && (
+                  <span
+                    className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-brand/15 text-amber-brand"
+                    data-testid="fleetio-no-changes-badge"
+                  >
+                    No changes made
+                  </span>
+                )}
+              </div>
+              {result.dryRun ? (
+                <PlannedSummary kind={kind} planned={result.planned} />
+              ) : (
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Imported</div>
+                    <div className="font-mono text-success" data-testid="fleetio-imported">
+                      {result.imported}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Skipped</div>
+                    <div className="font-mono" data-testid="fleetio-skipped">
+                      {result.skipped}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Errors</div>
+                    <div className="font-mono text-danger" data-testid="fleetio-errors">
+                      {result.errors.length}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="text-[11px] text-muted-foreground font-mono pt-1 border-t border-border/50">
+                duration {result.durationMs}ms
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={running}
+          >
+            Close
+          </Button>
+          <Button
+            onClick={run}
+            disabled={running}
+            data-testid="fleetio-run"
+            className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {running ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            {running ? "Running…" : dryRun ? "Run dry run" : "Import from Fleetio"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Renders the planned-op counts for a dryRun result. Falls back to result.imported
+// when the edge function didn't return a planned section (older deploy).
+function PlannedSummary({
+  kind,
+  planned,
+}: {
+  kind: FleetioImportKind;
+  planned: FleetioImportResult["planned"];
+}) {
+  if (kind === "vehicles") {
+    const created = planned?.vehiclesToCreate ?? 0;
+    const updated = planned?.vehiclesToUpdate ?? 0;
+    return (
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <Stat label="To create" value={created} testid="fleetio-vehicles-create" />
+        <Stat label="To update" value={updated} testid="fleetio-vehicles-update" />
+        <Stat label="Total" value={created + updated} testid="fleetio-vehicles-total" />
+      </div>
+    );
+  }
+  if (kind === "maintenance_logs") {
+    return (
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <Stat
+          label="Maintenance logs to import"
+          value={planned?.maintenanceLogsToImport ?? 0}
+          testid="fleetio-maint-import"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2 text-xs">
+      <Stat
+        label="Fuel logs to import"
+        value={planned?.fuelLogsToImport ?? 0}
+        testid="fleetio-fuel-import"
+      />
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  testid,
+}: {
+  label: string;
+  value: number;
+  testid: string;
+}) {
+  return (
+    <div>
+      <div className="text-muted-foreground">{label}</div>
+      <div className="font-mono" data-testid={testid}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function Page() {
+  const [fleetioOpen, setFleetioOpen] = useState(false);
 
   return (
     <AdminShell title="Vehicles">
@@ -54,14 +345,21 @@ function Page() {
             <SelectItem value="equipment">Equipment</SelectItem>
           </SelectContent>
         </Select>
-        <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onCsv} />
-        <Button variant="outline" onClick={() => fileRef.current?.click()} className="sm:ml-auto">
-          <Upload className="w-4 h-4" /> Import from Fleetio
+        <Button
+          variant="outline"
+          onClick={() => setFleetioOpen(true)}
+          data-testid="open-fleetio-import"
+          className="sm:ml-auto"
+        >
+          <Download className="w-4 h-4" />
+          Import from Fleetio
         </Button>
         <Button className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90">
           <Plus className="w-4 h-4" /> Add vehicle
         </Button>
       </div>
+
+      <FleetioImportDialog open={fleetioOpen} onOpenChange={setFleetioOpen} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {trucks.map((t) => (
@@ -128,10 +426,10 @@ function Page() {
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <Stat k="Odometer" v={t.odometer ? `${t.odometer.toLocaleString()} km` : "—"} />
-                <Stat k="Engine hours" v={`${t.hours.toLocaleString()} hrs`} />
-                <Stat k="Last service" v={t.lastService} />
-                <Stat k="Next service due" v={t.nextDue} />
+                <VehicleStat k="Odometer" v={t.odometer ? `${t.odometer.toLocaleString()} km` : "—"} />
+                <VehicleStat k="Engine hours" v={`${t.hours.toLocaleString()} hrs`} />
+                <VehicleStat k="Last service" v={t.lastService} />
+                <VehicleStat k="Next service due" v={t.nextDue} />
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -154,7 +452,7 @@ function Page() {
   );
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
+function VehicleStat({ k, v }: { k: string; v: string }) {
   return (
     <div>
       <div className="text-[10px] uppercase font-mono text-muted-foreground">{k}</div>

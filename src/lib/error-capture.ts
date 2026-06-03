@@ -1,27 +1,197 @@
-// Captures the original Error out-of-band so server.ts can recover the stack
-// when h3 has already swallowed the throw into a generic 500 Response.
+// Forwards uncaught browser errors + unhandled rejections to the centralized
+// public.report_error RPC so admins can triage them in /admin/errors.
+//
+// Defenses against runaway error loops:
+//   1. Dedup: same errorCode+message within DEDUP_WINDOW_MS is dropped.
+//   2. Throttle: max MAX_REPORTS_PER_MIN posts per rolling 60s window.
+//   3. Circuit breaker: after FAILURE_THRESHOLD consecutive RPC failures the
+//      reporter pauses for BREAKER_COOLDOWN_MS to avoid hammering a dead RPC.
 
-let lastCapturedError: { error: unknown; at: number } | undefined;
-const TTL_MS = 5_000;
+import { supabase } from "./supabase";
 
-function record(error: unknown) {
-  lastCapturedError = { error, at: Date.now() };
-}
+// ---------------------------------------------------------------------------
+// Session id (stable per browser tab, used to correlate anonymous errors)
+// ---------------------------------------------------------------------------
+const SESSION_KEY = "yp_session_id";
 
-if (typeof globalThis.addEventListener === "function") {
-  globalThis.addEventListener("error", (event) => record((event as ErrorEvent).error ?? event));
-  globalThis.addEventListener("unhandledrejection", (event) =>
-    record((event as PromiseRejectionEvent).reason),
-  );
-}
-
-export function consumeLastCapturedError(): unknown {
-  if (!lastCapturedError) return undefined;
-  if (Date.now() - lastCapturedError.at > TTL_MS) {
-    lastCapturedError = undefined;
-    return undefined;
+function getSessionId(): string | null {
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `sess-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
   }
-  const { error } = lastCapturedError;
-  lastCapturedError = undefined;
-  return error;
 }
+
+// ---------------------------------------------------------------------------
+// Runaway protection
+// ---------------------------------------------------------------------------
+const DEDUP_WINDOW_MS = 5_000;
+const MAX_REPORTS_PER_MIN = 30;
+const FAILURE_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 60_000;
+
+const recentReports = new Map<string, number>(); // dedup key -> timestamp
+const reportTimestamps: number[] = []; // rolling 60s window
+let consecutiveFailures = 0;
+let breakerOpenedAt = 0;
+
+function shouldReport(dedupKey: string): boolean {
+  const now = Date.now();
+
+  // Circuit breaker
+  if (breakerOpenedAt && now - breakerOpenedAt < BREAKER_COOLDOWN_MS) return false;
+  if (breakerOpenedAt && now - breakerOpenedAt >= BREAKER_COOLDOWN_MS) {
+    breakerOpenedAt = 0;
+    consecutiveFailures = 0;
+  }
+
+  // Dedup
+  const lastSeen = recentReports.get(dedupKey);
+  if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) return false;
+
+  // Throttle
+  while (reportTimestamps.length && now - reportTimestamps[0] > 60_000) {
+    reportTimestamps.shift();
+  }
+  if (reportTimestamps.length >= MAX_REPORTS_PER_MIN) return false;
+
+  // Accept
+  recentReports.set(dedupKey, now);
+  reportTimestamps.push(now);
+
+  // Garbage-collect the dedup map so it can't grow unbounded
+  if (recentReports.size > 200) {
+    for (const [k, ts] of recentReports) {
+      if (now - ts > DEDUP_WINDOW_MS) recentReports.delete(k);
+    }
+  }
+
+  return true;
+}
+
+function recordOutcome(ok: boolean) {
+  if (ok) {
+    consecutiveFailures = 0;
+  } else {
+    consecutiveFailures++;
+    if (consecutiveFailures >= FAILURE_THRESHOLD) {
+      breakerOpenedAt = Date.now();
+      console.warn(
+        "[reportErrorToServer] circuit breaker open: too many consecutive RPC failures",
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// reportErrorToServer — fire-and-forget, never throws.
+// ---------------------------------------------------------------------------
+export type ErrorSeverity = "info" | "warn" | "error" | "critical";
+
+export type ReportErrorInput = {
+  severity?: ErrorSeverity;
+  errorCode: string;
+  message: string;
+  stack?: string | null;
+  context?: Record<string, unknown>;
+};
+
+export async function reportErrorToServer(input: ReportErrorInput): Promise<void> {
+  try {
+    if (!supabase) return;
+
+    const dedupKey = `${input.errorCode}:${(input.message ?? "").slice(0, 200)}`;
+    if (!shouldReport(dedupKey)) return;
+
+    const url = typeof location !== "undefined" ? location.pathname : null;
+    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : null;
+    const sessionId = getSessionId();
+
+    // `report_error` is not in generated Database types yet; cast through unknown
+    // so the RPC call compiles without weakening the rest of the supabase client.
+    const rpc = (supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ error: { message: string } | null }>;
+    }).rpc;
+    const { error } = await rpc.call(supabase, "report_error", {
+      p_source: "frontend",
+      p_severity: input.severity ?? "error",
+      p_error_code: input.errorCode,
+      p_message: input.message,
+      p_stack: input.stack ?? null,
+      p_url: url,
+      p_user_agent: userAgent,
+      p_context: input.context ?? {},
+      p_session_id: sessionId,
+    });
+    if (error) {
+      recordOutcome(false);
+      console.warn("[reportErrorToServer] rpc failed:", error.message);
+    } else {
+      recordOutcome(true);
+    }
+  } catch (err) {
+    recordOutcome(false);
+    console.warn("[reportErrorToServer] threw:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Global handlers (registered once on first import)
+// ---------------------------------------------------------------------------
+let globalHandlersRegistered = false;
+
+function registerGlobalHandlers() {
+  if (globalHandlersRegistered) return;
+  if (typeof globalThis.addEventListener !== "function") return;
+  globalHandlersRegistered = true;
+
+  globalThis.addEventListener("error", (event) => {
+    const e = event as ErrorEvent;
+    const err = e.error ?? event;
+    const message =
+      err instanceof Error ? err.message : typeof e.message === "string" ? e.message : "Unknown error";
+    const stack = err instanceof Error ? err.stack ?? null : null;
+    void reportErrorToServer({
+      severity: "error",
+      errorCode: "WINDOW_ERROR",
+      message,
+      stack,
+      context: {
+        filename: e.filename,
+        lineno: e.lineno,
+        colno: e.colno,
+      },
+    });
+  });
+
+  globalThis.addEventListener("unhandledrejection", (event) => {
+    const reason = (event as PromiseRejectionEvent).reason;
+    const message =
+      reason instanceof Error
+        ? reason.message
+        : typeof reason === "string"
+          ? reason
+          : "Unhandled promise rejection";
+    const stack = reason instanceof Error ? reason.stack ?? null : null;
+    void reportErrorToServer({
+      severity: "error",
+      errorCode: "UNHANDLED_REJECTION",
+      message,
+      stack,
+    });
+  });
+}
+
+registerGlobalHandlers();

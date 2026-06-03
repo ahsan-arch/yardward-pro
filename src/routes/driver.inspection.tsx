@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { useOffline } from "@/contexts/OfflineContext";
+import { offlineQueue, OfflineQueueQuotaError } from "@/lib/offline-queue";
 import { geotabCoordsForVehicle, inspectionChecklist } from "@/data/mockData";
 import { haversineMeters } from "@/lib/geolocation";
 import type { InspectionItemStatus } from "@/types/domain";
@@ -55,7 +56,7 @@ function Page() {
   const { drivers, vehicles } = useData();
   const { isOnline } = useOffline();
 
-  const me = drivers.find((d) => d.id === user.id) ?? drivers[0];
+  const me = drivers.find((d) => d.id === user.id || d.email === user.email) ?? drivers[0];
   const defaultVehicleId = me?.vehicleAssignmentId ?? vehicles[0]?.id ?? "";
 
   const [vehicleId, setVehicleId] = useState(defaultVehicleId);
@@ -65,6 +66,15 @@ function Page() {
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // Form-scoped idempotency key — minted once when the form mounts and reused
+  // by both the online and offline submit paths. Without this, a back-then-
+  // resubmit while offline mints a fresh key on each enqueue and the partial
+  // unique index can't dedupe the replay.
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `insp-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+  );
 
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(vehicleId);
@@ -149,13 +159,30 @@ function Page() {
         notes,
         photos,
         flagged: issueCount > 0,
+        idempotencyKey,
       };
-      await api.submitVehicleInspection(payload);
       if (!isOnline) {
+        // Enqueue rather than firing api.submitVehicleInspection — that call
+        // would throw on transport failure when offline, leaving the driver
+        // staring at an error toast with a fully-completed walk-around lost.
+        // The flushOne path replays the same payload shape on reconnect.
+        try {
+          await offlineQueue.enqueue({ kind: "inspection", payload });
+        } catch (err) {
+          if (err instanceof OfflineQueueQuotaError) {
+            toast.error(
+              "Couldn't save offline — storage full. Reconnect and resubmit, or remove photos.",
+            );
+            return;
+          }
+          throw err;
+        }
         toast.success("Inspection saved — will sync when back online");
-      } else {
-        toast.success(`Inspection submitted${issueCount ? ` · ${issueCount} flagged` : ""}`);
+        nav({ to: "/driver" });
+        return;
       }
+      await api.submitVehicleInspection(payload);
+      toast.success(`Inspection submitted${issueCount ? ` · ${issueCount} flagged` : ""}`);
       nav({ to: "/driver" });
     } finally {
       setSubmitting(false);

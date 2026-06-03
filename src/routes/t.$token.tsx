@@ -10,18 +10,36 @@ export const Route = createFileRoute("/t/$token")({
   component: Page,
 });
 
+type LandingState = "checking" | "valid" | "used" | "expired" | "invalid";
+
 function Page() {
   const { token } = Route.useParams();
   const nav = useNavigate();
-  const [state, setState] = useState<"checking" | "valid" | "invalid">("checking");
+  const [state, setState] = useState<LandingState>("checking");
   const [tokenData, setTokenData] = useState<DriverToken | null>(null);
 
   useEffect(() => {
     (async () => {
+      // api.validateDriverToken hits Supabase under USE_SUPABASE and the local
+      // store on mocks. Either way it returns the raw row so we can distinguish
+      // "used" from "expired" from "never existed" and show a friendlier screen
+      // than the catch-all "link invalid".
       const r = await api.validateDriverToken(token);
       if (r.valid && r.token) {
         setTokenData(r.token);
         setState("valid");
+        return;
+      }
+      if (!r.token) {
+        setState("invalid");
+        return;
+      }
+      // We got the row back but it's not claimable. Was it consumed or did the
+      // clock run out?
+      if (r.token.usedAt) {
+        setState("used");
+      } else if (new Date(r.token.expiresAt).getTime() < Date.now()) {
+        setState("expired");
       } else {
         setState("invalid");
       }
@@ -39,16 +57,31 @@ function Page() {
     );
   }
 
-  if (state === "invalid") {
+  if (state === "used" || state === "expired" || state === "invalid") {
+    const copy =
+      state === "used"
+        ? {
+            title: "Link already used",
+            body: "This access link was used to submit a form and has been revoked. Each link is single-use — contact your dispatcher for a new one.",
+          }
+        : state === "expired"
+          ? {
+              title: "Link expired",
+              body: "This access link is past its expiry window. Contact your dispatcher for a fresh link.",
+            }
+          : {
+              title: "Link invalid",
+              body: "This access link was never generated or has been revoked. Contact your dispatcher for a new link.",
+            };
     return (
       <div className="min-h-[calc(100vh-44px)] grid place-items-center bg-muted/30 p-4">
-        <div className="bg-card border border-border rounded-xl p-6 max-w-sm text-center">
+        <div
+          className="bg-card border border-border rounded-xl p-6 max-w-sm text-center"
+          data-testid={`token-${state}`}
+        >
           <AlertTriangle className="w-10 h-10 text-danger mx-auto" />
-          <h1 className="text-lg font-bold mt-3">Link expired or invalid</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            This access link has been used, has expired, or was never generated. Contact your
-            dispatcher for a new link.
-          </p>
+          <h1 className="text-lg font-bold mt-3">{copy.title}</h1>
+          <p className="text-sm text-muted-foreground mt-2">{copy.body}</p>
           <Link
             to="/login"
             className="inline-flex items-center gap-1.5 mt-5 h-10 px-4 rounded-md bg-amber-brand text-amber-brand-foreground text-sm font-semibold"
@@ -69,17 +102,54 @@ function Page() {
       ? "/driver/forms"
       : tokenData?.scopedTo === "job"
         ? "/driver/work-order"
-        : "/driver";
+        : tokenData?.scopedTo === "tickets"
+          ? "/driver/tickets"
+          : "/driver";
 
-  function start() {
+  async function start() {
     if (tokenData) {
+      // SECURITY: do NOT write fo:authed/fo:role to localStorage. The legacy
+      // build did, which had the side effect of elevating the tokenized
+      // visitor to a fully logged-in driver for ALL future routes — and the
+      // elevation outlived the tab, the browser restart, every subsequent
+      // navigation. A leaked link became a persistent fake driver session.
+      //
+      // Instead, we record the session in sessionStorage (cleared on tab
+      // close) and the driver subroutes consult useDriverTokenScope() so
+      // access is gated by (a) the scope being recognised, (b) the recorded
+      // expiry being in the future, and (c) the requested route belonging
+      // to the scope's allow-list. The legacy /driver guard's fo:authed
+      // check is augmented to accept this session as a stand-in.
       sessionStorage.setItem("fo:driver-token", tokenData.token);
       sessionStorage.setItem("fo:driver-token-scope", tokenData.scopedTo);
+      sessionStorage.setItem("fo:driver-token-driver-id", tokenData.driverId);
+      sessionStorage.setItem("fo:driver-token-expires-at", tokenData.expiresAt);
+      // Back-compat alias retained because driver.work-order / EOD / SOD
+      // already read this slot when deciding whether to burn the token on
+      // submission. Removing it would break the existing flushers.
       sessionStorage.setItem("fo:driver-token-driver", tokenData.driverId);
-      // Mark this browser session as a driver so the /driver/* route guards
-      // (which check localStorage) let the user through without a login.
-      localStorage.setItem("fo:authed", "1");
-      localStorage.setItem("fo:role", "driver");
+      // Burn the token server-side immediately. The session record above
+      // is the ongoing credential; the token itself does not need to stay
+      // claimable after this page. If the consume races with a duplicate
+      // tab opening the same link, only one wins — both still get a valid
+      // sessionStorage record because we already validated above, and the
+      // server-side state is authoritative for any subsequent submission's
+      // "already burned" warning toast.
+      //
+      // (We deliberately ignore the boolean return: the validator above
+      // already returned state=valid, and a parallel consume losing the
+      // race is benign for THIS tab — the form submits still call
+      // consumeDriverToken which will return false and surface the
+      // standard "couldn't be revoked" warning.)
+      void api.consumeDriverToken(tokenData.token);
+      // Fire a same-tab event so any mounted useDriverTokenScope() hooks
+      // pick up the new session without waiting for the next navigation
+      // to re-read from sessionStorage.
+      try {
+        window.dispatchEvent(new Event("fo:driver-token-session"));
+      } catch {
+        /* ignore */
+      }
     }
     nav({ to: scopeTarget });
   }

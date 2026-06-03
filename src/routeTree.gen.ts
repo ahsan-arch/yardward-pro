@@ -24,6 +24,7 @@ import { Route as MechanicMaintenanceRouteImport } from './routes/mechanic.maint
 import { Route as MechanicInventoryRouteImport } from './routes/mechanic.inventory'
 import { Route as DriverWorkOrderRouteImport } from './routes/driver.work-order'
 import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-checklist'
+import { Route as DriverTicketsRouteImport } from './routes/driver.tickets'
 import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
 import { Route as DriverProfileRouteImport } from './routes/driver.profile'
 import { Route as DriverJobsRouteImport } from './routes/driver.jobs'
@@ -40,9 +41,11 @@ import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPurchaseRequestsRouteImport } from './routes/admin.purchase-requests'
+import { Route as AdminPrepaidTicketsRouteImport } from './routes/admin.prepaid-tickets'
 import { Route as AdminMapRouteImport } from './routes/admin.map'
 import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
+import { Route as AdminErrorsRouteImport } from './routes/admin.errors'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
 import { Route as AdminClientsRouteImport } from './routes/admin.clients'
 import { Route as AdminVehiclesIndexRouteImport } from './routes/admin.vehicles.index'
@@ -125,6 +128,11 @@ const DriverToolChecklistRoute = DriverToolChecklistRouteImport.update({
   path: '/tool-checklist',
   getParentRoute: () => DriverRoute,
 } as any)
+const DriverTicketsRoute = DriverTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => DriverRoute,
+} as any)
 const DriverStartOfDayRoute = DriverStartOfDayRouteImport.update({
   id: '/start-of-day',
   path: '/start-of-day',
@@ -205,6 +213,11 @@ const AdminPurchaseRequestsRoute = AdminPurchaseRequestsRouteImport.update({
   path: '/purchase-requests',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPrepaidTicketsRoute = AdminPrepaidTicketsRouteImport.update({
+  id: '/prepaid-tickets',
+  path: '/prepaid-tickets',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminMapRoute = AdminMapRouteImport.update({
   id: '/map',
   path: '/map',
@@ -218,6 +231,11 @@ const AdminJobsRoute = AdminJobsRouteImport.update({
 const AdminFormsRoute = AdminFormsRouteImport.update({
   id: '/forms',
   path: '/forms',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminErrorsRoute = AdminErrorsRouteImport.update({
+  id: '/errors',
+  path: '/errors',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminDriversRoute = AdminDriversRouteImport.update({
@@ -255,9 +273,11 @@ export interface FileRoutesByFullPath {
   '/mechanic': typeof MechanicRouteWithChildren
   '/admin/clients': typeof AdminClientsRoute
   '/admin/drivers': typeof AdminDriversRoute
+  '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
+  '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -274,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tickets': typeof DriverTicketsRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
@@ -293,9 +314,11 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/admin/clients': typeof AdminClientsRoute
   '/admin/drivers': typeof AdminDriversRoute
+  '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
+  '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -312,6 +335,7 @@ export interface FileRoutesByTo {
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tickets': typeof DriverTicketsRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
@@ -335,9 +359,11 @@ export interface FileRoutesById {
   '/mechanic': typeof MechanicRouteWithChildren
   '/admin/clients': typeof AdminClientsRoute
   '/admin/drivers': typeof AdminDriversRoute
+  '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
+  '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
@@ -354,6 +380,7 @@ export interface FileRoutesById {
   '/driver/jobs': typeof DriverJobsRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
+  '/driver/tickets': typeof DriverTicketsRoute
   '/driver/tool-checklist': typeof DriverToolChecklistRoute
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
@@ -378,9 +405,11 @@ export interface FileRouteTypes {
     | '/mechanic'
     | '/admin/clients'
     | '/admin/drivers'
+    | '/admin/errors'
     | '/admin/forms'
     | '/admin/jobs'
     | '/admin/map'
+    | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -397,6 +426,7 @@ export interface FileRouteTypes {
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
+    | '/driver/tickets'
     | '/driver/tool-checklist'
     | '/driver/work-order'
     | '/mechanic/inventory'
@@ -416,9 +446,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin/clients'
     | '/admin/drivers'
+    | '/admin/errors'
     | '/admin/forms'
     | '/admin/jobs'
     | '/admin/map'
+    | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -435,6 +467,7 @@ export interface FileRouteTypes {
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
+    | '/driver/tickets'
     | '/driver/tool-checklist'
     | '/driver/work-order'
     | '/mechanic/inventory'
@@ -457,9 +490,11 @@ export interface FileRouteTypes {
     | '/mechanic'
     | '/admin/clients'
     | '/admin/drivers'
+    | '/admin/errors'
     | '/admin/forms'
     | '/admin/jobs'
     | '/admin/map'
+    | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/reports'
     | '/admin/schedule'
@@ -476,6 +511,7 @@ export interface FileRouteTypes {
     | '/driver/jobs'
     | '/driver/profile'
     | '/driver/start-of-day'
+    | '/driver/tickets'
     | '/driver/tool-checklist'
     | '/driver/work-order'
     | '/mechanic/inventory'
@@ -607,6 +643,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DriverToolChecklistRouteImport
       parentRoute: typeof DriverRoute
     }
+    '/driver/tickets': {
+      id: '/driver/tickets'
+      path: '/tickets'
+      fullPath: '/driver/tickets'
+      preLoaderRoute: typeof DriverTicketsRouteImport
+      parentRoute: typeof DriverRoute
+    }
     '/driver/start-of-day': {
       id: '/driver/start-of-day'
       path: '/start-of-day'
@@ -719,6 +762,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPurchaseRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/prepaid-tickets': {
+      id: '/admin/prepaid-tickets'
+      path: '/prepaid-tickets'
+      fullPath: '/admin/prepaid-tickets'
+      preLoaderRoute: typeof AdminPrepaidTicketsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/map': {
       id: '/admin/map'
       path: '/map'
@@ -738,6 +788,13 @@ declare module '@tanstack/react-router' {
       path: '/forms'
       fullPath: '/admin/forms'
       preLoaderRoute: typeof AdminFormsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/errors': {
+      id: '/admin/errors'
+      path: '/errors'
+      fullPath: '/admin/errors'
+      preLoaderRoute: typeof AdminErrorsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/drivers': {
@@ -781,9 +838,11 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminClientsRoute: typeof AdminClientsRoute
   AdminDriversRoute: typeof AdminDriversRoute
+  AdminErrorsRoute: typeof AdminErrorsRoute
   AdminFormsRoute: typeof AdminFormsRoute
   AdminJobsRoute: typeof AdminJobsRoute
   AdminMapRoute: typeof AdminMapRoute
+  AdminPrepaidTicketsRoute: typeof AdminPrepaidTicketsRoute
   AdminPurchaseRequestsRoute: typeof AdminPurchaseRequestsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
@@ -802,9 +861,11 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminClientsRoute: AdminClientsRoute,
   AdminDriversRoute: AdminDriversRoute,
+  AdminErrorsRoute: AdminErrorsRoute,
   AdminFormsRoute: AdminFormsRoute,
   AdminJobsRoute: AdminJobsRoute,
   AdminMapRoute: AdminMapRoute,
+  AdminPrepaidTicketsRoute: AdminPrepaidTicketsRoute,
   AdminPurchaseRequestsRoute: AdminPurchaseRequestsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
@@ -830,6 +891,7 @@ interface DriverRouteChildren {
   DriverJobsRoute: typeof DriverJobsRoute
   DriverProfileRoute: typeof DriverProfileRoute
   DriverStartOfDayRoute: typeof DriverStartOfDayRoute
+  DriverTicketsRoute: typeof DriverTicketsRoute
   DriverToolChecklistRoute: typeof DriverToolChecklistRoute
   DriverWorkOrderRoute: typeof DriverWorkOrderRoute
   DriverIndexRoute: typeof DriverIndexRoute
@@ -843,6 +905,7 @@ const DriverRouteChildren: DriverRouteChildren = {
   DriverJobsRoute: DriverJobsRoute,
   DriverProfileRoute: DriverProfileRoute,
   DriverStartOfDayRoute: DriverStartOfDayRoute,
+  DriverTicketsRoute: DriverTicketsRoute,
   DriverToolChecklistRoute: DriverToolChecklistRoute,
   DriverWorkOrderRoute: DriverWorkOrderRoute,
   DriverIndexRoute: DriverIndexRoute,

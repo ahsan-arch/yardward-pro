@@ -16,6 +16,10 @@ dist-ssr
 .nitro
 *.local
 
+# TypeScript / tooling stray output
+tsc-output.txt
+*.tsbuildinfo
+
 # Vercel
 .vercel/
 

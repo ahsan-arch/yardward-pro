@@ -7,7 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Loader2, MapPin, Check, AlertTriangle, AlertOctagon } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  MapPin,
+  Check,
+  AlertTriangle,
+  AlertOctagon,
+  ClipboardCheck,
+  Lock,
+} from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -17,6 +26,7 @@ import { offlineQueue } from "@/lib/offline-queue";
 import { useData } from "@/contexts/DataContext";
 import { useMemo } from "react";
 import { geotabCoordsForVehicle } from "@/data/mockData";
+import { clearDriverTokenSession } from "@/hooks/use-driver-token-scope";
 
 export const Route = createFileRoute("/driver/start-of-day")({
   head: () => ({ meta: [{ title: "Start of day — FleetOps" }] }),
@@ -40,12 +50,33 @@ const conditions = [
   },
 ];
 
+// Pre-trip stays valid for 12h after the recorded completion time. After that
+// CVOR rules require a fresh circle-check before the driver clocks in. Match
+// to vehicles.last_pretrip_at + 12h on the server side.
+const PRETRIP_WINDOW_MS = 12 * 60 * 60 * 1000;
+
 function Page() {
   const nav = useNavigate();
   const { user } = useAuth();
   const { isOnline } = useOffline();
-  const { drivers } = useData();
-  const me = drivers.find((d) => d.id === user.id);
+  const { drivers, vehicles } = useData();
+  const me = drivers.find((d) => d.id === user.id || d.email === user.email);
+  const assignedVehicle = useMemo(
+    () => vehicles.find((v) => v.id === me?.vehicleAssignmentId) ?? null,
+    [vehicles, me?.vehicleAssignmentId],
+  );
+  // The CVOR lockout: bail out before any clock-in UI renders if the
+  // driver's assigned vehicle has no recent passing pre-trip on file.
+  // Drivers without an assignment skip the lockout (they have nothing to
+  // circle-check yet) but stay flagged for admin follow-up via the audit
+  // badge on the vehicle detail page.
+  const pretripStatus = useMemo<{ blocked: boolean; lastAt: string | null }>(() => {
+    if (!assignedVehicle) return { blocked: false, lastAt: null };
+    const lastAt = assignedVehicle.lastPretripAt ?? null;
+    if (!lastAt) return { blocked: true, lastAt: null };
+    const ageMs = Date.now() - new Date(lastAt).getTime();
+    return { blocked: ageMs > PRETRIP_WINDOW_MS, lastAt };
+  }, [assignedVehicle]);
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(me?.vehicleAssignmentId ?? null);
     return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;
@@ -62,6 +93,15 @@ function Page() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Defence in depth: the lockout screen already guards the route, but a
+    // race (stale pre-trip ageing out mid-form) could still slip through.
+    // Bounce the driver back to the inspection rather than submitting a
+    // shift the MTO would later void.
+    if (pretripStatus.blocked) {
+      toast.error("Pre-trip inspection required before clocking in");
+      nav({ to: "/driver/inspection" });
+      return;
+    }
     const errs: typeof err = {};
     if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
     if (cond === "minor" && !note.trim()) errs.note = "Describe the issue";
@@ -76,17 +116,87 @@ function Page() {
         condition: cond,
         gps: gps.coords,
       };
+      // Single-use enforcement for scope='forms' tokens: this is the entry
+      // point the dispatcher hands a driver who only needs to file paperwork
+      // for the day. Once start-of-day is in, the link's job is done — we
+      // burn it so the same URL can't be re-opened on another phone tomorrow.
+      const token = sessionStorage.getItem("fo:driver-token");
+      const tokenScope = sessionStorage.getItem("fo:driver-token-scope");
+      const isFormsToken = token && tokenScope === "forms";
       if (!isOnline) {
         await offlineQueue.enqueue({ kind: "startOfDay", payload });
+        if (isFormsToken && token) {
+          await offlineQueue.enqueue({ kind: "consumeDriverToken", payload: token });
+        }
         toast.success("Saved offline — will sync when connection returns");
+        nav({ to: "/driver" });
       } else {
         await api.submitStartOfDay(payload);
-        toast.success("Start-of-day form submitted");
+        if (isFormsToken && token) {
+          const claimed = await api.consumeDriverToken(token);
+          if (claimed) {
+            clearDriverTokenSession();
+          } else {
+            toast.warning(
+              "Start-of-day submitted, but the access link couldn't be revoked. Contact dispatch if it was reshared.",
+            );
+          }
+        }
+        toast.success("Start-of-day form submitted · finish the tool check next");
+        // Route into the start-of-shift tool check so the clock-in gate is
+        // satisfied without the driver having to hunt for the form tile.
+        nav({ to: "/driver/tool-checklist", search: { kind: "start_of_shift" } });
       }
-      nav({ to: "/driver" });
     } finally {
       setLoading(false);
     }
+  }
+
+  if (pretripStatus.blocked) {
+    // BLOCKING screen — driver cannot reach the clock-in form. Wording is
+    // deliberately about the MTO ($150 fine + CVOR violation) so drivers
+    // understand the lockout is regulatory, not a bug.
+    return (
+      <DriverShell>
+        <div className="p-4" data-testid="pretrip-lockout">
+          <Link
+            to="/driver"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Link>
+          <div className="mt-6 rounded-xl border-2 border-danger/40 bg-danger/5 p-6 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-danger/15 grid place-items-center">
+              <Lock className="w-7 h-7 text-danger" />
+            </div>
+            <h1 className="mt-4 text-xl font-bold text-danger">Pre-trip inspection required</h1>
+            <p className="mt-2 text-sm text-foreground/80">
+              You must complete the pre-trip inspection before clocking in.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              MTO rules require a daily circle-check on file before the shift starts. Skipping it is
+              a $150 fine and a CVOR violation against the company.
+            </p>
+            <div className="mt-3 text-[11px] font-mono text-muted-foreground">
+              {assignedVehicle
+                ? `Vehicle: ${assignedVehicle.id} — ${assignedVehicle.name}`
+                : "No vehicle assigned"}
+              {pretripStatus.lastAt && (
+                <div>Last pre-trip: {new Date(pretripStatus.lastAt).toLocaleString()} (expired)</div>
+              )}
+              {!pretripStatus.lastAt && <div>No pre-trip on file for today</div>}
+            </div>
+            <Button
+              data-testid="pretrip-lockout-cta"
+              onClick={() => nav({ to: "/driver/inspection" })}
+              className="w-full h-14 mt-6 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold"
+            >
+              <ClipboardCheck className="w-5 h-5" /> Start pre-trip inspection
+            </Button>
+          </div>
+        </div>
+      </DriverShell>
+    );
   }
 
   return (

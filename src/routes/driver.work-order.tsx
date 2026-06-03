@@ -23,6 +23,7 @@ import { offlineQueue } from "@/lib/offline-queue";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useData } from "@/contexts/DataContext";
 import { useMemo } from "react";
+import { clearDriverTokenSession } from "@/hooks/use-driver-token-scope";
 
 export const Route = createFileRoute("/driver/work-order")({
   head: () => ({ meta: [{ title: "New work order — FleetOps" }] }),
@@ -131,11 +132,76 @@ function Page() {
         approvedAt: null,
         invoiceDataId: null,
       };
+      // A work order is the terminal action for a scope='job' token — once
+      // it's submitted the driver has no further legitimate use for the link,
+      // so we burn it server-side. Tokens with other scopes (shift / forms)
+      // are NOT consumed here; their lifecycle ends on end-of-day or the
+      // forms flow respectively.
+      const token = sessionStorage.getItem("fo:driver-token");
+      const tokenScope = sessionStorage.getItem("fo:driver-token-scope");
+      const isJobToken = token && tokenScope === "job";
       if (!isOnline) {
-        await offlineQueue.enqueue({ kind: "workOrder", payload });
-        toast.success("Saved offline — will sync when connection returns");
+        // Couple the consume to the submission via consumeTokenAfter so the
+        // token burns only after the WO lands. A separate queue item could
+        // otherwise burn before the WO (race) or burn even when the WO
+        // itself was dead-lettered (data loss + locked-out driver).
+        await offlineQueue.enqueue({
+          kind: "workOrder",
+          payload,
+          consumeTokenAfter: isJobToken && token ? token : null,
+        });
+        // Defer the photo upload too. The queue caps total localStorage usage;
+        // if the photo would overflow we keep the work order queued and surface
+        // a real error so the driver knows the image didn't save.
+        let photoFailed = false;
+        if (ticketPhoto) {
+          try {
+            await offlineQueue.enqueue({
+              kind: "ticketPhoto",
+              payload: { driverId: user.id, jobId: payload.jobId, dataUrl: ticketPhoto },
+            });
+          } catch (err) {
+            photoFailed = true;
+            toast.error(
+              "Work order saved offline, but the ticket photo is too large for offline storage. " +
+                "Reconnect and re-capture the photo to attach it.",
+            );
+            console.warn("offlineQueue.enqueue(ticketPhoto) failed:", err);
+          }
+        }
+        // (Token consume is coupled to the workOrder enqueue above via
+        // consumeTokenAfter — no separate queue item.)
+        if (!photoFailed) {
+          toast.success("Saved offline — will sync when connection returns");
+        }
       } else {
         await api.submitWorkOrder(payload);
+        if (ticketPhoto) {
+          // Fire-and-forget toast on failure so a flaky Storage upload
+          // doesn't block the work-order success message — the actual error
+          // gets surfaced via api.ts -> reportErrorToServer.
+          try {
+            await api.uploadTicketPhoto({
+              driverId: user.id,
+              jobId: payload.jobId,
+              dataUrl: ticketPhoto,
+            });
+          } catch (err) {
+            toast.error(
+              `Ticket photo upload failed: ${err instanceof Error ? err.message : "unknown error"}`,
+            );
+          }
+        }
+        if (isJobToken && token) {
+          const claimed = await api.consumeDriverToken(token);
+          if (claimed) {
+            clearDriverTokenSession();
+          } else {
+            toast.warning(
+              "Work order submitted, but the access link couldn't be revoked. Contact dispatch if it was reshared.",
+            );
+          }
+        }
         toast.success("Work order submitted for approval");
       }
       nav({ to: "/driver" });

@@ -19,6 +19,7 @@ import { Plus, Trash2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { RateLineItem } from "@/types/domain";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/admin/clients")({
   head: () => ({ meta: [{ title: "Clients — FleetOps CRM" }] }),
@@ -223,6 +224,7 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 
 function RateTableEditor({ clientId, initial }: { clientId: string; initial: RateLineItem[] }) {
   const [items, setItems] = useState<RateLineItem[]>(initial.length ? initial : []);
+  const [saving, setSaving] = useState(false);
   function addRow() {
     setItems((arr) => [...arr, { description: "", unit: "hour", rate: 0, surcharges: [] }]);
   }
@@ -231,6 +233,17 @@ function RateTableEditor({ clientId, initial }: { clientId: string; initial: Rat
   }
   function patch(i: number, p: Partial<RateLineItem>) {
     setItems((arr) => arr.map((x, idx) => (idx === i ? { ...x, ...p } : x)));
+  }
+  async function save() {
+    setSaving(true);
+    try {
+      await api.upsertRateTable(clientId, items);
+      toast.success(`Rate table saved for ${clientId}`);
+    } catch (err) {
+      toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -299,10 +312,11 @@ function RateTableEditor({ clientId, initial }: { clientId: string; initial: Rat
           <Button
             type="button"
             size="sm"
-            onClick={() => toast.success(`Rate table saved for ${clientId} (mock)`)}
+            onClick={save}
+            disabled={saving}
             className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
           >
-            Save changes
+            {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </div>

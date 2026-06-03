@@ -1,12 +1,17 @@
 import { useOffline } from "@/contexts/OfflineContext";
-import { WifiOff, RefreshCw, CheckCircle2 } from "lucide-react";
+import { WifiOff, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 
 export function OfflineBanner() {
-  const { isOnline, pendingSubmissions, flush } = useOffline();
+  const { isOnline, pendingSubmissions, failedSubmissions, deadLetterStuck, flush } =
+    useOffline();
   const [syncing, setSyncing] = useState(false);
 
-  if (isOnline && pendingSubmissions === 0) return null;
+  // Nothing to surface when we're healthy: online, nothing queued, nothing
+  // failing. The failure banner is gated on failedSubmissions > 0 separately
+  // because a failed item is still "pending" so we can't just check pending.
+  if (isOnline && pendingSubmissions === 0 && failedSubmissions === 0) return null;
 
   async function handleFlush() {
     setSyncing(true);
@@ -22,6 +27,36 @@ export function OfflineBanner() {
         {pendingSubmissions > 0 && (
           <span className="font-mono">({pendingSubmissions} pending)</span>
         )}
+      </div>
+    );
+  }
+
+  // Online + at least one item is in a failure state. We use the danger
+  // colour palette when there's a stuck dead-letter (data loss imminent) and
+  // amber when it's just transient retries so admins can prioritise.
+  if (failedSubmissions > 0) {
+    const stuck = deadLetterStuck > 0;
+    return (
+      <div
+        className={
+          stuck
+            ? "bg-danger/15 text-danger border-b border-danger/30 px-3 py-1.5 text-xs font-medium flex items-center justify-center gap-2"
+            : "bg-amber-brand/15 text-amber-brand border-b border-amber-brand/30 px-3 py-1.5 text-xs font-medium flex items-center justify-center gap-2"
+        }
+      >
+        <AlertTriangle className="w-3.5 h-3.5" />
+        {failedSubmissions} submission{failedSubmissions > 1 ? "s" : ""} failing
+        {stuck && <span className="font-mono">({deadLetterStuck} stuck)</span>}
+        <Link to="/admin/errors" className="underline hover:no-underline">
+          Review failures
+        </Link>
+        <button
+          onClick={handleFlush}
+          disabled={syncing}
+          className="underline hover:no-underline disabled:opacity-50"
+        >
+          {syncing ? "Retrying…" : "Retry now"}
+        </button>
       </div>
     );
   }

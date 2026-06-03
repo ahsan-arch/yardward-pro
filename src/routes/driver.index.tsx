@@ -2,6 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
 import { ClipboardList, Wrench, Notebook, Package, Play } from "lucide-react";
+import { useMemo } from "react";
+import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { clientById, vehicleById } from "@/data/mockData";
 
 export const Route = createFileRoute("/driver/")({
   head: () => ({ meta: [{ title: "Driver — FleetOps" }] }),
@@ -31,6 +35,23 @@ const tiles = [
 ];
 
 function Home() {
+  const { jobs } = useData();
+  const { user } = useAuth();
+  // Drafts are admin-private — they must never surface on a driver's home feed.
+  // Pick the next non-draft job assigned to this driver (or the next non-draft
+  // job overall in the seeded mock data, so the UX still demos cleanly).
+  const todaysJob = useMemo(() => {
+    const visible = jobs.filter((j) => j.status !== "draft");
+    const mine = visible.filter((j) => j.driverId === user.id);
+    const pool = mine.length ? mine : visible;
+    return [...pool].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0] ?? null;
+  }, [jobs, user.id]);
+  const todaysClient = todaysJob ? clientById(todaysJob.clientId) : null;
+  const todaysVehicle = todaysJob ? vehicleById(todaysJob.vehicleId) : null;
+  const todaysTime = todaysJob
+    ? todaysJob.scheduledAt.slice(11, 16)
+    : "--:--";
+
   return (
     <DriverShell>
       <div className="p-4 space-y-4">
@@ -38,21 +59,37 @@ function Home() {
           <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
             Wed · 14 May · 06:48
           </div>
-          <h1 className="text-2xl font-bold mt-1">Good morning, Tom</h1>
+          <h1 className="text-2xl font-bold mt-1">
+            Good morning, {user.name.split(" ")[0] || "driver"}
+          </h1>
           <div className="mt-3 p-3 rounded-lg bg-muted/40 border border-border">
             <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
               Today's job
             </div>
-            <div className="font-semibold mt-0.5">JOB-041 — Maple City Council</div>
-            <div className="text-sm text-muted-foreground">14 River Rd</div>
-            <div className="mt-2 flex gap-4 text-xs font-mono">
-              <span>
-                <span className="text-muted-foreground">Start </span>07:00
-              </span>
-              <span>
-                <span className="text-muted-foreground">Truck </span>TRK-07
-              </span>
-            </div>
+            {todaysJob ? (
+              <>
+                <div className="font-semibold mt-0.5">
+                  {todaysJob.id} — {todaysClient?.name ?? "—"}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {todaysJob.location.address || "TBD"}
+                </div>
+                <div className="mt-2 flex gap-4 text-xs font-mono">
+                  <span>
+                    <span className="text-muted-foreground">Start </span>
+                    {todaysTime}
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Truck </span>
+                    {todaysVehicle?.id ?? "—"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground mt-0.5">
+                No published jobs yet.
+              </div>
+            )}
           </div>
           <Button className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold">
             <Play className="w-5 h-5 fill-current" /> Start shift

@@ -8,8 +8,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/crm/StatusBadge";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+
+/**
+ * Renders an <img> whose `src` is signed on demand. Photo paths stored in
+ * `ticket_photos.photo_url` are storage paths (not URLs); we mint a fresh
+ * signed URL each render so the image never silently 403s at the TTL boundary.
+ */
+function SignedTicketImg(props: { path: string; alt: string; className?: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .signTicketPhotoUrl(props.path)
+      .then((s) => {
+        if (!cancelled) setSrc(s ?? props.path);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(props.path);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.path]);
+  if (!src) {
+    return <div className={props.className + " bg-muted animate-pulse"} aria-busy />;
+  }
+  return <img src={src} alt={props.alt} className={props.className} />;
+}
 
 export const Route = createFileRoute("/admin/tickets")({
   head: () => ({ meta: [{ title: "Tickets — FleetOps CRM" }] }),
@@ -18,8 +47,10 @@ export const Route = createFileRoute("/admin/tickets")({
 
 function Page() {
   const { ticketPhotos } = useData();
+  const { user } = useAuth();
   const [tab, setTab] = useState<"awaiting" | "entered" | "all">("awaiting");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const list = ticketPhotos.filter((p) =>
     tab === "all"
@@ -32,15 +63,38 @@ function Page() {
   const [weight, setWeight] = useState("");
   const [location, setLocation] = useState("");
 
-  function commit() {
-    if (!weight || !location) {
-      toast.error("Fill weight and location");
+  async function commit() {
+    if (!open) return;
+    const trimmedLocation = location.trim();
+    if (!trimmedLocation) {
+      toast.error("Location is required");
       return;
     }
-    toast.success(`${open?.id} updated · ${weight}t at ${location}`);
-    setOpenId(null);
-    setWeight("");
-    setLocation("");
+    const w = Number(weight);
+    if (!Number.isFinite(w) || w <= 0) {
+      toast.error("Weight must be a positive number");
+      return;
+    }
+    setSaving(true);
+    try {
+      // updateTicketPhoto derives the new status from weight + location, so
+      // we don't need to pass status here — the row flips to "entered".
+      await api.updateTicketPhoto(open.id, {
+        weight: w,
+        location: trimmedLocation,
+        enteredBy: user?.id ?? null,
+      });
+      toast.success(`${open.id} updated · ${w}t at ${trimmedLocation}`);
+      setOpenId(null);
+      setWeight("");
+      setLocation("");
+    } catch (err) {
+      toast.error(
+        `Save failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -66,8 +120,8 @@ function Page() {
             }}
             className="text-left bg-card border border-border rounded-lg overflow-hidden hover:border-amber-brand transition-colors"
           >
-            <img
-              src={p.photoUrl}
+            <SignedTicketImg
+              path={p.photoUrl}
               alt="ticket"
               className="w-full aspect-[3/4] object-cover bg-muted"
             />
@@ -103,8 +157,8 @@ function Page() {
                 <SheetTitle className="font-mono text-base">{open.id}</SheetTitle>
               </SheetHeader>
               <div className="mt-4 space-y-4">
-                <img
-                  src={open.photoUrl}
+                <SignedTicketImg
+                  path={open.photoUrl}
                   alt="ticket"
                   className="w-full rounded-lg border border-border"
                 />
@@ -130,9 +184,10 @@ function Page() {
                 </div>
                 <Button
                   onClick={commit}
+                  disabled={saving}
                   className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
                 >
-                  Save entry
+                  {saving ? "Saving…" : "Save entry"}
                 </Button>
               </div>
             </>

@@ -1,10 +1,37 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { driverById } from "@/data/mockData";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MapPin, Wrench, Fuel, Truck, Calendar, Activity } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowLeft,
+  MapPin,
+  Wrench,
+  Fuel,
+  Truck,
+  Calendar,
+  Activity,
+  ClipboardCheck,
+  Plus,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -17,9 +44,12 @@ export const Route = createFileRoute("/admin/vehicles/$id")({
 
 function Page() {
   const { id } = useParams({ from: "/admin/vehicles/$id" });
-  const { vehicles, maintenanceLogs, fuelLogs, tools } = useData();
+  const { vehicles, maintenanceLogs, fuelLogs, tools, drivers } = useData();
+  const { user } = useAuth();
   const v = vehicles.find((x) => x.id === id);
   const [tele, setTele] = useState<{ lat: number; lng: number; capturedAt: string } | null>(null);
+  const [maintOpen, setMaintOpen] = useState(false);
+  const [fuelOpen, setFuelOpen] = useState(false);
 
   useEffect(() => {
     if (v) api.fetchGeotabLocation(v.id).then(setTele);
@@ -64,7 +94,7 @@ function Page() {
             <Row k="VIN" v={v.vin} mono />
             <Row k="Driver" v={driver?.name ?? "Unassigned"} />
           </div>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusBadge
               status={
                 v.status === "operational"
@@ -74,6 +104,7 @@ function Page() {
                     : "Out of service"
               }
             />
+            <PretripBadge lastAt={v.lastPretripAt ?? null} />
           </div>
         </Card>
 
@@ -139,7 +170,7 @@ function Page() {
           <Button
             size="sm"
             className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-            onClick={() => toast.info("Use mechanic → Maintenance to add log")}
+            onClick={() => setMaintOpen(true)}
           >
             Schedule service
           </Button>
@@ -177,7 +208,16 @@ function Page() {
 
       <div className="mt-4">
         <Card>
-          <SectionLabel icon={Fuel}>Fuel log</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel icon={Fuel}>Fuel log</SectionLabel>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setFuelOpen(true)}
+            >
+              <Plus className="w-4 h-4" /> Add fuel entry
+            </Button>
+          </div>
           {fuel.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">No fuel entries yet.</p>
           ) : (
@@ -208,6 +248,20 @@ function Page() {
           )}
         </Card>
       </div>
+
+      <ScheduleServiceDialog
+        open={maintOpen}
+        onOpenChange={setMaintOpen}
+        vehicleId={v.id}
+        defaultPerformedBy={user?.name ?? "Admin"}
+      />
+      <AddFuelDialog
+        open={fuelOpen}
+        onOpenChange={setFuelOpen}
+        vehicleId={v.id}
+        defaultDriverId={v.driverId ?? drivers[0]?.id ?? ""}
+        drivers={drivers}
+      />
     </AdminShell>
   );
 }
@@ -233,5 +287,328 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <span className="text-muted-foreground">{k}</span>
       <span className={mono ? "font-mono text-xs" : ""}>{v}</span>
     </div>
+  );
+}
+
+// Schedule-service dialog: shared shape with mechanic.maintenance so the audit
+// trail is consistent regardless of which role recorded the entry.
+function ScheduleServiceDialog({
+  open,
+  onOpenChange,
+  vehicleId,
+  defaultPerformedBy,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  vehicleId: string;
+  defaultPerformedBy: string;
+}) {
+  const [type, setType] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [mileage, setMileage] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function resetForm() {
+    setType("");
+    setDate(new Date().toISOString().slice(0, 10));
+    setMileage("");
+    setCost("");
+    setNotes("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const mileageNum = Number(mileage);
+    const costNum = Number(cost);
+    if (!Number.isFinite(mileageNum) || mileageNum < 0) {
+      toast.error("Mileage must be a non-negative number");
+      return;
+    }
+    if (!Number.isFinite(costNum) || costNum < 0) {
+      toast.error("Cost must be a non-negative number");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.addMaintenanceLog({
+        vehicleId,
+        type,
+        performedBy: defaultPerformedBy,
+        date,
+        mileage: mileageNum,
+        cost: costNum,
+        notes,
+        attachments: [],
+      });
+      toast.success("Service scheduled");
+      resetForm();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save log");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Reset on close so reopening doesn't show stale text — guards against
+        // cross-vehicle data leaks if the dialog is reused at the page level.
+        if (!next) resetForm();
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Schedule service — {vehicleId}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <Label>Service type</Label>
+            <Input
+              required
+              placeholder="e.g. Oil change"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Date</Label>
+              <Input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Mileage</Label>
+              <Input
+                type="number"
+                required
+                className="font-mono"
+                value={mileage}
+                onChange={(e) => setMileage(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Cost ($)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              required
+              className="font-mono"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {saving ? "Saving…" : "Add log"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Driver picker is a Select rather than free-text so the foreign key on
+// fuel_logs.driver_id always resolves to a known driver row.
+function AddFuelDialog({
+  open,
+  onOpenChange,
+  vehicleId,
+  defaultDriverId,
+  drivers,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  vehicleId: string;
+  defaultDriverId: string;
+  drivers: { id: string; name: string }[];
+}) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [gallons, setGallons] = useState("");
+  const [cost, setCost] = useState("");
+  const [location, setLocation] = useState("");
+  const [driverId, setDriverId] = useState(defaultDriverId);
+  const [saving, setSaving] = useState(false);
+
+  function resetForm() {
+    setDate(new Date().toISOString().slice(0, 10));
+    setGallons("");
+    setCost("");
+    setLocation("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const gallonsNum = Number(gallons);
+    const costNum = Number(cost);
+    if (!Number.isFinite(gallonsNum) || gallonsNum <= 0) {
+      toast.error("Gallons must be a positive number");
+      return;
+    }
+    if (!Number.isFinite(costNum) || costNum < 0) {
+      toast.error("Cost must be a non-negative number");
+      return;
+    }
+    if (!location.trim()) {
+      toast.error("Location is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.addFuelLog({
+        vehicleId,
+        date,
+        gallons: gallonsNum,
+        cost: costNum,
+        location: location.trim(),
+        driverId,
+      });
+      toast.success("Fuel entry added");
+      resetForm();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save fuel entry");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) resetForm();
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add fuel entry — {vehicleId}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Date</Label>
+              <Input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Gallons</Label>
+              <Input
+                type="number"
+                step="0.01"
+                required
+                className="font-mono"
+                value={gallons}
+                onChange={(e) => setGallons(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Cost ($)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              required
+              className="font-mono"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Location</Label>
+            <Input
+              required
+              placeholder="e.g. Petro-Canada · QEW"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Driver</Label>
+            <Select value={driverId} onValueChange={setDriverId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {drivers.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {saving ? "Saving…" : "Add fuel entry"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Audit chip showing the most recent passing pre-trip. Admins use this to
+// confirm a driver actually circle-checked the truck before clocking in
+// (the lockout enforces it on the driver side; this is the audit view).
+// Green = fresh (<12h), amber = stale, red = never recorded.
+function PretripBadge({ lastAt }: { lastAt: string | null }) {
+  const PRETRIP_WINDOW_MS = 12 * 60 * 60 * 1000;
+  if (!lastAt) {
+    return (
+      <span
+        data-testid="pretrip-badge"
+        data-pretrip-status="missing"
+        className="inline-flex items-center gap-1 rounded bg-danger/15 text-danger text-[10px] font-mono uppercase px-2 py-1"
+        title="No pre-trip inspection on file — driver is locked out of clock-in."
+      >
+        <ClipboardCheck className="w-3 h-3" /> Pre-trip: never
+      </span>
+    );
+  }
+  const ageMs = Date.now() - new Date(lastAt).getTime();
+  const fresh = ageMs <= PRETRIP_WINDOW_MS;
+  const formatted = new Date(lastAt).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <span
+      data-testid="pretrip-badge"
+      data-pretrip-status={fresh ? "fresh" : "stale"}
+      className={`inline-flex items-center gap-1 rounded text-[10px] font-mono uppercase px-2 py-1 ${
+        fresh ? "bg-success/15 text-success" : "bg-amber-brand/15 text-amber-brand"
+      }`}
+      title={`Last passing pre-trip inspection · ${new Date(lastAt).toISOString()}`}
+    >
+      <ClipboardCheck className="w-3 h-3" /> Last pre-trip: {formatted}
+    </span>
   );
 }

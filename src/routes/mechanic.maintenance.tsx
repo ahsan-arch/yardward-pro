@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MechanicShell } from "@/components/layout/MechanicLayout";
 import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertTriangle, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/mechanic/maintenance")({
   head: () => ({ meta: [{ title: "Vehicle maintenance logs — FleetOps CRM" }] }),
@@ -24,12 +26,62 @@ export const Route = createFileRoute("/mechanic/maintenance")({
 
 function Page() {
   const { vehicles, maintenanceLogs } = useData();
+  const { user } = useAuth();
   const [vehicleId, setVehicleId] = useState<string>(vehicles[0]?.id ?? "");
   const [open, setOpen] = useState(false);
+  const [type, setType] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [mileage, setMileage] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
   const logs = maintenanceLogs.filter((l) => l.vehicleId === vehicleId);
   const alerts = vehicles.filter(
     (v) => v.status === "maintenance" || v.nextServiceDue.toLowerCase().includes("overdue"),
   );
+
+  function resetForm() {
+    setType("");
+    setDate(new Date().toISOString().slice(0, 10));
+    setMileage("");
+    setCost("");
+    setNotes("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!vehicleId) return;
+    const mileageNum = Number(mileage);
+    const costNum = Number(cost);
+    if (!Number.isFinite(mileageNum) || mileageNum < 0) {
+      toast.error("Mileage must be a non-negative number");
+      return;
+    }
+    if (!Number.isFinite(costNum) || costNum < 0) {
+      toast.error("Cost must be a non-negative number");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.addMaintenanceLog({
+        vehicleId,
+        type,
+        performedBy: user?.name ?? user?.id ?? "Mechanic",
+        date,
+        mileage: mileageNum,
+        cost: costNum,
+        notes,
+        attachments: [],
+      });
+      toast.success("Maintenance log added");
+      resetForm();
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save log");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <MechanicShell title="Vehicle maintenance logs">
@@ -108,41 +160,62 @@ function Page() {
           <DialogHeader>
             <DialogTitle>Add maintenance log — {vehicleId}</DialogTitle>
           </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              toast.success("Maintenance log added (mock)");
-              setOpen(false);
-            }}
-            className="space-y-3"
-          >
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <Label>Service type</Label>
-              <Input required placeholder="e.g. Brake replacement" />
+              <Input
+                required
+                placeholder="e.g. Brake replacement"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Date</Label>
-                <Input type="date" required />
+                <Input
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
               </div>
               <div>
                 <Label>Mileage</Label>
-                <Input type="number" required className="font-mono" />
+                <Input
+                  type="number"
+                  required
+                  className="font-mono"
+                  value={mileage}
+                  onChange={(e) => setMileage(e.target.value)}
+                />
               </div>
             </div>
             <div>
               <Label>Cost ($)</Label>
-              <Input type="number" step="0.01" required className="font-mono" />
+              <Input
+                type="number"
+                step="0.01"
+                required
+                className="font-mono"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+              />
             </div>
             <div>
               <Label>Notes</Label>
-              <Textarea rows={3} />
+              <Textarea
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
             <Button
               type="submit"
+              disabled={saving}
               className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
             >
-              Add log
+              {saving ? "Saving…" : "Add log"}
             </Button>
           </form>
         </DialogContent>

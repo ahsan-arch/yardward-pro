@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Loader2, ClipboardList, Camera, X } from "lucide-react";
+import { ArrowLeft, Loader2, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -43,18 +44,8 @@ function Page() {
   }, [pickedJob?.location.lat, pickedJob?.location.lng]);
   const gps = useGpsCapture(fallback);
   const [note, setNote] = useState("");
-  const [photos, setPhotos] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ job?: string; note?: string }>({});
-
-  function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotos((p) => [...p, reader.result as string]);
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,10 +55,26 @@ function Page() {
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 300));
-    toast.success(`Log added to ${jobId}`);
-    setLoading(false);
-    nav({ to: "/driver" });
+    try {
+      const gpsCoords = gps.result?.ok ? gps.result.coords : null;
+      await api.submitJobLog({
+        jobId,
+        driverId: user.id,
+        // Vehicle is denormalised onto the log so admins can spot which truck
+        // was on-site for the note even after the job/driver reassignment.
+        vehicleId: pickedJob?.vehicleId ?? null,
+        body: note.trim(),
+        gpsLat: gpsCoords?.lat ?? null,
+        gpsLng: gpsCoords?.lng ?? null,
+        loggedAt: new Date().toISOString(),
+      });
+      toast.success(`Log added to ${jobId}`);
+      nav({ to: "/driver" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save job log");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -115,36 +122,6 @@ function Page() {
               className={cn("mt-1.5", err.note && "border-danger")}
             />
             {err.note && <p className="text-xs text-danger mt-1">{err.note}</p>}
-          </div>
-          <div>
-            <Label>Photos (optional)</Label>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
-              {photos.map((p, i) => (
-                <div
-                  key={i}
-                  className="relative aspect-square rounded-md overflow-hidden border border-border"
-                >
-                  <img src={p} alt="" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setPhotos((arr) => arr.filter((_, idx) => idx !== i))}
-                    className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full grid place-items-center"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-              <label className="aspect-square rounded-md border-2 border-dashed border-border grid place-items-center text-muted-foreground cursor-pointer hover:border-amber-brand">
-                <Camera className="w-6 h-6" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={onPhoto}
-                  className="hidden"
-                />
-              </label>
-            </div>
           </div>
           <Button
             type="submit"

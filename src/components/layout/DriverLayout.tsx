@@ -1,5 +1,5 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Home, Briefcase, FileText, User, Menu, Clock, Loader2 } from "lucide-react";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Home, Briefcase, FileText, User, Menu, Clock, Loader2, Lock, Wrench, Ticket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -18,15 +18,21 @@ const tabs = [
   { to: "/driver", label: "Home", icon: Home, exact: true },
   { to: "/driver/jobs", label: "My Jobs", icon: Briefcase },
   { to: "/driver/forms", label: "Forms", icon: FileText },
+  // Direct link to the prepaid-ticket recording flow. Most QR-scan landings
+  // hit /driver/tickets via the t/<token> bridge already, but this tab gives
+  // the driver a one-tap entry when they walk in with a paper ticket book
+  // and need to record a debit before leaving the yard.
+  { to: "/driver/tickets", label: "Tickets", icon: Ticket },
   { to: "/driver/profile", label: "Profile", icon: User },
 ];
 
 export function DriverShell({ children }: { children?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const nav = useNavigate();
   const { user } = useAuth();
-  const { timeEntries, drivers } = useData();
+  const { timeEntries, drivers, toolChecklistSubmissions } = useData();
   const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
-  const me = drivers.find((d) => d.id === user.id);
+  const me = drivers.find((d) => d.id === user.id || d.email === user.email);
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(me?.vehicleAssignmentId ?? null);
     return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;
@@ -36,7 +42,43 @@ export function DriverShell({ children }: { children?: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const gps = useGpsCapture(fallback, open);
 
+  // Twice-daily checklist gate. Clock-out requires an end-of-shift checklist
+  // submitted after this open shift's clock_in. Clock-in requires a
+  // start-of-shift checklist submitted after the driver's most recent
+  // clock_out (or, if they've never clocked out, any prior start-of-shift
+  // would be stale so we still require a fresh one).
+  const checklistGate = useMemo(() => {
+    const mine = toolChecklistSubmissions.filter((s) => s.driverId === user.id);
+    if (openShift) {
+      const cutoff = new Date(openShift.clockIn).getTime();
+      const done = mine.some(
+        (s) => s.kind === "end_of_shift" && new Date(s.submittedAt).getTime() >= cutoff,
+      );
+      return { kind: "end_of_shift" as const, satisfied: done };
+    }
+    // No open shift → about to clock in. Find driver's most recent clock_out
+    // (entries with both clockIn and clockOut). If none, cutoff is 0 so any
+    // start-of-shift checklist qualifies — but only one submitted AFTER any
+    // shift the driver may have ended (we still want a fresh one per shift).
+    const lastClockOut = timeEntries
+      .filter((t) => t.driverId === user.id && t.clockOut)
+      .map((t) => new Date(t.clockOut as string).getTime())
+      .reduce((max, ts) => (ts > max ? ts : max), 0);
+    const done = mine.some(
+      (s) => s.kind === "start_of_shift" && new Date(s.submittedAt).getTime() >= lastClockOut,
+    );
+    return { kind: "start_of_shift" as const, satisfied: done };
+  }, [openShift, timeEntries, toolChecklistSubmissions, user.id]);
+
   async function handleClock() {
+    if (!checklistGate.satisfied) {
+      toast.error(
+        checklistGate.kind === "end_of_shift"
+          ? "Complete the end-of-shift tool check before clocking out"
+          : "Complete the start-of-shift tool check before clocking in",
+      );
+      return;
+    }
     setBusy(true);
     try {
       if (openShift) {
@@ -56,6 +98,11 @@ export function DriverShell({ children }: { children?: ReactNode }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function openChecklist() {
+    setOpen(false);
+    nav({ to: "/driver/tool-checklist", search: { kind: checklistGate.kind } });
   }
 
   return (
@@ -81,7 +128,7 @@ export function DriverShell({ children }: { children?: ReactNode }) {
           </button>
         </header>
         <main className="flex-1 pb-20 overflow-x-hidden">{children ?? <Outlet />}</main>
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-card border-t border-border grid grid-cols-4 z-30">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-card border-t border-border grid grid-cols-5 z-30">
           {tabs.map((t) => {
             const active = t.exact ? pathname === t.to : pathname.startsWith(t.to);
             return (
@@ -107,6 +154,26 @@ export function DriverShell({ children }: { children?: ReactNode }) {
             <SheetTitle>{openShift ? "Clock out" : "Clock in"}</SheetTitle>
           </SheetHeader>
           <div className="mt-5 space-y-4">
+            {!checklistGate.satisfied && (
+              <div
+                className="p-3 rounded-md border-2 border-danger/40 bg-danger/10 text-danger"
+                role="alert"
+                data-testid="clock-gate"
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <Lock className="w-4 h-4" />{" "}
+                  {checklistGate.kind === "end_of_shift"
+                    ? "Complete the end-of-shift tool check before clocking out"
+                    : "Complete the start-of-shift tool check before clocking in"}
+                </div>
+                <Button
+                  onClick={openChecklist}
+                  className="w-full mt-3 h-11 bg-danger text-danger-foreground hover:bg-danger/90 font-bold"
+                >
+                  <Wrench className="w-4 h-4" /> Open tool checklist
+                </Button>
+              </div>
+            )}
             <div className="flex items-center justify-between p-3 bg-muted/40 rounded-md">
               <span className="text-sm">Location</span>
               <GpsBadge result={gps.result} loading={gps.loading} onRetry={gps.refresh} />
@@ -128,12 +195,16 @@ export function DriverShell({ children }: { children?: ReactNode }) {
             )}
             <Button
               onClick={handleClock}
-              disabled={busy}
-              className="w-full h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-bold"
+              disabled={busy || !checklistGate.satisfied}
+              className="w-full h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-bold disabled:opacity-60"
             >
               {busy ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" /> Saving…
+                </>
+              ) : !checklistGate.satisfied ? (
+                <>
+                  <Lock className="w-4 h-4" /> Locked
                 </>
               ) : openShift ? (
                 "Confirm clock out"

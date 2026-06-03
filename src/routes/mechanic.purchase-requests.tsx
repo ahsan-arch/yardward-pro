@@ -27,6 +27,9 @@ function Page() {
   );
 
   const open = openId ? purchaseRequests.find((p) => p.id === openId) : null;
+  // Legacy fallback only — when the persisted snapshot is null (rows
+  // submitted before the inventory_check_result column landed) we still
+  // approximate a match against live inventory so the sheet isn't empty.
   const inventoryMatch = open
     ? inventoryItems.find((i) =>
         i.name.toLowerCase().includes(open.item.toLowerCase().split(" —")[0]),
@@ -109,18 +112,57 @@ function Page() {
                 <Field k="Urgency" v={open.urgency.toUpperCase()} />
                 <Field k="Created" v={new Date(open.createdAt).toLocaleString()} />
                 <div className="border border-border rounded-md p-3 bg-muted/30">
-                  <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground mb-1">
-                    Inventory check
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+                      Inventory check
+                    </div>
+                    {open.inventoryCheckResult !== null && (
+                      <div className="text-[10px] font-mono text-muted-foreground">
+                        {open.inventoryCheckResult.length > 0
+                          ? `matched ${open.inventoryCheckResult.length} item${open.inventoryCheckResult.length === 1 ? "" : "s"}`
+                          : "no matches"}
+                      </div>
+                    )}
                   </div>
-                  {inventoryMatch ? (
-                    <div className="text-sm flex items-center gap-2">
-                      <Package className="w-3.5 h-3.5" />
-                      Match found: <span className="font-mono">{inventoryMatch.sku}</span> ·{" "}
-                      {inventoryMatch.qtyOnHand} on hand
+                  {open.inventoryCheckResult === null ? (
+                    inventoryMatch ? (
+                      <div className="text-sm flex items-center gap-2">
+                        <Package className="w-3.5 h-3.5" />
+                        Match found: <span className="font-mono">{inventoryMatch.sku}</span> ·{" "}
+                        {inventoryMatch.qtyOnHand} on hand
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        No matching SKU. Request will go to suppliers.
+                      </div>
+                    )
+                  ) : open.inventoryCheckResult.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      Inventory checked — no matches found at submission.
                     </div>
                   ) : (
-                    <div className="text-sm text-muted-foreground">
-                      No matching SKU. Request will go to suppliers.
+                    <div className="space-y-1">
+                      {open.inventoryCheckResult.map((m) => (
+                        <div
+                          key={m.inventoryItemId}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <Package className="w-3.5 h-3.5 shrink-0" />
+                          <span className="flex-1 truncate">{m.name}</span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {m.sku}
+                          </span>
+                          <span
+                            className={
+                              m.qtyOnHand > 0
+                                ? "text-warning font-semibold text-xs"
+                                : "text-muted-foreground text-xs"
+                            }
+                          >
+                            {m.qtyOnHand} on hand
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

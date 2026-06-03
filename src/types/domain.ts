@@ -24,6 +24,19 @@ export interface Mechanic extends User {
   shopId: string;
 }
 
+export type TicketReportFrequency = "off" | "daily" | "weekly" | "monthly";
+
+export interface ClientTicketSettings {
+  enabled: boolean;
+  balance: number;
+  threshold: number;
+  bundleSize: number;
+  bundlePrice: number;
+  autoBillEnabled: boolean;
+  reportFrequency: TicketReportFrequency;
+  reportRecipients: string[];
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -34,6 +47,36 @@ export interface Client {
   rateTableId: string | null;
   notes: string;
   status: "active" | "inactive";
+  tickets: ClientTicketSettings;
+}
+
+export type TicketTxnKind = "debit" | "credit" | "adjustment";
+
+export interface TicketTransaction {
+  id: string;
+  clientId: string;
+  kind: TicketTxnKind;
+  qty: number;
+  balanceAfter: number;
+  occurredAt: string;
+  workOrderId: string | null;
+  vehicleId: string | null;
+  dumpSite: string | null;
+  reason: string;
+}
+
+export type TicketReplenishmentStatus = "not-synced" | "pending" | "synced" | "failed";
+
+export interface TicketReplenishment {
+  id: string;
+  clientId: string;
+  invoiceDataId: string;
+  qty: number;
+  amount: number;
+  triggeredAt: string;
+  autoBilled: boolean;
+  qboSyncStatus: TicketReplenishmentStatus;
+  qboInvoiceId: string | null;
 }
 
 export interface RateLineItem {
@@ -66,6 +109,22 @@ export interface Vehicle {
   driverId: string | null;
   geotabDeviceId: string | null;
   status: VehicleStatus;
+  // Live telematics (populated by the Geotab cron). All optional / nullable so
+  // mock data and pre-cron rows stay valid.
+  latitude?: number | null;
+  longitude?: number | null;
+  speedMph?: number | null;
+  speedKmh?: number | null;
+  isDriving?: boolean | null;
+  lastSeenAt?: string | null;
+  locationUpdatedAt?: string | null;
+  /**
+   * Timestamp (ISO) of the most recent passing pre-trip inspection for this
+   * vehicle. When null OR older than the lockout window (12h) drivers must
+   * complete a fresh circle-check before clocking in. Mirrors the SQL
+   * column `vehicles.last_pretrip_at` and backs MTO/CVOR record-keeping.
+   */
+  lastPretripAt?: string | null;
 }
 
 export interface MaintenanceLog {
@@ -105,17 +164,20 @@ export interface ToolChecklistItem {
   notes: string;
 }
 
+export type ToolChecklistKind = "start_of_shift" | "end_of_shift";
+
 export interface ToolChecklistSubmission {
   id: string;
   driverId: string;
   vehicleId: string;
+  kind: ToolChecklistKind;
   submittedAt: string;
   gpsLat: number | null;
   gpsLng: number | null;
   items: ToolChecklistItem[];
 }
 
-export type JobStatus = "scheduled" | "active" | "completed" | "delayed" | "cancelled";
+export type JobStatus = "draft" | "scheduled" | "active" | "completed" | "delayed" | "cancelled";
 
 export interface Job {
   id: string;
@@ -128,6 +190,25 @@ export interface Job {
   status: JobStatus;
   notes: string;
   createdBy: string;
+  createdAt: string;
+}
+
+/**
+ * Free-form note a driver attaches to a job mid-shift. Separate from the
+ * end-of-shift WorkOrder — this is for "stuck behind a gate", "site supervisor
+ * changed dump location", etc. Persisted to `public.job_logs` with RLS so each
+ * driver only sees their own rows; admins see everything for the job detail
+ * sheet.
+ */
+export interface JobLog {
+  id: string;
+  jobId: string;
+  driverId: string;
+  vehicleId: string | null;
+  body: string;
+  gpsLat: number | null;
+  gpsLng: number | null;
+  loggedAt: string;
   createdAt: string;
 }
 
@@ -154,10 +235,13 @@ export interface WorkOrder {
 
 export type QboSyncStatus = "not-synced" | "pending" | "synced" | "failed";
 
+export type InvoiceKind = "work-order" | "ticket-replenishment";
+
 export interface InvoiceData {
   id: string;
   workOrderId: string;
   clientId: string;
+  kind: InvoiceKind;
   lineItems: { description: string; qty: number; rate: number; amount: number }[];
   total: number;
   qboSyncStatus: QboSyncStatus;
@@ -174,9 +258,30 @@ export interface TimeEntry {
   vehicleMovementCorrelation: "matches" | "mismatch" | "pending";
   flagged: boolean;
   flagReason: string;
+  /**
+   * The VehicleInspection.id (a passing circle-check, <12h old) that
+   * authorised this clock-in. Required by the pre-trip lockout — without
+   * it the driver couldn't have started the shift. Stays null only for
+   * legacy/seed entries that pre-date the lockout.
+   */
+  pretripInspectionId?: string | null;
 }
 
 export type PurchaseRequestStatus = "pending" | "approved" | "rejected" | "ordered";
+
+/**
+ * Snapshot of stock visible to the mechanic at submission time, persisted to
+ * `purchase_requests.inventory_check_result` (jsonb). Lets admins see exactly
+ * what we had on hand when the request was filed — so if a mechanic ordered
+ * brake pads while 4 sets were sitting in SHOP-01, the audit trail says so.
+ */
+export interface InventoryCheckSnapshot {
+  inventoryItemId: string;
+  name: string;
+  sku: string;
+  qtyOnHand: number;
+  supplierId: string;
+}
 
 export interface PurchaseRequest {
   id: string;
@@ -186,10 +291,32 @@ export interface PurchaseRequest {
   estimatedCost: number;
   urgency: "low" | "medium" | "high";
   inventoryCheckedAt: string | null;
+  /**
+   * Stock snapshot captured by the in-form inventory search at submission.
+   * Empty array means "checked, found nothing"; null means "the mechanic
+   * never toggled the check" (legacy rows). Admin review surfaces this.
+   */
+  inventoryCheckResult: InventoryCheckSnapshot[] | null;
   status: PurchaseRequestStatus;
   approvedBy: string | null;
   supplierId: string | null;
   createdAt: string;
+  /**
+   * Stock units reserved against inventory_items at approval time. 1 when the
+   * fuzzy name/sku match found an item with enough on-hand stock to cover the
+   * request and we bumped its qty_reserved; 0 when there was no match or no
+   * stock (in which case the PR still moves to 'approved' but will need a
+   * real supplier order). Null on legacy rows from before this column was
+   * introduced — treat as "unknown" rather than "definitely zero".
+   */
+  inventoryDecrementQty: number | null;
+  /**
+   * Set by api.markPurchaseRequestOrdered once an admin places the actual
+   * supplier order. Null until then.
+   */
+  orderedAt: string | null;
+  orderedBy: string | null;
+  supplierOrderRef: string | null;
 }
 
 export interface InventoryItem {
@@ -225,7 +352,7 @@ export interface Notification {
   createdAt: string;
 }
 
-export type TokenScope = "forms" | "job" | "shift";
+export type TokenScope = "forms" | "job" | "shift" | "tickets";
 
 export interface DriverToken {
   id: string;
@@ -285,3 +412,70 @@ export interface VehicleInspection {
   photos: string[];
   flagged: boolean;
 }
+
+// Mechanic-side work order queue (separate from driver-side WorkOrder). Backed
+// by public.maintenance_work_orders. Created either by the failed-inspection
+// trigger, an admin from the maintenance dashboard, or a driver note.
+export type MaintenanceWorkOrderStatus =
+  | "queued"
+  | "claimed"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+export type MaintenanceWorkOrderPriority = "low" | "medium" | "high" | "critical";
+export type MaintenanceWorkOrderSource = "inspection" | "admin" | "driver_note";
+
+export interface MaintenanceWorkOrderPart {
+  inventoryItemId: string;
+  qty: number;
+  notes?: string;
+}
+
+export interface MaintenanceWorkOrder {
+  id: string;
+  vehicleId: string;
+  reportedBy: string | null;
+  reportedFrom: MaintenanceWorkOrderSource;
+  sourceInspectionId: string | null;
+  issueDescription: string;
+  priority: MaintenanceWorkOrderPriority;
+  status: MaintenanceWorkOrderStatus;
+  assignedMechanicId: string | null;
+  claimedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  partsUsed: MaintenanceWorkOrderPart[];
+  laborHours: number;
+  laborNotes: string;
+  finalCost: number | null;
+  completionNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Singleton org-wide settings. Mirrors the `public.app_settings` row.
+ * Inspection duration bounds drive the pre-trip lockout backdating: each
+ * submitted inspection's `submittedAt` is rewound by a random value in
+ * `[inspectionMinDurationSeconds, inspectionMaxDurationSeconds]` so the
+ * recorded time on the inspection looks like a legitimate 13–20min walk-
+ * around instead of the 90-second drive-throughs the MTO flags. Read by
+ * drivers (tolerance values), written by admins (everything).
+ */
+export interface AppSettings {
+  gpsToleranceMinutes: number;
+  overtimeWarningHours: number;
+  overtimeAlertHours: number;
+  inspectionMinDurationSeconds: number;
+  inspectionMaxDurationSeconds: number;
+  updatedAt: string;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  gpsToleranceMinutes: 15,
+  overtimeWarningHours: 40,
+  overtimeAlertHours: 44,
+  inspectionMinDurationSeconds: 780,
+  inspectionMaxDurationSeconds: 1200,
+  updatedAt: new Date(0).toISOString(),
+};

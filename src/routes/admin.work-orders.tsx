@@ -20,7 +20,7 @@ export const Route = createFileRoute("/admin/work-orders")({
 });
 
 function Page() {
-  const { workOrders } = useData();
+  const { workOrders, jobLogs } = useData();
   const { user } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState("all");
@@ -28,6 +28,13 @@ function Page() {
   const filtered = workOrders.filter((w) => (tab === "all" ? true : w.status === tab));
   const woRaw = workOrders.find((w) => w.id === openId) || null;
   const wo = woRaw ? workOrderDisplay(woRaw) : null;
+  // Pull every log the driver dropped while this job was active, newest first.
+  // Falls back to the hydration order when loggedAt timestamps tie.
+  const jobLogsForOpen = woRaw
+    ? jobLogs
+        .filter((log) => log.jobId === woRaw.jobId)
+        .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime())
+    : [];
 
   async function approve(id: string) {
     await api.approveWorkOrder(id, user.id);
@@ -155,20 +162,53 @@ function Page() {
                   <Row k="Dump site" v={wo.dumpSite} />
                 </Section>
                 <Section title="Foreman signature">
-                  <div className="border border-border rounded-md bg-muted/20 p-4 h-28 relative">
-                    <svg viewBox="0 0 200 60" className="w-full h-full text-foreground/80">
-                      <path
-                        d="M5 40 Q 20 10 40 35 T 80 30 Q 100 20 120 38 T 160 32 Q 180 25 195 40"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
+                  <div className="border border-border rounded-md bg-muted/20 p-4 h-28 relative flex items-center justify-center">
+                    {woRaw?.foremanSignature ? (
+                      <img
+                        src={woRaw.foremanSignature}
+                        alt="Foreman signature"
+                        className="object-contain w-full h-full"
                       />
-                    </svg>
+                    ) : (
+                      <span className="text-xs font-mono text-muted-foreground">
+                        No signature captured
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs font-mono text-muted-foreground mt-2">
-                    Signed on-site — 14 May 2025, 14:32
-                  </p>
+                  {woRaw?.foremanSignature && (
+                    <p className="text-xs font-mono text-muted-foreground mt-2">
+                      Signed on-site — {new Date(woRaw.submittedAt).toLocaleString()}
+                    </p>
+                  )}
+                </Section>
+                <Section title="Job logs">
+                  {jobLogsForOpen.length === 0 ? (
+                    <p className="text-xs font-mono text-muted-foreground">
+                      No logs recorded for this job.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {jobLogsForOpen.map((log) => (
+                        <li
+                          key={log.id}
+                          className="border border-border rounded-md bg-muted/20 p-3"
+                        >
+                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground mb-1">
+                            <span>{log.id}</span>
+                            <span>{new Date(log.loggedAt).toLocaleString()}</span>
+                          </div>
+                          <p className="text-sm text-foreground/90 whitespace-pre-wrap">
+                            {log.body}
+                          </p>
+                          {log.gpsLat != null && log.gpsLng != null && (
+                            <p className="text-[10px] font-mono text-success mt-1">
+                              GPS {log.gpsLat.toFixed(4)}, {log.gpsLng.toFixed(4)}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Section>
                 <Section title="GPS + timestamp">
                   <div className="flex items-center gap-2 text-sm">

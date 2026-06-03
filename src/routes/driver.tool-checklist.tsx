@@ -1,12 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Check, AlertTriangle, Loader2, Wrench } from "lucide-react";
+import { ArrowLeft, Check, AlertTriangle, Loader2, Wrench, Sun, Moon } from "lucide-react";
 import { useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import type { ToolCondition } from "@/types/domain";
+import type { ToolCondition, ToolChecklistKind } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
@@ -15,8 +15,14 @@ import { offlineQueue } from "@/lib/offline-queue";
 import { geotabCoordsForVehicle } from "@/data/mockData";
 import { useMemo } from "react";
 
+type ChecklistSearch = { kind: ToolChecklistKind };
+
 export const Route = createFileRoute("/driver/tool-checklist")({
   head: () => ({ meta: [{ title: "Tool checklist — FleetOps" }] }),
+  validateSearch: (search: Record<string, unknown>): ChecklistSearch => {
+    const k = search.kind;
+    return { kind: k === "end_of_shift" ? "end_of_shift" : "start_of_shift" };
+  },
   component: Page,
 });
 
@@ -33,10 +39,11 @@ const stateLabel: Record<ToolCondition, string> = {
 
 function Page() {
   const nav = useNavigate();
+  const { kind } = Route.useSearch();
   const { tools, drivers } = useData();
   const { user } = useAuth();
   const { isOnline } = useOffline();
-  const me = drivers.find((d) => d.id === user.id);
+  const me = drivers.find((d) => d.id === user.id || d.email === user.email);
   const vehicleId = me?.vehicleAssignmentId ?? "TRK-07";
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(vehicleId);
@@ -63,7 +70,8 @@ function Page() {
     try {
       const payload = {
         driverId: user.id,
-        vehicleId: "TRK-07",
+        vehicleId,
+        kind,
         gpsLat: gps.coords?.lat ?? null,
         gpsLng: gps.coords?.lng ?? null,
         items: items.map(({ toolId, status, notes }) => ({ toolId, status, notes })),
@@ -75,11 +83,20 @@ function Page() {
         await api.submitToolChecklist(payload);
         toast.success(flagged ? `Checklist submitted · ${flagged} flagged` : "Checklist submitted");
       }
-      nav({ to: "/driver" });
+      // After end-of-shift checklist, route back to the end-of-day flow so the
+      // driver can finish clocking out. Start-of-shift returns home.
+      if (kind === "end_of_shift") {
+        nav({ to: "/driver/end-of-day" });
+      } else {
+        nav({ to: "/driver" });
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  const kindLabel = kind === "end_of_shift" ? "End-of-shift" : "Start-of-shift";
+  const KindIcon = kind === "end_of_shift" ? Moon : Sun;
 
   return (
     <DriverShell>
@@ -90,11 +107,23 @@ function Page() {
         >
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
+        <div
+          className={cn(
+            "rounded-lg border px-3 py-2 mb-3 inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider",
+            kind === "end_of_shift"
+              ? "bg-navy/10 border-navy/30 text-navy"
+              : "bg-amber-brand/10 border-amber-brand/30 text-amber-brand",
+          )}
+        >
+          <KindIcon className="w-3.5 h-3.5" /> {kindLabel} tool check
+        </div>
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold">Tool checklist — TRK-07</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Mark each item: OK, damaged, or missing.
+              {kind === "end_of_shift"
+                ? "Confirm every tool is back on the truck before clocking out."
+                : "Mark each item: OK, damaged, or missing."}
             </p>
           </div>
           <GpsBadge result={gps.result} loading={gps.loading} onRetry={gps.refresh} />
