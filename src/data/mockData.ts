@@ -547,6 +547,78 @@ export const maintenanceWorkOrders: MaintenanceWorkOrder[] = [
     createdAt: "2025-05-13T09:15:00Z",
     updatedAt: "2025-05-13T09:15:00Z",
   },
+  // ---------------------------------------------------------------------------
+  // The MWOs below are owned by Jamie Reyes (M-01) and exist so the mechanic
+  // button-audit suite (tests/e2e/button-audit-mechanic.spec.ts) has fixtures
+  // for the sheet-driven actions: Start work / Release (claimed), Save
+  // progress / Mark complete / Add part / Remove part (in_progress), and the
+  // Discard external-update banner. Each test resets the seed by reloading
+  // the page, so flipping MWO-02 to in_progress inside one test doesn't leak
+  // into the next — the seed re-hydrates on mount.
+  // ---------------------------------------------------------------------------
+  {
+    id: "MWO-02",
+    vehicleId: "TRK-03",
+    reportedBy: null,
+    reportedFrom: "admin",
+    sourceInspectionId: null,
+    issueDescription: "Coolant leak under cab — pressure-test the radiator.",
+    priority: "medium",
+    status: "claimed",
+    assignedMechanicId: "M-01",
+    claimedAt: "2025-05-14T08:00:00Z",
+    startedAt: null,
+    completedAt: null,
+    partsUsed: [],
+    laborHours: 0,
+    laborNotes: "",
+    finalCost: null,
+    completionNotes: null,
+    createdAt: "2025-05-13T14:20:00Z",
+    updatedAt: "2025-05-14T08:00:00Z",
+  },
+  {
+    id: "MWO-03",
+    vehicleId: "TRK-11",
+    reportedBy: null,
+    reportedFrom: "admin",
+    sourceInspectionId: null,
+    issueDescription: "Hydraulic lift slow on rear gate — bleed + check seals.",
+    priority: "medium",
+    status: "in_progress",
+    assignedMechanicId: "M-01",
+    claimedAt: "2025-05-14T09:00:00Z",
+    startedAt: "2025-05-14T09:15:00Z",
+    completedAt: null,
+    partsUsed: [{ inventoryItemId: "INV-A4", qty: 1 }],
+    laborHours: 2,
+    laborNotes: "Bled the rear gate cylinder; checking seal kit fit next.",
+    finalCost: null,
+    completionNotes: null,
+    createdAt: "2025-05-13T16:00:00Z",
+    updatedAt: "2025-05-14T09:15:00Z",
+  },
+  {
+    id: "MWO-04",
+    vehicleId: "TRK-14",
+    reportedBy: null,
+    reportedFrom: "admin",
+    sourceInspectionId: null,
+    issueDescription: "Engine oil top-up + filter swap — scheduled service.",
+    priority: "low",
+    status: "in_progress",
+    assignedMechanicId: "M-01",
+    claimedAt: "2025-05-14T07:30:00Z",
+    startedAt: "2025-05-14T07:45:00Z",
+    completedAt: null,
+    partsUsed: [],
+    laborHours: 1,
+    laborNotes: "Drained old oil; new oil drum staged.",
+    finalCost: null,
+    completionNotes: null,
+    createdAt: "2025-05-13T18:00:00Z",
+    updatedAt: "2025-05-14T07:45:00Z",
+  },
 ];
 
 // ============ Tools ============

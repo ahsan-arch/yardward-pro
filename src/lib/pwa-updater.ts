@@ -79,3 +79,27 @@ export async function applyUpdate(): Promise<void> {
     window.location.reload();
   }
 }
+
+// Test-only seam: expose a window hook that fakes onNeedRefresh so Playwright
+// can drive the PwaUpdateBanner without a real waiting service worker. Gated
+// on import.meta.env.DEV so production builds never attach this property.
+//
+// We also install a stub updateSW so applyUpdate() has an observable side
+// effect. We can't rely on window.location.reload() — Chromium marks it
+// non-configurable so the test's Object.defineProperty stub throws — and
+// virtual:pwa-register's dev updateSW is a no-op. Instead we set the same
+// window flag the test polls, matching its intent without depending on a
+// reload override that the runtime forbids.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __forcePwaUpdate?: () => void }).__forcePwaUpdate = () => {
+    state.needRefresh = true;
+    // Replace updateSW so applyUpdate() resolves without actually reloading
+    // the page — a real reload would re-run init scripts and clear the test's
+    // __applyUpdateCalled flag before it can be observed. We surface the
+    // observable contract directly.
+    updateSW = async () => {
+      (window as unknown as { __applyUpdateCalled?: boolean }).__applyUpdateCalled = true;
+    };
+    emit();
+  };
+}

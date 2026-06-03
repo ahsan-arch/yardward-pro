@@ -32,6 +32,7 @@ import { Route as DriverJobLogRouteImport } from './routes/driver.job-log'
 import { Route as DriverInspectionRouteImport } from './routes/driver.inspection'
 import { Route as DriverFormsRouteImport } from './routes/driver.forms'
 import { Route as DriverEndOfDayRouteImport } from './routes/driver.end-of-day'
+import { Route as DebugErrorBoundaryTriggerRouteImport } from './routes/debug.error-boundary-trigger'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
 import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
 import { Route as AdminTicketsRouteImport } from './routes/admin.tickets'
@@ -168,6 +169,12 @@ const DriverEndOfDayRoute = DriverEndOfDayRouteImport.update({
   path: '/end-of-day',
   getParentRoute: () => DriverRoute,
 } as any)
+const DebugErrorBoundaryTriggerRoute =
+  DebugErrorBoundaryTriggerRouteImport.update({
+    id: '/debug/error-boundary-trigger',
+    path: '/debug/error-boundary-trigger',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AdminWorkOrdersRoute = AdminWorkOrdersRouteImport.update({
   id: '/work-orders',
   path: '/work-orders',
@@ -287,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -328,6 +336,7 @@ export interface FileRoutesByTo {
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -373,6 +382,7 @@ export interface FileRoutesById {
   '/admin/tickets': typeof AdminTicketsRoute
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
+  '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -419,6 +429,7 @@ export interface FileRouteTypes {
     | '/admin/tickets'
     | '/admin/timesheets'
     | '/admin/work-orders'
+    | '/debug/error-boundary-trigger'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -460,6 +471,7 @@ export interface FileRouteTypes {
     | '/admin/tickets'
     | '/admin/timesheets'
     | '/admin/work-orders'
+    | '/debug/error-boundary-trigger'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -504,6 +516,7 @@ export interface FileRouteTypes {
     | '/admin/tickets'
     | '/admin/timesheets'
     | '/admin/work-orders'
+    | '/debug/error-boundary-trigger'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -533,6 +546,7 @@ export interface RootRouteChildren {
   DriverRoute: typeof DriverRouteWithChildren
   LoginRoute: typeof LoginRoute
   MechanicRoute: typeof MechanicRouteWithChildren
+  DebugErrorBoundaryTriggerRoute: typeof DebugErrorBoundaryTriggerRoute
   TTokenRoute: typeof TTokenRoute
 }
 
@@ -698,6 +712,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/driver/end-of-day'
       preLoaderRoute: typeof DriverEndOfDayRouteImport
       parentRoute: typeof DriverRoute
+    }
+    '/debug/error-boundary-trigger': {
+      id: '/debug/error-boundary-trigger'
+      path: '/debug/error-boundary-trigger'
+      fullPath: '/debug/error-boundary-trigger'
+      preLoaderRoute: typeof DebugErrorBoundaryTriggerRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/work-orders': {
       id: '/admin/work-orders'
@@ -940,6 +961,7 @@ const rootRouteChildren: RootRouteChildren = {
   DriverRoute: DriverRouteWithChildren,
   LoginRoute: LoginRoute,
   MechanicRoute: MechanicRouteWithChildren,
+  DebugErrorBoundaryTriggerRoute: DebugErrorBoundaryTriggerRoute,
   TTokenRoute: TTokenRoute,
 }
 export const routeTree = rootRouteImport

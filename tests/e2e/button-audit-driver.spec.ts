@@ -230,42 +230,23 @@ test.describe("Driver button audit", () => {
       page,
     }) => {
       const errors = withErrorGuard(page);
-      // Open a shift first so the EOD gate has something to gate. The clock-in
-      // sheet on /driver lets us do this without DB mutations.
-      await page.goto("/driver");
-      const clockIn = page
-        .getByRole("button", { name: /clock in|start shift/i })
-        .first();
-      await clockIn.click();
-      const dialog = page.getByRole("dialog");
-      await expect(dialog).toBeVisible();
-      // Fill odometer in the sheet so the confirm works.
-      await dialog.locator('input[inputmode="numeric"]').first().fill("84300");
-      const confirm = dialog.getByRole("button", { name: /confirm clock in/i });
-      // The confirm may be gated by checklist UI — if it's disabled, this
-      // branch can't open a shift, so we fall back to asserting the EOD page
-      // renders without the gate (default seed) and skip the gate-click.
-      if (await confirm.isEnabled().catch(() => false)) {
-        await confirm.click();
-        await page.waitForLoadState("networkidle").catch(() => {});
-      }
+      // The DataContext checks this sessionStorage flag at first render and
+      // seeds a synthetic OPEN time entry for D-01 (no clockOut, no recent
+      // end_of_shift checklist) so the EOD gate banner renders deterministically
+      // without depending on UI-mediated clock-in state surviving page.goto's
+      // full reload. The flag is sessionStorage-scoped so it doesn't leak into
+      // sibling tests that assume D-01 has no open shift.
+      await page.addInitScript(() => {
+        try {
+          window.sessionStorage.setItem("fo:test-open-shift-d01", "1");
+        } catch {
+          /* sessionStorage disabled — test will skip gracefully below */
+        }
+      });
 
       await page.goto("/driver/end-of-day");
       const gateBtn = page.locator("[data-testid='end-of-shift-gate'] button");
-      if ((await gateBtn.count()) === 0) {
-        // Gate didn't render — no open shift was successfully created. Assert
-        // the form is reachable instead so we know the page still works.
-        await expect(
-          page.locator("button[type='submit']:has-text('Submit end-of-day')"),
-        ).toBeVisible();
-        expect(errors).toEqual([]);
-        test.skip(
-          true,
-          "could not open a shift in the test harness — gate not triggered",
-        );
-        return;
-      }
-      await expect(gateBtn).toBeVisible();
+      await expect(gateBtn).toBeVisible({ timeout: 5_000 });
       await expect(gateBtn).toBeEnabled();
       await gateBtn.click();
       await page.waitForURL(/\/driver\/tool-checklist/, { timeout: 5_000 });

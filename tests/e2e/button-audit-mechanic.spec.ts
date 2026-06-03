@@ -63,6 +63,27 @@ async function openFirstSheetRow(page: Page): Promise<boolean> {
   return true;
 }
 
+/** Opens the work-order sheet for the first row whose status badge matches
+ *  the given status (e.g. "claimed", "in_progress"). The active tab mixes
+ *  claimed + in_progress rows for the seed mechanic, so tests that depend
+ *  on a specific status gate (Start work needs claimed, Save progress needs
+ *  in_progress) can't rely on openFirstSheetRow — whichever row sorts to
+ *  the top wins. Returns true if a matching row was opened, false otherwise. */
+async function openSheetRowByStatus(page: Page, status: string): Promise<boolean> {
+  // Status badge renders the raw status string; filter rows by that text and
+  // exclude the empty-state row. Take .first() so a future seed with multiple
+  // matching rows still resolves deterministically.
+  const row = page
+    .locator("tbody tr")
+    .filter({ hasText: new RegExp(status, "i") })
+    .filter({ hasNotText: /queue is empty|nothing currently/i })
+    .first();
+  if ((await row.count()) === 0) return false;
+  await row.click();
+  await expect(page.getByRole("dialog").first()).toBeVisible({ timeout: 5_000 });
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // /mechanic — dashboard surface (Start work card button, PR form, urgency)
 // ---------------------------------------------------------------------------
@@ -161,8 +182,11 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No claimed MWOs to start (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open — no eligible row");
+    // The active tab mixes claimed + in_progress rows, sorted by updatedAt.
+    // Filter to a 'claimed' row explicitly so this test doesn't accidentally
+    // open an in_progress row whose action buttons are Save/Mark complete.
+    const opened = await openSheetRowByStatus(page, "claimed");
+    test.skip(!opened, "Sheet did not open — no claimed row");
     // The Start work button only renders for status === 'claimed'.
     const sheet = page.getByRole("dialog");
     const start = sheet.getByRole("button", { name: /start work/i });
@@ -178,8 +202,8 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No claimed MWOs to release (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open — no eligible row");
+    const opened = await openSheetRowByStatus(page, "claimed");
+    test.skip(!opened, "Sheet did not open — no claimed row");
     const sheet = page.getByRole("dialog");
     const release = sheet.getByRole("button", { name: /release back to queue/i });
     if ((await release.count()) === 0) test.skip(true, "Row is not in 'claimed' state");
@@ -194,8 +218,8 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No active MWOs (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open");
+    const opened = await openSheetRowByStatus(page, "in_progress");
+    test.skip(!opened, "Sheet did not open — no in_progress row");
     const sheet = page.getByRole("dialog");
     const save = sheet.getByRole("button", { name: /save progress/i });
     if ((await save.count()) === 0) test.skip(true, "Row is not in 'in_progress' state");
@@ -213,8 +237,8 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No active MWOs (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open");
+    const opened = await openSheetRowByStatus(page, "in_progress");
+    test.skip(!opened, "Sheet did not open — no in_progress row");
     const sheet = page.getByRole("dialog");
     const complete = sheet.getByRole("button", { name: /mark complete/i });
     if ((await complete.count()) === 0) test.skip(true, "Row is not in 'in_progress' state");
@@ -231,20 +255,25 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No active MWOs (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open");
+    const opened = await openSheetRowByStatus(page, "in_progress");
+    test.skip(!opened, "Sheet did not open — no in_progress row");
     const sheet = page.getByRole("dialog");
     // The plus button is rendered only when status === 'in_progress'; the
     // composed selector targets it via its Lucide Plus icon.
     const addBtn = sheet.locator("button:has(svg.lucide-plus)");
     if ((await addBtn.count()) === 0) test.skip(true, "Row is not editable (status !== in_progress)");
-    // Pick an inventory item in the Select before clicking +.
+    // Count existing × <qty> entries BEFORE adding so we can assert a strict
+    // +1 rather than ≥1 (the seed already records one part on MWO-03).
+    const partRows = sheet.locator('button[aria-label="Remove part"]');
+    const before = await partRows.count();
+    // Pick an inventory item in the Select before clicking +. We need an item
+    // NOT already in partsUsed; the seed's MWO-03 has INV-A4, so pick the
+    // first option which is INV-A1 (Engine oil) — different SKU, clean add.
     await sheet.locator('button[role="combobox"]').first().click();
     await page.getByRole("option").first().click();
     await sheet.locator('input[type="number"]').nth(1).fill("2");
     await addBtn.first().click();
-    // The part row appears with × <qty>; assert any × token shows up.
-    await expect(sheet.getByText(/× ?\d+/).first()).toBeVisible({ timeout: 5_000 });
+    await expect(partRows).toHaveCount(before + 1, { timeout: 5_000 });
   });
 
   test("Remove part (sheet x icon) deletes a parts-used entry", async ({ page }) => {
@@ -254,8 +283,8 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
       (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
       "No active MWOs (mock mode)",
     );
-    const opened = await openFirstSheetRow(page);
-    test.skip(!opened, "Sheet did not open");
+    const opened = await openSheetRowByStatus(page, "in_progress");
+    test.skip(!opened, "Sheet did not open — no in_progress row");
     const sheet = page.getByRole("dialog");
     const remove = sheet.locator('button[aria-label="Remove part"]');
     if ((await remove.count()) === 0)
@@ -268,18 +297,44 @@ test.describe("Mechanic work-orders queue + sheet buttons", () => {
   test("Discard external update banner button resets dirty edits", async ({ page }) => {
     await gotoAs(page, "/mechanic/work-orders");
     await page.getByRole("tab", { name: /my active/i }).click();
-    // The Discard button only renders when an external realtime tick fires
-    // while the form is dirty — not reachable from a single Playwright run
-    // in mock mode without a second tab driving updateMaintenanceWorkOrder.
-    // The audit therefore asserts it is NOT in an erroneous always-visible
-    // state; presence under the banner is exercised in the Supabase-wired
-    // integration tier rather than here.
-    const discard = page.getByRole("dialog").getByRole("button", { name: /^discard$/i });
     test.skip(
-      (await discard.count()) === 0,
-      "External-update banner not present in current state (expected in mock mode)",
+      (await page.locator("tbody tr").filter({ hasNotText: /nothing currently/i }).count()) === 0,
+      "No active MWOs (mock mode)",
     );
-    await discard.first().click();
+    // Open an in_progress row so the form is editable (the dirty flag the
+    // realtime-sync effect keys on only flips when the editable Labor /
+    // Parts / Notes fields are touched). The MWO id is the first column on
+    // the row and we'll re-use it to drive the simulated external update.
+    const inProgressRow = page
+      .locator("tbody tr")
+      .filter({ hasText: /in_progress/i })
+      .first();
+    test.skip(
+      (await inProgressRow.count()) === 0,
+      "No in_progress row to dirty + simulate external update",
+    );
+    const woId = (await inProgressRow.locator("td").first().innerText()).trim();
+    await inProgressRow.click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible({ timeout: 5_000 });
+    // Dirty the form so the realtime-sync effect chooses the banner branch
+    // instead of silently resetting. Labor notes is unconditional in the
+    // in_progress editable region and free-form, so it's the safest target.
+    await sheet.locator("textarea").first().fill("Diagnosis updated mid-session");
+    // Simulate a realtime tick by bumping updatedAt on the same row from
+    // outside the sheet. The window hook installed by DataBridge writes
+    // back through the store's upsert path, which fires the sheet's
+    // useEffect on wo.updatedAt and surfaces the Discard banner.
+    const simulated = await page.evaluate((id) => {
+      const fn = (window as unknown as {
+        __simulateMwoExternalUpdate?: (id: string) => boolean;
+      }).__simulateMwoExternalUpdate;
+      return typeof fn === "function" ? fn(id) : false;
+    }, woId);
+    expect(simulated).toBe(true);
+    const discard = sheet.getByRole("button", { name: /^discard$/i });
+    await expect(discard).toBeVisible({ timeout: 5_000 });
+    await discard.click();
     // After Discard, the banner should detach.
     await expect(page.getByText(/row updated externally/i)).toBeHidden({ timeout: 5_000 });
   });

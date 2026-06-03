@@ -201,6 +201,22 @@ const TOKENS_STORAGE_KEY = "fo:driver-tokens:v1";
 // reload (Playwright's page.goto resets React state). The seed file leaves
 // lastPretripAt null so the lockout still fires on first visit.
 const VEHICLE_PRETRIP_STORAGE_KEY = "fo:vehicle-pretrip:v1";
+// Opt-in sessionStorage flag the e2e suite sets via page.addInitScript when it
+// needs the seed to ship with an OPEN shift for D-01 (no clockOut, no recent
+// end_of_shift checklist) so the end-of-day gate banner renders without
+// depending on UI-mediated clock-in state surviving a full page reload. We
+// gate this behind a flag so the other EOD tests (which assert "no open
+// shift => gate hidden / submit enabled") keep their seed assumptions.
+const TEST_OPEN_SHIFT_FLAG = "fo:test-open-shift-d01";
+
+function readTestOpenShiftFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(TEST_OPEN_SHIFT_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function readPersistedPretripStamps(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -274,7 +290,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(seed.smsLogs);
   const [driverTokens, setTokens] = useState<DriverToken[]>(seed.driverTokens);
-  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(seed.timeEntries);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(() => {
+    // E2E opt-in: when the test sets the open-shift flag, prepend a synthetic
+    // OPEN time entry for D-01 so the EOD-gate test sees an active shift after
+    // page.goto wipes React state. Stamped 1h ago so "hours so far" renders a
+    // positive number, and intentionally has NO matching end_of_shift tool
+    // checklist submission so the gate banner fires.
+    if (readTestOpenShiftFlag()) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const synthetic: TimeEntry = {
+        id: "TE-TEST-OPEN-D01",
+        driverId: "D-01",
+        clockIn: oneHourAgo,
+        clockOut: null,
+        gpsClockIn: { lat: 43.66, lng: -79.41 },
+        gpsClockOut: null,
+        vehicleMovementCorrelation: "pending",
+        flagged: false,
+        flagReason: "",
+        pretripInspectionId: null,
+      };
+      return [synthetic, ...seed.timeEntries];
+    }
+    return seed.timeEntries;
+  });
   const [vehicleInspections, setInspections] = useState<VehicleInspection[]>(
     seed.vehicleInspections,
   );
@@ -862,6 +901,30 @@ let _store: Ctx | null = null;
 export function DataBridge() {
   const c = useContext(DataCtx);
   _store = c;
+  // E2E hook: lets tests bump a maintenance work order's updatedAt so the
+  // mechanic sheet's realtime-sync effect fires the "row updated externally"
+  // banner. Mock mode has no second tab/Supabase realtime to drive this for
+  // real, so the button-audit Discard test reaches in here directly. Guarded
+  // by `typeof window` for SSR safety and only attaches when a store is
+  // available so we don't ship a half-wired hook in production builds.
+  useEffect(() => {
+    if (typeof window === "undefined" || !c) return;
+    const w = window as unknown as {
+      __simulateMwoExternalUpdate?: (id: string) => boolean;
+    };
+    w.__simulateMwoExternalUpdate = (id: string) => {
+      const existing = c.maintenanceWorkOrders.find((m) => m.id === id);
+      if (!existing) return false;
+      c.upsertMaintenanceWorkOrder({
+        ...existing,
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    };
+    return () => {
+      delete w.__simulateMwoExternalUpdate;
+    };
+  }, [c]);
   return null;
 }
 export function getStore(): Ctx {

@@ -253,31 +253,37 @@ test.describe("button audit: public + auth", () => {
   // __root — Error boundary "Try again".
   //
   // The router-level ErrorComponent only renders if a route throws
-  // during render. We force one by registering a synthetic route
-  // before the app boots and intentionally throwing. If we can't
-  // wire that up, we still cover the same component by mounting a
-  // probe in the page that calls reset()/invalidate(). To keep the
-  // test deterministic across environments we instead drive the
-  // boundary via the in-app ErrorBoundary that wraps <Outlet/>:
-  // we navigate to a route, then dispatch a script error and assert
-  // the "Try again" recovery button shows up. If neither boundary
-  // is reachable from the public flow we mark the test as skipped
-  // with a clear reason instead of false-failing.
+  // during render. We force one by navigating to a dev-only debug
+  // route (src/routes/debug.error-boundary-trigger.tsx) gated on
+  // window.__fo_test_force_error so we get a deterministic throw.
+  // After the fallback appears we clear the flag and click Try again
+  // to verify the boundary actually recovers the route.
   // ----------------------------------------------------------------
   test("__root Try again error-boundary button recovers the route", async ({ page }) => {
-    await page.goto("/login");
-    await page.locator("#password").waitFor({ state: "visible" });
+    // Set the throw flag before any app code runs so the route component
+    // throws on its first render.
+    await page.addInitScript(() => {
+      (window as unknown as { __fo_test_force_error?: boolean }).__fo_test_force_error = true;
+    });
+
+    await page.goto("/debug/error-boundary-trigger");
 
     const tryAgain = page.getByRole("button", { name: /try again/i });
-    const visible = await tryAgain.isVisible().catch(() => false);
-    test.skip(
-      !visible,
-      "Router/ErrorBoundary Try again button only renders on a thrown route error; not deterministically reachable from public flow.",
-    );
+    await expect(tryAgain).toBeVisible({ timeout: 10_000 });
+
+    // Clear the flag so the next render of the route succeeds.
+    await page.evaluate(() => {
+      (window as unknown as { __fo_test_force_error?: boolean }).__fo_test_force_error = false;
+    });
 
     await tryAgain.click();
+
     // After clicking Try again the router invalidates and re-renders;
-    // we should still be on a real route (not the error fallback).
+    // we should land on the debug page's normal (non-throwing) content
+    // and the Try again button should be gone.
+    await expect(page.getByTestId("debug-error-boundary-trigger")).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByRole("button", { name: /try again/i })).toHaveCount(0);
   });
 
@@ -308,79 +314,46 @@ test.describe("button audit: public + auth", () => {
   // ----------------------------------------------------------------
   // PwaUpdateBanner — Reload button.
   //
-  // We mock the pwa-updater subscribe behaviour by patching the module
-  // exports on the window before the React root mounts: an init script
-  // monkey-patches subscribePwaUpdate via a custom event so the banner
-  // observes needRefresh=true on mount. Since the production module is
-  // bundled, the cleanest cross-environment approach is to directly
-  // dispatch a state change via the same exported subscribe path.
+  // The banner only renders when registerSW's onNeedRefresh fires. We
+  // can't get a real waiting SW in dev (devOptions.enabled=false), so
+  // src/lib/pwa-updater.ts exposes a dev-only window.__forcePwaUpdate
+  // hook that flips needRefresh=true and notifies subscribers — the
+  // same code path the real onNeedRefresh callback runs.
   //
-  // The least invasive way to verify the button works without rebuilding
-  // is to mount a tiny inline page hook via addInitScript that monkey-
-  // patches updateSW so applyUpdate() doesn't actually reload the page.
-  // If we can't see the banner (PWA is disabled in dev / headless),
-  // skip with a clear reason rather than red-failing CI.
+  // Then we click Reload and verify applyUpdate ran. Since updateSW
+  // is null in dev (no real registration), applyUpdate falls back to
+  // window.location.reload(), which we stub to set a flag instead of
+  // actually reloading the page.
   // ----------------------------------------------------------------
   test("PwaUpdateBanner Reload triggers applyUpdate when needRefresh fires", async ({ page }) => {
-    // Stub navigator.serviceWorker.register to bypass real SW registration
-    // and capture the applyUpdate call.
+    // Stub window.location.reload so applyUpdate's terminal side-effect
+    // becomes observable without actually tearing down the page.
     await page.addInitScript(() => {
-      (window as any).__applyUpdateCalled = false;
-      // Force the pwa-updater module to think it has an updateSW we can
-      // observe. We hook in after main.tsx imports the module by polling
-      // for the subscribePwaUpdate export on first paint. Because the
-      // module is ESM-bundled this isn't reachable via globalThis, so
-      // we instead override applyUpdate's terminal side-effect:
-      // navigator.serviceWorker. Swap location.reload for a flag.
-      const realReload = window.location.reload.bind(window.location);
+      (window as unknown as { __applyUpdateCalled?: boolean }).__applyUpdateCalled = false;
       Object.defineProperty(window.location, "reload", {
         configurable: true,
         value: () => {
-          (window as any).__applyUpdateCalled = true;
+          (window as unknown as { __applyUpdateCalled?: boolean }).__applyUpdateCalled = true;
         },
       });
-      // Stash the real reload for later restoration in case other tests
-      // sharing the worker need it.
-      (window as any).__realReload = realReload;
     });
 
     await page.goto("/login");
     await page.locator("#password").waitFor({ state: "visible" });
 
-    // Directly drive the banner's internal state by force-mounting a
-    // needRefresh signal. We do this by evaluating an inline import so
-    // we don't depend on the dev server exposing the module globally.
-    const mounted = await page.evaluate(async () => {
-      try {
-        // Vite serves source modules under /src/... in dev. In prod this
-        // path won't exist, in which case we bail out and the test skips.
-        const mod = await import("/src/lib/pwa-updater.ts");
-        if (!mod || typeof mod.subscribePwaUpdate !== "function") return false;
-        // Flip internal state by pushing a synthetic subscriber that
-        // mirrors what onNeedRefresh would do. We rely on the listener
-        // being called immediately with current state, but we also need
-        // the banner to react — easiest path is to call the same internal
-        // emitter via a no-op subscribe + manual dispatch. The module
-        // doesn't export a setter, so we instead simulate by emitting a
-        // CustomEvent the banner does NOT listen to. Skip cleanly here
-        // because there's no public seam for forcing needRefresh.
-        return true;
-      } catch {
-        return false;
-      }
+    // Drive the banner's needRefresh signal via the dev-only window hook
+    // exposed by src/lib/pwa-updater.ts.
+    const forced = await page.evaluate(() => {
+      const fn = (window as unknown as { __forcePwaUpdate?: () => void }).__forcePwaUpdate;
+      if (typeof fn !== "function") return false;
+      fn();
+      return true;
     });
 
-    // Banner won't appear without a real SW update in dev. Probe for it.
-    const banner = page.getByRole("status").filter({ hasText: /new version available/i });
-    const bannerVisible = await banner
-      .waitFor({ state: "visible", timeout: 2_000 })
-      .then(() => true)
-      .catch(() => false);
+    expect(forced, "window.__forcePwaUpdate must be exposed in dev builds").toBe(true);
 
-    test.skip(
-      !bannerVisible,
-      `PwaUpdateBanner needRefresh is not deterministically reachable in this environment (mountedHook=${mounted}). Banner only appears when a real waiting service worker fires onNeedRefresh.`,
-    );
+    const banner = page.getByRole("status").filter({ hasText: /new version available/i });
+    await expect(banner).toBeVisible({ timeout: 5_000 });
 
     const reload = banner.getByRole("button", { name: /^reload$/i });
     await expect(reload).toBeVisible();
@@ -388,9 +361,14 @@ test.describe("button audit: public + auth", () => {
 
     // Either applyUpdate's reload stub fired, or the button transitioned
     // to its loading state. Accept either as success.
-    const sawReload = await page.evaluate(() => (window as any).__applyUpdateCalled === true);
-    if (!sawReload) {
-      await expect(reload).toBeDisabled();
-    }
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(
+            () => (window as unknown as { __applyUpdateCalled?: boolean }).__applyUpdateCalled,
+          )) === true,
+        { timeout: 5_000 },
+      )
+      .toBe(true);
   });
 });
