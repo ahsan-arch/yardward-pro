@@ -105,9 +105,28 @@ export type ReportErrorInput = {
   context?: Record<string, unknown>;
 };
 
+// Skip these so the prod error_log stays meaningful:
+//
+//  1. /debug/* routes — the ErrorBoundary test deliberately crashes them.
+//  2. Headless browsers (navigator.webdriver = true) — Playwright runs.
+//  3. HMR context-loss in dev — editing AuthContext.tsx triggers a
+//     "useAuth must be within AuthProvider" that's a build artefact, not a bug.
+//  4. Dev builds (import.meta.env.DEV) — local mock-mode sessions try to
+//     INSERT mock ids like "A-01" into UUID columns; not a real-user path.
+function shouldSkipReport(input: ReportErrorInput): boolean {
+  if (typeof window === "undefined") return false;
+  const pathname = window.location?.pathname ?? "";
+  if (pathname.startsWith("/debug/")) return true;
+  if (typeof navigator !== "undefined" && navigator.webdriver === true) return true;
+  if (/must be within \w+Provider/.test(input.message ?? "")) return true;
+  if (import.meta.env.DEV) return true;
+  return false;
+}
+
 export async function reportErrorToServer(input: ReportErrorInput): Promise<void> {
   try {
     if (!supabase) return;
+    if (shouldSkipReport(input)) return;
 
     const dedupKey = `${input.errorCode}:${(input.message ?? "").slice(0, 200)}`;
     if (!shouldReport(dedupKey)) return;
