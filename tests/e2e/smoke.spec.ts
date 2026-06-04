@@ -74,6 +74,12 @@ test.describe("smoke", () => {
   });
 
   test("/driver/inspection is no longer a 404", async ({ page }) => {
+    // The strict role guard on /driver/* now bounces admins to /admin. Stamp
+    // driver role for this one test so the inspection page renders end-to-end.
+    await page.addInitScript(() => {
+      localStorage.setItem("fo:authed", "1");
+      localStorage.setItem("fo:role", "driver");
+    });
     const resp = await page.goto("/driver/inspection");
     expect(resp?.status()).toBeLessThan(400);
     await expect(page.locator('[data-testid="driver-inspection-page"]')).toBeVisible();
