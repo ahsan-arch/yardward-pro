@@ -17,6 +17,22 @@ test.describe("GPS reliability — auto-fallback when geolocation denied", () =>
   for (const path of driverForms) {
     test(`${path} shows GPS badge in fallback state, never red error`, async ({ page }) => {
       await loginAs(page, "driver");
+      // Pretrip lockout intercepts /driver/start-of-day on a fresh test page.
+      // Stamp last-pretrip for all seeded vehicles so the form renders.
+      await page.addInitScript(() => {
+        const now = new Date().toISOString();
+        localStorage.setItem(
+          "fo:vehicle-pretrip:v1",
+          JSON.stringify({
+            "TRK-07": now,
+            "TRK-14": now,
+            "TRK-22": now,
+            "TRA-01": now,
+            "TRA-02": now,
+            "EQP-03": now,
+          }),
+        );
+      });
       await page.goto(path);
 
       // Wait for the badge to appear and finish loading

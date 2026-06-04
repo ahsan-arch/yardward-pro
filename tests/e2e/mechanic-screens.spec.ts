@@ -9,7 +9,7 @@ test.describe("Mechanic sub-screens", () => {
   test("work-orders page renders", async ({ page }) => {
     await page.goto("/mechanic/work-orders");
     await expect(
-      page.getByRole("heading", { name: /work orders assigned to me/i }),
+      page.getByRole("heading", { name: /workshop work orders/i }),
     ).toBeVisible();
   });
 

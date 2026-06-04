@@ -31,9 +31,14 @@ test.describe("Admin reports", () => {
 
   test("switching between reports works", async ({ page }) => {
     await page.locator("button", { hasText: /maintenance due/i }).first().click();
-    await expect(page.getByRole("button", { name: /close/i })).toBeVisible();
-    await page.getByRole("button", { name: /close/i }).click();
+    // Two "Close" buttons exist (header text-button + dialog X icon). Scope
+    // explicitly to the dialog and prefer the first match (the header one).
+    const closeBtn = page.getByRole("dialog").getByRole("button", { name: /^close$/i }).first();
+    await expect(closeBtn).toBeVisible();
+    await closeBtn.click();
     await page.locator("button", { hasText: /tender digest/i }).first().click();
-    await expect(page.getByRole("button", { name: /close/i })).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: /^close$/i }).first(),
+    ).toBeVisible();
   });
 });

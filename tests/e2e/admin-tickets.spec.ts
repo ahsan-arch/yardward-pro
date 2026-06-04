@@ -26,7 +26,11 @@ test.describe("Admin ticket photos", () => {
       await expect(page.getByRole("dialog")).toBeVisible();
       // Save without filling
       await page.getByRole("button", { name: /save entry/i }).click();
-      await expect(page.locator("text=/fill weight and location/i")).toBeVisible({ timeout: 5_000 });
+      // Route emits two distinct validation toasts depending on which field
+      // is missing: "Location is required" or "Weight must be a positive number".
+      await expect(
+        page.locator("text=/location is required|weight must be|positive number/i"),
+      ).toBeVisible({ timeout: 5_000 });
     }
   });
 });

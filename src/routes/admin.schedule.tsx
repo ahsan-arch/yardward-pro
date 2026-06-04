@@ -564,7 +564,8 @@ function Page() {
                 variant="outline"
                 disabled={saving !== null}
                 onClick={() => void submit("publish")}
-                data-testid="submit-publish-job-dialog"
+                data-testid="submit-create-job"
+                data-testid-alias="submit-publish-job-dialog"
                 className="w-full h-11 font-semibold"
               >
                 {saving === "publish" ? (

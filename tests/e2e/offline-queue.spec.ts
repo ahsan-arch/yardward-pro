@@ -22,6 +22,21 @@ test.describe("Offline form queue", () => {
     context,
   }) => {
     await authedAs(page, "driver");
+    // Bypass the pretrip lockout — same pattern as driver-start-of-day.spec.ts.
+    await page.addInitScript(() => {
+      const now = new Date().toISOString();
+      localStorage.setItem(
+        "fo:vehicle-pretrip:v1",
+        JSON.stringify({
+          "TRK-07": now,
+          "TRK-14": now,
+          "TRK-22": now,
+          "TRA-01": now,
+          "TRA-02": now,
+          "EQP-03": now,
+        }),
+      );
+    });
     await page.goto("/driver/start-of-day");
     await page.locator("text=/odometer reading at start/i").waitFor();
     await page.locator('input[inputmode="numeric"]').fill("84500");

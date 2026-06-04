@@ -4,6 +4,22 @@ import { authedAs, awaitGpsSettled } from "./helpers";
 test.describe("Driver start-of-day", () => {
   test.beforeEach(async ({ page }) => {
     await authedAs(page, "driver");
+    // Bypass the pretrip lockout by pre-stamping all seeded vehicles' last
+    // passing inspection time to now. Without this the test page-load hits
+    // the lockout banner instead of the form (DataContext rehydrates the
+    // stamp from this key on mount).
+    await page.addInitScript(() => {
+      const now = new Date().toISOString();
+      const stamps = {
+        "TRK-07": now,
+        "TRK-14": now,
+        "TRK-22": now,
+        "TRA-01": now,
+        "TRA-02": now,
+        "EQP-03": now,
+      };
+      localStorage.setItem("fo:vehicle-pretrip:v1", JSON.stringify(stamps));
+    });
     await page.goto("/driver/start-of-day");
   });
 

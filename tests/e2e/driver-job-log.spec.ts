@@ -7,10 +7,12 @@ test.describe("Driver job log", () => {
     await page.goto("/driver/job-log");
   });
 
-  test("job picker + note + photo upload render", async ({ page }) => {
+  test("job picker + note render", async ({ page }) => {
+    // The job-log form is a "quick note" surface — Job picker + Note textarea.
+    // Photos are captured on the Vehicle inspection / Work order routes, not
+    // here. Test reflects the actual feature scope.
     await expect(page.locator("text=/^job$/i").first()).toBeVisible();
     await expect(page.locator("text=/^note$/i").first()).toBeVisible();
-    await expect(page.locator("text=/photos/i")).toBeVisible();
     await awaitGpsSettled(page);
   });
 
