@@ -267,29 +267,37 @@ function writePersistedTokens(tokens: DriverToken[]) {
 
 function mergeTokens(): DriverToken[] {
   const persisted = readPersistedTokens();
+  // In Supabase mode we only surface the persisted (user-generated) tokens
+  // until hydration arrives with the real database rows. Mock mode keeps the
+  // seed tokens so the demo tokens UI is populated.
+  if (USE_SUPABASE) return persisted;
   // Seed first (oldest at bottom), then user-generated (newest at top)
   return [...persisted, ...seed.driverTokens];
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [jobs, setJobs] = useState<Job[]>(seed.jobs);
+  // Empty initial state when Supabase is configured — the hydration effect
+  // below replaces these with the live rows. Mock mode (tests + dev without
+  // env vars) keeps the seed values so the UI is populated immediately.
+  const initEmpty = USE_SUPABASE;
+  const [jobs, setJobs] = useState<Job[]>(initEmpty ? [] : seed.jobs);
   // No seed for job_logs — drivers create them at runtime. Empty seed is fine
   // because the admin job-detail Sheet just shows "no logs yet" until one lands.
   const [jobLogs, setJobLogs] = useState<JobLog[]>([]);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(seed.workOrders);
-  const [invoiceData, setInvoiceData] = useState<InvoiceData[]>(seed.invoiceData);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(initEmpty ? [] : seed.workOrders);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData[]>(initEmpty ? [] : seed.invoiceData);
   const [toolChecklistSubmissions, setToolSubs] = useState<ToolChecklistSubmission[]>(
-    seed.toolChecklistSubmissions,
+    initEmpty ? [] : seed.toolChecklistSubmissions,
   );
-  const [purchaseRequests, setPRs] = useState<PurchaseRequest[]>(seed.purchaseRequests);
+  const [purchaseRequests, setPRs] = useState<PurchaseRequest[]>(initEmpty ? [] : seed.purchaseRequests);
   // Inventory is now mutable because the PO approval flow reserves stock by
   // bumping qty_reserved. Seed values back the demo mode; Supabase hydration
   // would replace these once we add inventory_items to fetchAllFromSupabase.
   const [inventoryItems, setInventoryItems] = useState<typeof seed.inventoryItems>(
     seed.inventoryItems,
   );
-  const [smsLogs, setSmsLogs] = useState<SmsLog[]>(seed.smsLogs);
-  const [driverTokens, setTokens] = useState<DriverToken[]>(seed.driverTokens);
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>(initEmpty ? [] : seed.smsLogs);
+  const [driverTokens, setTokens] = useState<DriverToken[]>(initEmpty ? [] : seed.driverTokens);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(() => {
     // E2E opt-in: when the test sets the open-shift flag, prepend a synthetic
     // OPEN time entry for D-01 so the EOD-gate test sees an active shift after
@@ -312,34 +320,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
       };
       return [synthetic, ...seed.timeEntries];
     }
-    return seed.timeEntries;
+    return initEmpty ? [] : seed.timeEntries;
   });
   const [vehicleInspections, setInspections] = useState<VehicleInspection[]>(
-    seed.vehicleInspections,
+    initEmpty ? [] : seed.vehicleInspections,
   );
-  const [clients, setClients] = useState<Client[]>(seed.clients);
-  const [ticketTransactions, setTicketTxns] = useState<TicketTransaction[]>(seed.ticketTransactions);
+  const [clients, setClients] = useState<Client[]>(initEmpty ? [] : seed.clients);
+  const [ticketTransactions, setTicketTxns] = useState<TicketTransaction[]>(
+    initEmpty ? [] : seed.ticketTransactions,
+  );
   const [ticketReplenishments, setTicketReps] = useState<TicketReplenishment[]>(
-    seed.ticketReplenishments,
+    initEmpty ? [] : seed.ticketReplenishments,
   );
-  const [notifications, setNotifications] = useState<Notification[]>(seed.notifications);
-  const [ticketPhotos, setTicketPhotos] = useState<TicketPhoto[]>(seed.ticketPhotos);
-  // Maintenance + fuel logs: seed for demo mode, Supabase hydration overrides
-  // when a session is authed. Both mutator functions prepend new rows so the
-  // tables in mechanic.maintenance and admin.vehicles/$id reflect the insert.
-  const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>(seed.maintenanceLogs);
-  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>(seed.fuelLogs);
-  // Mechanic queue. Seeds with a small fixture so the mock-mode mechanic
-  // /work-orders surface has at least one queued row to render (the e2e
-  // Claim button audit needs a row to act on). Supabase hydration below
-  // unconditionally replaces this with the canonical server array.
+  const [notifications, setNotifications] = useState<Notification[]>(
+    initEmpty ? [] : seed.notifications,
+  );
+  const [ticketPhotos, setTicketPhotos] = useState<TicketPhoto[]>(
+    initEmpty ? [] : seed.ticketPhotos,
+  );
+  const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>(
+    initEmpty ? [] : seed.maintenanceLogs,
+  );
+  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>(initEmpty ? [] : seed.fuelLogs);
   const [maintenanceWorkOrders, setMaintenanceWorkOrders] = useState<MaintenanceWorkOrder[]>(
-    seed.maintenanceWorkOrders,
+    initEmpty ? [] : seed.maintenanceWorkOrders,
   );
-  // Rate tables drive the line-item rate lookup in api.approveWorkOrder. Seed
-  // values cover the two mock clients (RT-01, RT-02); Supabase hydration
-  // overwrites with the live rows when available.
-  const [rateTables, setRateTables] = useState<RateTable[]>(seed.rateTables);
+  const [rateTables, setRateTables] = useState<RateTable[]>(initEmpty ? [] : seed.rateTables);
+  // Drivers/tools/tenders: previously bound directly to seed in the provider
+  // value (never hydrated). Now in state + fetched from Supabase like the rest.
+  const [drivers, setDrivers] = useState<typeof seed.drivers>(initEmpty ? [] : seed.drivers);
+  const [tools, setTools] = useState<typeof seed.tools>(initEmpty ? [] : seed.tools);
+  const [tenders, setTenders] = useState<typeof seed.tenders>(initEmpty ? [] : seed.tenders);
   // Vehicles are local state so the pre-trip lockout flow can stamp
   // `lastPretripAt` reactively. Seed values keep null lastPretripAt so the
   // lockout fires on first render until a fresh circle-check is recorded.
@@ -348,6 +359,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // page reload — without this, the lockout reappears on next navigation
   // because React state is wiped.
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
+    // In Supabase mode, start with [] — the hydration effect fetches the live
+    // vehicles and overlays the persisted pretrip stamps after.
+    if (USE_SUPABASE) return [];
     const stamps = readPersistedPretripStamps();
     if (!Object.keys(stamps).length) return seed.vehicles;
     return seed.vehicles.map((v) =>
@@ -360,7 +374,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   // Mechanic roster — seeded for mock mode, replaced by the live profiles
   // rows on Supabase hydration so nameForMechanic resolves real UUIDs.
-  const [mechanics, setMechanics] = useState<Mechanic[]>(seed.mechanics);
+  const [mechanics, setMechanics] = useState<Mechanic[]>(initEmpty ? [] : seed.mechanics);
 
   // Hydrate tokens from localStorage on mount so tokens generated in one tab
   // are visible (and validatable) in any other tab on the same origin.
@@ -373,20 +387,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Supabase hydration: when authed against a real session, replace seed state
-  // with whatever the database actually has. Drivers/mechanics/vehicles arrays
-  // still come from seed for display purposes (driver auth UUIDs land later).
+  // Supabase hydration: when authed against a real session, replace local
+  // state with whatever the database actually has. ALL tables go through the
+  // hydrated values — no `: seed.X` fallback. An empty server array is the
+  // truthful "nothing here yet" state, not a signal to fall back to demo data.
   const { authed, role } = useAuth();
   useEffect(() => {
     if (!USE_SUPABASE || !authed) return;
     let cancelled = false;
     fetchAllFromSupabase().then((data) => {
       if (cancelled || !data) return;
-      setClients(data.clients.length ? data.clients : seed.clients);
-      // Hydrate vehicles from Supabase so live GPS + last_pretrip_at land
-      // in client state. Fall back to seed if Supabase ever returns empty
-      // (which would mean the seed import never ran).
-      if (data.vehicles.length) setVehicles(data.vehicles);
+      setClients(data.clients);
+      // Vehicles: overlay any persisted pretrip stamps so a recently-submitted
+      // inspection survives a page reload. The Supabase row is authoritative
+      // for everything except the lockout state (which we persist locally).
+      const stamps = readPersistedPretripStamps();
+      setVehicles(
+        data.vehicles.map((v) =>
+          stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v,
+        ),
+      );
       setJobs(data.jobs);
       setJobLogs(data.jobLogs);
       setWorkOrders(data.workOrders);
@@ -394,30 +414,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setNotifications(data.notifications);
       setTicketTxns(data.ticketTransactions);
       setTicketReps(data.ticketReplenishments);
-      // Real ticket-photo rows beat the seed array; an empty server response
-      // means "no uploads yet" rather than "fall back to demo data".
-      if (data.ticketPhotos) setTicketPhotos(data.ticketPhotos);
+      setTicketPhotos(data.ticketPhotos);
       setSmsLogs(data.smsLogs);
       setTimeEntries(data.timeEntries);
       setPRs(data.purchaseRequests);
-      if (data.driverTokens.length) setTokens([...data.driverTokens, ...seed.driverTokens]);
+      // Driver tokens: merge with any localStorage-persisted tokens (user-
+      // generated tokens are stored locally for cross-tab visibility before
+      // the server roundtrip). DO NOT merge with seed — those are demo only.
+      setTokens([...data.driverTokens, ...readPersistedTokens()]);
       setInspections(data.vehicleInspections);
       setAppSettings(data.appSettings);
-      // Empty server array beats the seed — an admin who wipes a client's rate
-      // table shouldn't see stale demo rows resurrect on the next page load.
       setRateTables(data.rateTables);
-      // Maintenance + fuel: hydrate only when the server returns rows so
-      // empty Supabase tables fall back to the demo seed (otherwise the
-      // mechanic page would look empty on a fresh install).
-      if (data.maintenanceLogs.length) setMaintenanceLogs(data.maintenanceLogs);
-      if (data.fuelLogs.length) setFuelLogs(data.fuelLogs);
-      // Always replace — an empty server response is the truthful "no queue"
-      // state, not a fallback signal. Realtime keeps the array fresh after.
+      setMaintenanceLogs(data.maintenanceLogs);
+      setFuelLogs(data.fuelLogs);
       setMaintenanceWorkOrders(data.maintenanceWorkOrders);
-      // Mechanics: only swap to the hydrated array when the server actually
-      // returns rows. An empty result on a fresh install would otherwise wipe
-      // the seed list and leave every "claimed by X" rendering as a fallback.
-      if (data.mechanics.length) setMechanics(data.mechanics);
+      setMechanics(data.mechanics);
+      setDrivers(data.drivers);
+      setTools(data.tools);
+      setTenders(data.tenders);
     });
     return () => {
       cancelled = true;
@@ -826,7 +840,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return (
     <DataCtx.Provider
       value={{
-        drivers: seed.drivers,
+        drivers,
         mechanics,
         vehicles,
         clients,
@@ -839,7 +853,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         maintenanceLogs,
         fuelLogs,
         maintenanceWorkOrders,
-        tools: seed.tools,
+        tools,
         toolChecklistSubmissions,
         purchaseRequests,
         inventoryItems,
@@ -848,7 +862,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         notifications,
         driverTokens,
         ticketPhotos,
-        tenders: seed.tenders,
+        tenders,
         timeEntries,
         vehicleInspections,
         ticketTransactions,

@@ -33,6 +33,10 @@ import type {
   MaintenanceWorkOrderStatus,
   MaintenanceWorkOrderSource,
   Mechanic,
+  Driver,
+  Tool,
+  ToolCondition,
+  Tender,
 } from "@/types/domain";
 
 // ---------- app settings (singleton) ----------
@@ -65,6 +69,54 @@ export function dbProfileToMechanic(r: Row<"profiles">): Mechanic {
     createdAt: r.created_at,
     specialty: "",
     shopId: "",
+  };
+}
+
+// ---------- drivers ----------
+// drivers extends User. The User-side fields (name/email/phone/status) live on
+// public.profiles (linked via shared UUID); the driver-specific fields live on
+// public.drivers. Caller passes both rows so the mapper can compose a full
+// Driver object in one pass.
+export function dbDriverToDomain(
+  driver: Row<"drivers">,
+  profile?: Row<"profiles"> | null,
+): Driver {
+  return {
+    id: driver.id,
+    email: profile?.email ?? "",
+    name: profile?.name ?? "",
+    role: "driver",
+    phone: profile?.phone ?? "",
+    status: (profile?.status ?? "active") as "active" | "inactive",
+    createdAt: profile?.created_at ?? new Date().toISOString(),
+    licenseNumber: driver.license_number,
+    licenseExpiry: driver.license_expiry,
+    vehicleAssignmentId: driver.vehicle_assignment_id,
+    currentTokenId: driver.current_token_id,
+    initials: driver.initials,
+  };
+}
+
+// ---------- tools ----------
+export function dbToolToDomain(r: Row<"tools">): Tool {
+  return {
+    id: r.id,
+    name: r.name,
+    condition: r.condition as ToolCondition,
+    vehicleId: r.vehicle_id,
+  };
+}
+
+// ---------- tenders ----------
+export function dbTenderToDomain(r: Row<"tenders">): Tender {
+  return {
+    id: r.id,
+    source: r.source,
+    title: r.title,
+    url: r.url,
+    closingDate: r.closing_date ?? "",
+    summary: r.summary ?? "",
+    scrapedAt: r.scraped_at,
   };
 }
 

@@ -28,6 +28,9 @@ import {
   dbTicketPhotoToDomain,
   dbMaintenanceWorkOrderToDomain,
   dbProfileToMechanic,
+  dbDriverToDomain,
+  dbToolToDomain,
+  dbTenderToDomain,
 } from "./db-mappers";
 import type {
   Client,
@@ -51,6 +54,9 @@ import type {
   FuelLog,
   MaintenanceWorkOrder,
   Mechanic,
+  Driver,
+  Tool,
+  Tender,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -76,6 +82,9 @@ export type HydratedData = {
   appSettings: AppSettings;
   rateTables: RateTable[];
   mechanics: Mechanic[];
+  drivers: Driver[];
+  tools: Tool[];
+  tenders: Tender[];
 };
 
 // Standalone fetch for app_settings — used both during hydration and on demand
@@ -119,6 +128,10 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     rateTables,
     rateLineItems,
     mechanicProfiles,
+    driverRows,
+    driverProfiles,
+    tools,
+    tenders,
   ] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("vehicles").select("*"),
@@ -158,6 +171,20 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       .from("profiles")
       .select("id, email, name, phone, role, status, created_at")
       .eq("role", "mechanic"),
+    // Drivers: the driver-specific fields (license, initials, vehicle
+    // assignment) live on public.drivers; the user-facing display fields
+    // (name, email, phone, status) live on public.profiles. We fetch both
+    // and join client-side in the mapper.
+    supabase.from("drivers").select("*"),
+    supabase
+      .from("profiles")
+      .select("id, email, name, phone, role, status, created_at")
+      .eq("role", "driver"),
+    supabase.from("tools").select("*"),
+    supabase
+      .from("tenders")
+      .select("*")
+      .order("scraped_at", { ascending: false }),
   ]);
 
   type LineItem = NonNullable<typeof invoiceLineItems.data>[number];
@@ -216,5 +243,11 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       dbRateTableToDomain(rt, rateLineItemsByTable.get(rt.id) ?? []),
     ),
     mechanics: (mechanicProfiles.data ?? []).map(dbProfileToMechanic),
+    drivers: (driverRows.data ?? []).map((d) => {
+      const profile = (driverProfiles.data ?? []).find((p) => p.id === d.id) ?? null;
+      return dbDriverToDomain(d, profile);
+    }),
+    tools: (tools.data ?? []).map(dbToolToDomain),
+    tenders: (tenders.data ?? []).map(dbTenderToDomain),
   };
 }
