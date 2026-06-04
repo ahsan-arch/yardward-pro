@@ -13,12 +13,18 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+// Pre-fill demo creds ONLY in dev mode (or when the deployment explicitly
+// opts in via VITE_DEMO_MODE=true). Production builds start with blank
+// fields so the real user types their own credentials.
+const DEMO_MODE =
+  import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true";
+
 function LoginPage() {
   const { login, signIn, theme, toggleTheme, sendPasswordReset } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>("admin");
-  const [email, setEmail] = useState("alex@fleetops.co");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState(DEMO_MODE ? "alex@fleetops.co" : "");
+  const [password, setPassword] = useState(DEMO_MODE ? "demo1234" : "");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ email?: string; password?: string; form?: string }>({});
   // Forgot-password inline flow. Expanded shows an email input + Send button
@@ -38,7 +44,10 @@ function LoginPage() {
 
   function pickRole(r: Role) {
     setRole(r);
-    setEmail(presets[r]);
+    // Only auto-fill the demo email when demo mode is on. In production
+    // the role chip is just a hint of "what kind of account am I"; the
+    // email stays whatever the user typed.
+    if (DEMO_MODE) setEmail(presets[r]);
   }
 
   // Demo-creds carve-out: the three preset emails below are UI hints used by

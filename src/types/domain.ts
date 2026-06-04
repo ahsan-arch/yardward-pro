@@ -468,6 +468,12 @@ export interface AppSettings {
   overtimeAlertHours: number;
   inspectionMinDurationSeconds: number;
   inspectionMaxDurationSeconds: number;
+  // Organization profile (admin/settings → Organization profile tab)
+  businessName: string;
+  taxId: string;
+  address: string;
+  timezone: string;
+  currency: string;
   updatedAt: string;
 }
 
@@ -477,5 +483,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   overtimeAlertHours: 44,
   inspectionMinDurationSeconds: 780,
   inspectionMaxDurationSeconds: 1200,
+  businessName: "",
+  taxId: "",
+  address: "",
+  timezone: "America/Toronto",
+  currency: "CAD",
   updatedAt: new Date(0).toISOString(),
 };

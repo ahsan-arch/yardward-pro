@@ -47,6 +47,11 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
     overtimeAlertHours: Number(r.overtime_alert_hours),
     inspectionMinDurationSeconds: r.inspection_min_duration_seconds,
     inspectionMaxDurationSeconds: r.inspection_max_duration_seconds,
+    businessName: r.business_name ?? "",
+    taxId: r.tax_id ?? "",
+    address: r.address ?? "",
+    timezone: r.timezone ?? "America/Toronto",
+    currency: r.currency ?? "CAD",
     updatedAt: r.updated_at,
   };
 }

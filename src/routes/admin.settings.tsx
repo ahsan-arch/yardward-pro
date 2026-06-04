@@ -19,7 +19,7 @@ import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
 import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
 import { toast } from "sonner";
 
@@ -97,59 +97,130 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 function OrgTab() {
+  const { appSettings } = useData();
+  // Controlled form. We seed once from appSettings on mount; subsequent updates
+  // to appSettings (e.g. a peer's edit landing via realtime) deliberately do
+  // NOT overwrite local edits — the dirty flag governs save eligibility, and
+  // the user is in control of when to discard or overwrite.
+  const [form, setForm] = useState({
+    businessName: appSettings.businessName,
+    taxId: appSettings.taxId,
+    address: appSettings.address,
+    timezone: appSettings.timezone || "America/Toronto",
+    currency: appSettings.currency || "CAD",
+  });
+  const [saving, setSaving] = useState(false);
+  // Re-seed when the appSettings reference changes from hydration. We use a
+  // ref to track the snapshot we last seeded from so a realtime echo of OUR
+  // own save (which fires after setSaving(false)) doesn't undo the user's
+  // edits in another open tab.
+  const lastSeededRef = useRef<string>(appSettings.updatedAt);
+  useEffect(() => {
+    if (appSettings.updatedAt === lastSeededRef.current) return;
+    lastSeededRef.current = appSettings.updatedAt;
+    setForm({
+      businessName: appSettings.businessName,
+      taxId: appSettings.taxId,
+      address: appSettings.address,
+      timezone: appSettings.timezone || "America/Toronto",
+      currency: appSettings.currency || "CAD",
+    });
+  }, [appSettings]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.updateAppSettings({
+        businessName: form.businessName.trim(),
+        taxId: form.taxId.trim(),
+        address: form.address.trim(),
+        timezone: form.timezone,
+        currency: form.currency,
+      });
+      toast.success("Organization profile saved");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Save failed: ${msg}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Card title="Organization profile">
       <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
         <div>
-          <Label>Business name</Label>
-          <Input defaultValue="FleetOps Haulage Co." />
+          <Label htmlFor="org-business-name">Business name</Label>
+          <Input
+            id="org-business-name"
+            value={form.businessName}
+            onChange={(e) => setForm((f) => ({ ...f, businessName: e.target.value }))}
+            data-testid="org-business-name"
+          />
         </div>
         <div>
-          <Label>Tax / ABN</Label>
-          <Input defaultValue="48 102 877 990" className="font-mono" />
+          <Label htmlFor="org-tax-id">Tax / ABN</Label>
+          <Input
+            id="org-tax-id"
+            value={form.taxId}
+            onChange={(e) => setForm((f) => ({ ...f, taxId: e.target.value }))}
+            className="font-mono"
+            data-testid="org-tax-id"
+          />
         </div>
         <div className="sm:col-span-2">
-          <Label>Address</Label>
-          <Input defaultValue="Yard 7, 22 Quarry Ln" />
+          <Label htmlFor="org-address">Address</Label>
+          <Input
+            id="org-address"
+            value={form.address}
+            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+            data-testid="org-address"
+          />
         </div>
         <div>
           <Label>Timezone</Label>
-          <Select defaultValue="local">
-            <SelectTrigger>
+          <Select
+            value={form.timezone}
+            onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}
+          >
+            <SelectTrigger data-testid="org-timezone">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="local">America/Toronto</SelectItem>
-              <SelectItem value="utc">UTC</SelectItem>
+              <SelectItem value="America/Toronto">America/Toronto</SelectItem>
+              <SelectItem value="America/Vancouver">America/Vancouver</SelectItem>
+              <SelectItem value="America/New_York">America/New_York</SelectItem>
+              <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
+              <SelectItem value="UTC">UTC</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div>
           <Label>Currency</Label>
-          <Select defaultValue="cad">
-            <SelectTrigger>
+          <Select
+            value={form.currency}
+            onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}
+          >
+            <SelectTrigger data-testid="org-currency">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cad">CAD</SelectItem>
-              <SelectItem value="usd">USD</SelectItem>
-              <SelectItem value="aud">AUD</SelectItem>
+              <SelectItem value="CAD">CAD</SelectItem>
+              <SelectItem value="USD">USD</SelectItem>
+              <SelectItem value="AUD">AUD</SelectItem>
+              <SelectItem value="EUR">EUR</SelectItem>
+              <SelectItem value="GBP">GBP</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
       <Button
         className="mt-4 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-        onClick={() => {
-          try {
-            toast.success("Settings saved");
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            toast.error(`Save failed: ${msg}`);
-          }
-        }}
+        onClick={() => void save()}
+        disabled={saving}
+        data-testid="save-org-settings"
       >
-        Save changes
+        {saving ? "Saving…" : "Save changes"}
       </Button>
     </Card>
   );

@@ -1868,6 +1868,11 @@ export const api = {
           overtime_alert_hours: next.overtimeAlertHours,
           inspection_min_duration_seconds: next.inspectionMinDurationSeconds,
           inspection_max_duration_seconds: next.inspectionMaxDurationSeconds,
+          business_name: next.businessName,
+          tax_id: next.taxId,
+          address: next.address,
+          timezone: next.timezone,
+          currency: next.currency,
           updated_at: next.updatedAt,
         })
         .eq("id", "default");

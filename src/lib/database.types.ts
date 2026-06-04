@@ -41,6 +41,9 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          address: string
+          business_name: string
+          currency: string
           gps_tolerance_minutes: number
           id: string
           inspection_max_duration_seconds: number
@@ -50,9 +53,14 @@ export type Database = {
           prolonged_stop_minutes: number
           service_due_hours_warning: number
           service_due_km_warning: number
+          tax_id: string
+          timezone: string
           updated_at: string
         }
         Insert: {
+          address?: string
+          business_name?: string
+          currency?: string
           gps_tolerance_minutes?: number
           id?: string
           inspection_max_duration_seconds?: number
@@ -62,9 +70,14 @@ export type Database = {
           prolonged_stop_minutes?: number
           service_due_hours_warning?: number
           service_due_km_warning?: number
+          tax_id?: string
+          timezone?: string
           updated_at?: string
         }
         Update: {
+          address?: string
+          business_name?: string
+          currency?: string
           gps_tolerance_minutes?: number
           id?: string
           inspection_max_duration_seconds?: number
@@ -74,6 +87,8 @@ export type Database = {
           prolonged_stop_minutes?: number
           service_due_hours_warning?: number
           service_due_km_warning?: number
+          tax_id?: string
+          timezone?: string
           updated_at?: string
         }
         Relationships: []
