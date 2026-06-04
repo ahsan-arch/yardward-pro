@@ -27,6 +27,22 @@ export const Route = createFileRoute("/admin/schedule")({
 });
 
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// Returns the YYYY-MM-DD date string for the next occurrence of the given
+// weekday index (0=Mon..6=Sun), including today. Returns "" when no index
+// is provided so the caller falls through to an empty form field.
+function dateForWeekdayIndex(idx?: number): string {
+  if (idx == null || idx < 0 || idx > 6) return "";
+  const today = new Date();
+  // JS getDay: Sun=0, Mon=1, ..., Sat=6 — shift so Mon=0 to match `days`.
+  const todayIdx = (today.getDay() + 6) % 7;
+  const delta = (idx - todayIdx + 7) % 7;
+  const target = new Date(today.getFullYear(), today.getMonth(), today.getDate() + delta);
+  const yyyy = target.getFullYear();
+  const mm = String(target.getMonth() + 1).padStart(2, "0");
+  const dd = String(target.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 const statusBorder: Record<string, string> = {
   Active: "border-l-success",
   Scheduled: "border-l-amber-brand",
@@ -70,14 +86,31 @@ function Page() {
   // (which may have failed to fetch) throws. On failure we fall back to the
   // empty form so the dialog still renders and shows its inline empty-list
   // messages.
-  function openCreateJob() {
+  //
+  // Optional preset: when the user clicks the + icon in a specific
+  // {driver, day} cell of the grid, pass { driverId, dayIndex } so the form
+  // pre-fills the matching driver, their assigned vehicle, and the next
+  // occurrence of that weekday. dayIndex is 0=Mon..6=Sun (matches `days`).
+  function openCreateJob(preset?: { driverId?: string; dayIndex?: number }) {
     setOpen(true);
     try {
+      // Resolve the driver: caller-supplied wins, otherwise first available.
+      const driverId = preset?.driverId ?? drivers[0]?.id ?? "";
+      // If the driver has an assigned vehicle, default to that — otherwise
+      // fall back to the first vehicle in the fleet.
+      const assignedVehicle =
+        drivers.find((d) => d.id === driverId)?.vehicleAssignmentId ?? null;
+      const vehicleId = assignedVehicle ?? vehicles[0]?.id ?? "";
+      // Map weekday index → YYYY-MM-DD for the next occurrence (including
+      // today). Our `days` array is Mon..Sun (Mon=0). JS Date.getDay() is
+      // Sun=0..Sat=6 — adjust to a Mon=0 basis.
+      const date = dateForWeekdayIndex(preset?.dayIndex);
       setForm({
         ...EMPTY_FORM,
         clientId: clients[0]?.id ?? "",
-        driverId: drivers[0]?.id ?? "",
-        vehicleId: vehicles[0]?.id ?? "",
+        driverId,
+        vehicleId,
+        date,
       });
     } catch {
       setForm(EMPTY_FORM);
@@ -205,7 +238,7 @@ function Page() {
           </Select>
         </div>
         <Button
-          onClick={openCreateJob}
+          onClick={() => openCreateJob()}
           data-testid="open-create-job"
           className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
         >
@@ -230,7 +263,7 @@ function Page() {
           Quick create:{" "}
           <button
             type="button"
-            onClick={openCreateJob}
+            onClick={() => openCreateJob()}
             className="font-medium text-amber-brand hover:underline"
           >
             open full form →
@@ -328,7 +361,15 @@ function Page() {
                         </div>
                       </div>
                     ) : (
-                      <button className="w-full h-full min-h-[60px] rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted/50 flex items-center justify-center text-muted-foreground transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openCreateJob({ driverId: driver.id, dayIndex: di })
+                        }
+                        aria-label={`Create job for ${driver.name} on ${days[di]}`}
+                        data-testid={`schedule-cell-add-${driver.id}-${di}`}
+                        className="w-full h-full min-h-[60px] rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted/50 flex items-center justify-center text-muted-foreground transition-opacity cursor-pointer"
+                      >
                         <Plus className="w-4 h-4" />
                       </button>
                     )}
