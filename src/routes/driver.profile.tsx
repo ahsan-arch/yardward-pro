@@ -13,7 +13,21 @@ export const Route = createFileRoute("/driver/profile")({
 
 function Page() {
   const nav = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, sendPasswordReset } = useAuth();
+
+  async function handleChangePassword() {
+    if (!user.email) {
+      toast.error("No email on file for this account");
+      return;
+    }
+    const { error } = await sendPasswordReset(user.email);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success(`Password reset link sent to ${user.email}. Check inbox + spam.`);
+  }
+
   const { drivers, timeEntries } = useData();
   const me = drivers.find((d) => d.id === user.id || d.email === user.email) ?? drivers[0];
   const openShift = timeEntries.find((t) => t.driverId === me.id && !t.clockOut);
@@ -72,7 +86,7 @@ function Page() {
           <ActionRow
             icon={KeyRound}
             label="Change password"
-            onClick={() => toast.info("Password reset link sent (mock)")}
+            onClick={() => void handleChangePassword()}
           />
           <ActionRow
             icon={Bell}

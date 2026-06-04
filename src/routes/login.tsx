@@ -14,13 +14,21 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login, signIn, theme, toggleTheme } = useApp();
+  const { login, signIn, theme, toggleTheme, sendPasswordReset } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>("admin");
   const [email, setEmail] = useState("alex@fleetops.co");
   const [password, setPassword] = useState("demo1234");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<{ email?: string; password?: string; form?: string }>({});
+  // Forgot-password inline flow. Expanded shows an email input + Send button
+  // below the password field; submit fires sendPasswordReset and toasts. We
+  // deliberately do NOT distinguish "email not found" — that would leak which
+  // accounts exist. Always show "If that address is registered, a reset link
+  // is on its way."
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSending, setForgotSending] = useState(false);
 
   const presets: Record<Role, string> = {
     admin: "alex@fleetops.co",
@@ -95,6 +103,30 @@ function LoginPage() {
     navigate({
       to: resolved === "driver" ? "/driver" : resolved === "mechanic" ? "/mechanic" : "/admin",
     });
+  }
+
+  async function sendForgot() {
+    const target = (forgotEmail || email).trim();
+    if (!/^\S+@\S+\.\S+$/.test(target)) {
+      toast.error("Enter a valid email to receive the reset link");
+      return;
+    }
+    setForgotSending(true);
+    const { error } = await sendPasswordReset(target);
+    setForgotSending(false);
+    if (error) {
+      // The AuthContext.sendPasswordReset already handles the demo-creds
+      // carve-out and returns a friendly message; surface as-is.
+      toast.error(error);
+      return;
+    }
+    // Generic confirmation — same message whether the email exists or not,
+    // so we don't leak which addresses are registered.
+    toast.success(
+      `If ${target} has an account, a reset link is on its way. Check your inbox + spam.`,
+    );
+    setForgotOpen(false);
+    setForgotEmail("");
   }
 
   const opts: { value: Role; label: string; icon: any; desc: string }[] = [
@@ -225,7 +257,15 @@ function LoginPage() {
               <div>
                 <div className="flex justify-between items-center">
                   <Label htmlFor="password">Password</Label>
-                  <button type="button" className="text-xs text-amber-brand hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotOpen((v) => !v);
+                      if (!forgotEmail) setForgotEmail(email);
+                    }}
+                    data-testid="forgot-password-toggle"
+                    className="text-xs text-amber-brand hover:underline"
+                  >
                     Forgot?
                   </button>
                 </div>
@@ -248,6 +288,41 @@ function LoginPage() {
                   </p>
                 )}
               </div>
+              {forgotOpen && (
+                <div
+                  className="border border-border rounded-md p-3 bg-muted/30 space-y-2"
+                  data-testid="forgot-password-panel"
+                >
+                  <p className="text-xs text-muted-foreground">
+                    Enter the email on your account. We'll send a reset link.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      inputMode="email"
+                      autoComplete="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      data-testid="forgot-password-email"
+                      className="h-9 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      disabled={forgotSending}
+                      onClick={() => void sendForgot()}
+                      data-testid="forgot-password-submit"
+                      className="h-9 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-medium"
+                    >
+                      {forgotSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        "Send link"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
               {err.form && (
                 <p className="text-xs text-danger -mt-1 px-1" data-testid="login-error">
                   {err.form}

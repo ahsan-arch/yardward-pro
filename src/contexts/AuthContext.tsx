@@ -27,6 +27,14 @@ type Ctx = {
   loading: boolean;
   user: AppUser;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  // Sends a password-reset email via supabase.auth.resetPasswordForEmail.
+  // The link in the email lands on /reset-password where the user enters
+  // a new password (handled by the route's PASSWORD_RECOVERY onAuthStateChange).
+  // Returns { error: null } on success, { error: "..." } on failure.
+  sendPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  // After the user lands on /reset-password from the email link, this writes
+  // the new password against the recovery session.
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
   // Legacy: lets the demo-mode role switcher swap personas without a real sign-in.
   login: (r: Role) => void;
@@ -347,6 +355,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const sendPasswordReset = async (email: string) => {
+    if (!USE_SUPABASE || !supabase) {
+      // Mock mode: pretend success so the demo UI feels real.
+      return { error: null };
+    }
+    const trimmed = email.trim();
+    if (!/^\S+@\S+\.\S+$/.test(trimmed)) {
+      return { error: "Enter a valid email address" };
+    }
+    // Demo creds carve-out — alex@/tom@/jamie@fleetops.co aren't real Auth
+    // users, so Supabase would return "user not found". Short-circuit with a
+    // helpful message rather than the raw error.
+    const demoEmails = [
+      "alex@fleetops.co",
+      "tom@fleetops.co",
+      "jamie@fleetops.co",
+    ];
+    if (demoEmails.includes(trimmed.toLowerCase())) {
+      return {
+        error: "Demo accounts don't have email reset — sign in with password 'demo1234'.",
+      };
+    }
+    const redirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/reset-password`
+        : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+      redirectTo,
+    });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    if (!USE_SUPABASE || !supabase) {
+      return { error: null };
+    }
+    if (newPassword.length < 6) {
+      return { error: "Password must be at least 6 characters" };
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
   const logout = async () => {
     if (USE_SUPABASE && supabase) {
       await supabase.auth.signOut();
@@ -378,6 +431,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         user,
         signIn,
+        sendPasswordReset,
+        updatePassword,
         logout,
         login,
         isDriverTokenSession,
