@@ -2010,6 +2010,311 @@ export const api = {
     return { ok: true, ticketId };
   },
 
+  // ---- Communications ----------------------------------------------------
+  // All mutations route through SECDEF RPCs so the server enforces role +
+  // participant invariants. Local DataContext mirrors via realtime, but
+  // these helpers also push the row through getStore() so the UI updates
+  // instantly without waiting for the realtime hop.
+
+  openConversation: async (input: {
+    topic: import("@/types/domain").ConversationTopic;
+    topicRefId: string | null;
+    subject: string;
+    counterpartyId: string;
+  }): Promise<import("@/types/domain").Conversation> => {
+    if (!USE_SUPABASE || !supabase) {
+      // Mock mode: synthesize a row so the UI renders.
+      const conv: import("@/types/domain").Conversation = {
+        id: uid("CV"),
+        twilioConversationSid: null,
+        topic: input.topic,
+        topicRefId: input.topicRefId,
+        subject: input.subject,
+        status: "active",
+        createdBy: "mock-user",
+        createdAt: new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+        closedAt: null,
+        closedBy: null,
+        resolutionNotes: null,
+      };
+      getStore().upsertConversation(conv);
+      return conv;
+    }
+    // Generated RPC types mark p_topic_ref_id as `string`; coalesce null to ""
+    // and let the SQL function's NULLIF(trim(...), '') convert it back to NULL.
+    const { data, error } = await supabase.rpc("open_conversation", {
+      p_topic: input.topic,
+      p_topic_ref_id: input.topicRefId ?? "",
+      p_subject: input.subject,
+      p_counterparty_id: input.counterpartyId,
+    });
+    if (error)
+      throw new Error(`openConversation: ${reportApiError("OPEN_CONVERSATION", error, input)}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("openConversation: empty response");
+    const { dbConversationToDomain } = await import("./db-mappers");
+    const conv = dbConversationToDomain(row as Row<"conversations">);
+    getStore().upsertConversation(conv);
+    return conv;
+  },
+
+  openConversationWithParticipants: async (input: {
+    topic: import("@/types/domain").ConversationTopic;
+    topicRefId: string | null;
+    subject: string;
+    participantIds: string[];
+  }): Promise<import("@/types/domain").Conversation> => {
+    if (!USE_SUPABASE || !supabase) {
+      const conv: import("@/types/domain").Conversation = {
+        id: uid("CV"),
+        twilioConversationSid: null,
+        topic: input.topic,
+        topicRefId: input.topicRefId,
+        subject: input.subject,
+        status: "active",
+        createdBy: "mock-admin",
+        createdAt: new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+        closedAt: null,
+        closedBy: null,
+        resolutionNotes: null,
+      };
+      getStore().upsertConversation(conv);
+      return conv;
+    }
+    const { data, error } = await supabase.rpc("open_conversation_with_participants", {
+      p_topic: input.topic,
+      p_topic_ref_id: input.topicRefId ?? "",
+      p_subject: input.subject,
+      p_participant_ids: input.participantIds,
+    });
+    if (error)
+      throw new Error(
+        `openConversationWithParticipants: ${reportApiError("OPEN_CONVERSATION_WITH_PARTICIPANTS", error, input)}`,
+      );
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("openConversationWithParticipants: empty response");
+    const { dbConversationToDomain } = await import("./db-mappers");
+    const conv = dbConversationToDomain(row as Row<"conversations">);
+    getStore().upsertConversation(conv);
+    return conv;
+  },
+
+  // Sends a message into a conversation. Phase 1: direct INSERT (RLS gates
+  // by participant). Phase 2+ will route through the twilio-send-message
+  // edge function. idempotencyKey makes offline-queue replays safe.
+  sendMessage: async (input: {
+    conversationId: string;
+    body: string;
+    mediaPaths?: string[];
+    idempotencyKey?: string;
+  }): Promise<import("@/types/domain").Message> => {
+    if (!USE_SUPABASE || !supabase) {
+      const msg: import("@/types/domain").Message = {
+        id: uid("MSG"),
+        conversationId: input.conversationId,
+        twilioMessageSid: null,
+        idempotencyKey: input.idempotencyKey ?? null,
+        senderId: "mock-user",
+        senderKind: "in_app",
+        body: input.body,
+        mediaPaths: input.mediaPaths ?? [],
+        twilioMediaUrls: [],
+        deliveryStatus: "sent",
+        errorCode: null,
+        errorMessage: null,
+        createdAt: new Date().toISOString(),
+        deliveredAt: new Date().toISOString(),
+      };
+      getStore().upsertMessage(msg);
+      return msg;
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const senderId = authData.user?.id;
+    if (!senderId) throw new Error("sendMessage: not signed in");
+    const id = uid("MSG");
+    const { data, error } = await supabase
+      .from("messages")
+      .insert({
+        id,
+        conversation_id: input.conversationId,
+        sender_id: senderId,
+        sender_kind: "in_app",
+        body: input.body,
+        media_paths: input.mediaPaths ?? [],
+        delivery_status: "sent",
+        idempotency_key: input.idempotencyKey ?? null,
+      })
+      .select()
+      .single();
+    if (error)
+      throw new Error(`sendMessage: ${reportApiError("SEND_MESSAGE", error, { conversationId: input.conversationId })}`);
+    const { dbMessageToDomain } = await import("./db-mappers");
+    const msg = dbMessageToDomain(data as Row<"messages">);
+    getStore().upsertMessage(msg);
+    return msg;
+  },
+
+  tagAdmins: async (input: {
+    conversationId: string;
+    adminIds?: string[] | null;
+  }): Promise<import("@/types/domain").ConversationParticipant[]> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return [];
+    }
+    // p_admin_ids is `uuid[] DEFAULT NULL` server-side; the generated type
+    // marks it as optional. Pass undefined when null so the default kicks in.
+    const { data, error } = await supabase.rpc("tag_admins", {
+      p_conversation_id: input.conversationId,
+      ...(input.adminIds ? { p_admin_ids: input.adminIds } : {}),
+    });
+    if (error)
+      throw new Error(`tagAdmins: ${reportApiError("TAG_ADMINS", error, input)}`);
+    const rows = (data ?? []) as Row<"conversation_participants">[];
+    const { dbConversationParticipantToDomain } = await import("./db-mappers");
+    const cps = rows.map(dbConversationParticipantToDomain);
+    cps.forEach((cp) => getStore().upsertParticipant(cp));
+    return cps;
+  },
+
+  joinConversation: async (
+    conversationId: string,
+  ): Promise<import("@/types/domain").ConversationParticipant> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      const cp: import("@/types/domain").ConversationParticipant = {
+        id: uid("CP"),
+        conversationId,
+        userId: "mock-admin",
+        participantRole: "admin",
+        twilioParticipantSid: null,
+        joinedAt: new Date().toISOString(),
+        leftAt: null,
+        lastReadAt: null,
+      };
+      getStore().upsertParticipant(cp);
+      return cp;
+    }
+    const { data, error } = await supabase.rpc("join_conversation", {
+      p_conversation_id: conversationId,
+    });
+    if (error)
+      throw new Error(`joinConversation: ${reportApiError("JOIN_CONVERSATION", error, { conversationId })}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("joinConversation: empty response");
+    const { dbConversationParticipantToDomain } = await import("./db-mappers");
+    const cp = dbConversationParticipantToDomain(row as Row<"conversation_participants">);
+    getStore().upsertParticipant(cp);
+    return cp;
+  },
+
+  leaveConversation: async (conversationId: string): Promise<void> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return;
+    }
+    const { error } = await supabase.rpc("leave_conversation", {
+      p_conversation_id: conversationId,
+    });
+    if (error)
+      throw new Error(`leaveConversation: ${reportApiError("LEAVE_CONVERSATION", error, { conversationId })}`);
+  },
+
+  markConversationRead: async (conversationId: string): Promise<void> => {
+    if (!USE_SUPABASE || !supabase) return;
+    const { error } = await supabase.rpc("mark_conversation_read", {
+      p_conversation_id: conversationId,
+    });
+    if (error)
+      throw new Error(`markConversationRead: ${reportApiError("MARK_CONVERSATION_READ", error, { conversationId })}`);
+  },
+
+  closeConversation: async (
+    conversationId: string,
+    resolutionNotes: string,
+  ): Promise<import("@/types/domain").Conversation> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      const conv = getStore().conversations.find((c) => c.id === conversationId);
+      if (!conv) throw new Error("conversation not found in mock store");
+      const closed = { ...conv, status: "closed" as const, resolutionNotes };
+      getStore().upsertConversation(closed);
+      return closed;
+    }
+    const { data, error } = await supabase.rpc("close_conversation", {
+      p_conversation_id: conversationId,
+      p_resolution_notes: resolutionNotes,
+    });
+    if (error)
+      throw new Error(`closeConversation: ${reportApiError("CLOSE_CONVERSATION", error, { conversationId })}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("closeConversation: empty response");
+    const { dbConversationToDomain } = await import("./db-mappers");
+    const conv = dbConversationToDomain(row as Row<"conversations">);
+    getStore().upsertConversation(conv);
+    return conv;
+  },
+
+  // Uploads a file to the message-attachments Storage bucket and returns the
+  // PATH (not a signed URL). The caller persists this path in messages.media_paths;
+  // the viewer mints a fresh signed URL on demand. A baked-in long-lived URL
+  // would 403 once it expires.
+  uploadMessageAttachment: async (input: {
+    conversationId: string;
+    file: File | Blob;
+    fileName: string;
+  }): Promise<string> => {
+    if (!USE_SUPABASE || !supabase) {
+      return `mock://message-attachments/${input.conversationId}/${input.fileName}`;
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const uploaderId = authData.user?.id ?? "anon";
+    const path = `${input.conversationId}/${uploaderId}-${Date.now()}-${input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error } = await supabase.storage
+      .from("message-attachments")
+      .upload(path, input.file, {
+        contentType: input.file.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (error)
+      throw new Error(`uploadMessageAttachment: ${reportApiError("UPLOAD_MESSAGE_ATTACHMENT", error, { conversationId: input.conversationId })}`);
+    return path;
+  },
+
+  // Mints a fresh signed URL for an attachment path. Default 1-hour TTL.
+  signMessageAttachment: async (path: string, ttlSeconds: number = 3600): Promise<string | null> => {
+    if (!USE_SUPABASE || !supabase) return path; // mock path is already a URL-shaped string
+    if (path.startsWith("http") || path.startsWith("data:")) return path;
+    const { data, error } = await supabase.storage
+      .from("message-attachments")
+      .createSignedUrl(path, ttlSeconds);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  },
+
+  // Fetches a window of older messages for a conversation. Used when the
+  // user scrolls up past the initial 500-message hydration.
+  fetchConversationMessages: async (
+    conversationId: string,
+    opts: { before?: string; limit?: number } = {},
+  ): Promise<import("@/types/domain").Message[]> => {
+    if (!USE_SUPABASE || !supabase) return [];
+    let q = supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(opts.limit ?? 50);
+    if (opts.before) q = q.lt("created_at", opts.before);
+    const { data, error } = await q;
+    if (error)
+      throw new Error(`fetchConversationMessages: ${reportApiError("FETCH_CONVERSATION_MESSAGES", error, { conversationId })}`);
+    const { dbMessageToDomain } = await import("./db-mappers");
+    return (data ?? []).map((r) => dbMessageToDomain(r as Row<"messages">));
+  },
+
   // ---- Timesheet flag overrides ----------------------------------------
   // Admin-only: clear or apply a manual flag on a time entry. Persists the
   // flag column so re-flagging due to a tolerance change won't silently

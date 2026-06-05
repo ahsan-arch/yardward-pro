@@ -579,3 +579,61 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   billing: DEFAULT_BILLING_SUBSCRIPTION,
   updatedAt: new Date(0).toISOString(),
 };
+
+// =============================================================================
+// Communications — driver↔mechanic threading with admin oversight
+// =============================================================================
+
+export type ConversationTopic = "general" | "job" | "vehicle" | "maintenance";
+export type ConversationStatus = "active" | "archived" | "closed";
+export type ParticipantRole = "originator" | "admin" | "mechanic" | "driver";
+export type MessageSenderKind = "in_app" | "sms" | "system";
+export type MessageDeliveryStatus =
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "failed"
+  | "received";
+
+export interface Conversation {
+  id: string;
+  twilioConversationSid: string | null;
+  topic: ConversationTopic;
+  topicRefId: string | null;
+  subject: string;
+  status: ConversationStatus;
+  createdBy: string;
+  createdAt: string;
+  lastMessageAt: string;
+  closedAt: string | null;
+  closedBy: string | null;
+  resolutionNotes: string | null;
+}
+
+export interface ConversationParticipant {
+  id: string;
+  conversationId: string;
+  userId: string;
+  participantRole: ParticipantRole;
+  twilioParticipantSid: string | null;
+  joinedAt: string;
+  leftAt: string | null;
+  lastReadAt: string | null;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  twilioMessageSid: string | null;
+  idempotencyKey: string | null;
+  senderId: string;
+  senderKind: MessageSenderKind;
+  body: string;
+  mediaPaths: string[];
+  twilioMediaUrls: string[];
+  deliveryStatus: MessageDeliveryStatus;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
+}

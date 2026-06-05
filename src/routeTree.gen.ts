@@ -21,6 +21,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as TTokenRouteImport } from './routes/t.$token'
 import { Route as MechanicWorkOrdersRouteImport } from './routes/mechanic.work-orders'
 import { Route as MechanicPurchaseRequestsRouteImport } from './routes/mechanic.purchase-requests'
+import { Route as MechanicMessagesRouteImport } from './routes/mechanic.messages'
 import { Route as MechanicMaintenanceRouteImport } from './routes/mechanic.maintenance'
 import { Route as MechanicInventoryRouteImport } from './routes/mechanic.inventory'
 import { Route as DriverWorkOrderRouteImport } from './routes/driver.work-order'
@@ -28,6 +29,7 @@ import { Route as DriverToolChecklistRouteImport } from './routes/driver.tool-ch
 import { Route as DriverTicketsRouteImport } from './routes/driver.tickets'
 import { Route as DriverStartOfDayRouteImport } from './routes/driver.start-of-day'
 import { Route as DriverProfileRouteImport } from './routes/driver.profile'
+import { Route as DriverMessagesRouteImport } from './routes/driver.messages'
 import { Route as DriverJobsRouteImport } from './routes/driver.jobs'
 import { Route as DriverJobLogRouteImport } from './routes/driver.job-log'
 import { Route as DriverInspectionRouteImport } from './routes/driver.inspection'
@@ -49,6 +51,7 @@ import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
 import { Route as AdminErrorsRouteImport } from './routes/admin.errors'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
+import { Route as AdminCommunicationsRouteImport } from './routes/admin.communications'
 import { Route as AdminClientsRouteImport } from './routes/admin.clients'
 import { Route as AdminVehiclesIndexRouteImport } from './routes/admin.vehicles.index'
 import { Route as AdminVehiclesIdRouteImport } from './routes/admin.vehicles.$id'
@@ -115,6 +118,11 @@ const MechanicPurchaseRequestsRoute =
     path: '/purchase-requests',
     getParentRoute: () => MechanicRoute,
   } as any)
+const MechanicMessagesRoute = MechanicMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => MechanicRoute,
+} as any)
 const MechanicMaintenanceRoute = MechanicMaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
@@ -148,6 +156,11 @@ const DriverStartOfDayRoute = DriverStartOfDayRouteImport.update({
 const DriverProfileRoute = DriverProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => DriverRoute,
+} as any)
+const DriverMessagesRoute = DriverMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => DriverRoute,
 } as any)
 const DriverJobsRoute = DriverJobsRouteImport.update({
@@ -256,6 +269,11 @@ const AdminDriversRoute = AdminDriversRouteImport.update({
   path: '/drivers',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCommunicationsRoute = AdminCommunicationsRouteImport.update({
+  id: '/communications',
+  path: '/communications',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminClientsRoute = AdminClientsRouteImport.update({
   id: '/clients',
   path: '/clients',
@@ -286,6 +304,7 @@ export interface FileRoutesByFullPath {
   '/mechanic': typeof MechanicRouteWithChildren
   '/reset-password': typeof ResetPasswordRoute
   '/admin/clients': typeof AdminClientsRoute
+  '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
@@ -307,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
+  '/driver/messages': typeof DriverMessagesRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tickets': typeof DriverTicketsRoute
@@ -314,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/t/$token': typeof TTokenRoute
@@ -329,6 +350,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/clients': typeof AdminClientsRoute
+  '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
@@ -350,6 +372,7 @@ export interface FileRoutesByTo {
   '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
+  '/driver/messages': typeof DriverMessagesRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tickets': typeof DriverTicketsRoute
@@ -357,6 +380,7 @@ export interface FileRoutesByTo {
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/t/$token': typeof TTokenRoute
@@ -376,6 +400,7 @@ export interface FileRoutesById {
   '/mechanic': typeof MechanicRouteWithChildren
   '/reset-password': typeof ResetPasswordRoute
   '/admin/clients': typeof AdminClientsRoute
+  '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
   '/admin/forms': typeof AdminFormsRoute
@@ -397,6 +422,7 @@ export interface FileRoutesById {
   '/driver/inspection': typeof DriverInspectionRoute
   '/driver/job-log': typeof DriverJobLogRoute
   '/driver/jobs': typeof DriverJobsRoute
+  '/driver/messages': typeof DriverMessagesRoute
   '/driver/profile': typeof DriverProfileRoute
   '/driver/start-of-day': typeof DriverStartOfDayRoute
   '/driver/tickets': typeof DriverTicketsRoute
@@ -404,6 +430,7 @@ export interface FileRoutesById {
   '/driver/work-order': typeof DriverWorkOrderRoute
   '/mechanic/inventory': typeof MechanicInventoryRoute
   '/mechanic/maintenance': typeof MechanicMaintenanceRoute
+  '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
   '/t/$token': typeof TTokenRoute
@@ -424,6 +451,7 @@ export interface FileRouteTypes {
     | '/mechanic'
     | '/reset-password'
     | '/admin/clients'
+    | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
     | '/admin/forms'
@@ -445,6 +473,7 @@ export interface FileRouteTypes {
     | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
+    | '/driver/messages'
     | '/driver/profile'
     | '/driver/start-of-day'
     | '/driver/tickets'
@@ -452,6 +481,7 @@ export interface FileRouteTypes {
     | '/driver/work-order'
     | '/mechanic/inventory'
     | '/mechanic/maintenance'
+    | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
     | '/t/$token'
@@ -467,6 +497,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/admin/clients'
+    | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
     | '/admin/forms'
@@ -488,6 +519,7 @@ export interface FileRouteTypes {
     | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
+    | '/driver/messages'
     | '/driver/profile'
     | '/driver/start-of-day'
     | '/driver/tickets'
@@ -495,6 +527,7 @@ export interface FileRouteTypes {
     | '/driver/work-order'
     | '/mechanic/inventory'
     | '/mechanic/maintenance'
+    | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
     | '/t/$token'
@@ -513,6 +546,7 @@ export interface FileRouteTypes {
     | '/mechanic'
     | '/reset-password'
     | '/admin/clients'
+    | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
     | '/admin/forms'
@@ -534,6 +568,7 @@ export interface FileRouteTypes {
     | '/driver/inspection'
     | '/driver/job-log'
     | '/driver/jobs'
+    | '/driver/messages'
     | '/driver/profile'
     | '/driver/start-of-day'
     | '/driver/tickets'
@@ -541,6 +576,7 @@ export interface FileRouteTypes {
     | '/driver/work-order'
     | '/mechanic/inventory'
     | '/mechanic/maintenance'
+    | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
     | '/t/$token'
@@ -649,6 +685,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MechanicPurchaseRequestsRouteImport
       parentRoute: typeof MechanicRoute
     }
+    '/mechanic/messages': {
+      id: '/mechanic/messages'
+      path: '/messages'
+      fullPath: '/mechanic/messages'
+      preLoaderRoute: typeof MechanicMessagesRouteImport
+      parentRoute: typeof MechanicRoute
+    }
     '/mechanic/maintenance': {
       id: '/mechanic/maintenance'
       path: '/maintenance'
@@ -696,6 +739,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/driver/profile'
       preLoaderRoute: typeof DriverProfileRouteImport
+      parentRoute: typeof DriverRoute
+    }
+    '/driver/messages': {
+      id: '/driver/messages'
+      path: '/messages'
+      fullPath: '/driver/messages'
+      preLoaderRoute: typeof DriverMessagesRouteImport
       parentRoute: typeof DriverRoute
     }
     '/driver/jobs': {
@@ -845,6 +895,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDriversRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/communications': {
+      id: '/admin/communications'
+      path: '/communications'
+      fullPath: '/admin/communications'
+      preLoaderRoute: typeof AdminCommunicationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/clients': {
       id: '/admin/clients'
       path: '/clients'
@@ -878,6 +935,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminClientsRoute: typeof AdminClientsRoute
+  AdminCommunicationsRoute: typeof AdminCommunicationsRoute
   AdminDriversRoute: typeof AdminDriversRoute
   AdminErrorsRoute: typeof AdminErrorsRoute
   AdminFormsRoute: typeof AdminFormsRoute
@@ -901,6 +959,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminClientsRoute: AdminClientsRoute,
+  AdminCommunicationsRoute: AdminCommunicationsRoute,
   AdminDriversRoute: AdminDriversRoute,
   AdminErrorsRoute: AdminErrorsRoute,
   AdminFormsRoute: AdminFormsRoute,
@@ -930,6 +989,7 @@ interface DriverRouteChildren {
   DriverInspectionRoute: typeof DriverInspectionRoute
   DriverJobLogRoute: typeof DriverJobLogRoute
   DriverJobsRoute: typeof DriverJobsRoute
+  DriverMessagesRoute: typeof DriverMessagesRoute
   DriverProfileRoute: typeof DriverProfileRoute
   DriverStartOfDayRoute: typeof DriverStartOfDayRoute
   DriverTicketsRoute: typeof DriverTicketsRoute
@@ -944,6 +1004,7 @@ const DriverRouteChildren: DriverRouteChildren = {
   DriverInspectionRoute: DriverInspectionRoute,
   DriverJobLogRoute: DriverJobLogRoute,
   DriverJobsRoute: DriverJobsRoute,
+  DriverMessagesRoute: DriverMessagesRoute,
   DriverProfileRoute: DriverProfileRoute,
   DriverStartOfDayRoute: DriverStartOfDayRoute,
   DriverTicketsRoute: DriverTicketsRoute,
@@ -958,6 +1019,7 @@ const DriverRouteWithChildren =
 interface MechanicRouteChildren {
   MechanicInventoryRoute: typeof MechanicInventoryRoute
   MechanicMaintenanceRoute: typeof MechanicMaintenanceRoute
+  MechanicMessagesRoute: typeof MechanicMessagesRoute
   MechanicPurchaseRequestsRoute: typeof MechanicPurchaseRequestsRoute
   MechanicWorkOrdersRoute: typeof MechanicWorkOrdersRoute
   MechanicIndexRoute: typeof MechanicIndexRoute
@@ -966,6 +1028,7 @@ interface MechanicRouteChildren {
 const MechanicRouteChildren: MechanicRouteChildren = {
   MechanicInventoryRoute: MechanicInventoryRoute,
   MechanicMaintenanceRoute: MechanicMaintenanceRoute,
+  MechanicMessagesRoute: MechanicMessagesRoute,
   MechanicPurchaseRequestsRoute: MechanicPurchaseRequestsRoute,
   MechanicWorkOrdersRoute: MechanicWorkOrdersRoute,
   MechanicIndexRoute: MechanicIndexRoute,

@@ -40,6 +40,14 @@ import type {
   NotificationPreferences,
   BillingSubscription,
   BillingStatus,
+  Conversation,
+  ConversationParticipant,
+  ConversationTopic,
+  ConversationStatus,
+  Message,
+  MessageDeliveryStatus,
+  MessageSenderKind,
+  ParticipantRole,
 } from "@/types/domain";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -697,5 +705,57 @@ export function dbTicketPhotoToDomain(r: Row<"ticket_photos">): TicketPhoto {
     enteredBy: r.entered_by,
     status: r.status,
     uploadedAt: r.uploaded_at,
+  };
+}
+
+// ---------- communications ----------
+export function dbConversationToDomain(r: Row<"conversations">): Conversation {
+  return {
+    id: r.id,
+    twilioConversationSid: r.twilio_conversation_sid,
+    topic: r.topic as ConversationTopic,
+    topicRefId: r.topic_ref_id,
+    subject: r.subject,
+    status: r.status as ConversationStatus,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    lastMessageAt: r.last_message_at,
+    closedAt: r.closed_at,
+    closedBy: r.closed_by,
+    resolutionNotes: r.resolution_notes,
+  };
+}
+
+export function dbConversationParticipantToDomain(
+  r: Row<"conversation_participants">,
+): ConversationParticipant {
+  return {
+    id: r.id,
+    conversationId: r.conversation_id,
+    userId: r.user_id,
+    participantRole: r.participant_role as ParticipantRole,
+    twilioParticipantSid: r.twilio_participant_sid,
+    joinedAt: r.joined_at,
+    leftAt: r.left_at,
+    lastReadAt: r.last_read_at,
+  };
+}
+
+export function dbMessageToDomain(r: Row<"messages">): Message {
+  return {
+    id: r.id,
+    conversationId: r.conversation_id,
+    twilioMessageSid: r.twilio_message_sid,
+    idempotencyKey: r.idempotency_key,
+    senderId: r.sender_id,
+    senderKind: r.sender_kind as MessageSenderKind,
+    body: r.body,
+    mediaPaths: r.media_paths ?? [],
+    twilioMediaUrls: r.twilio_media_urls ?? [],
+    deliveryStatus: r.delivery_status as MessageDeliveryStatus,
+    errorCode: r.error_code,
+    errorMessage: r.error_message,
+    createdAt: r.created_at,
+    deliveredAt: r.delivered_at,
   };
 }

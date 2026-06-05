@@ -188,6 +188,114 @@ export type Database = {
           },
         ]
       }
+      conversation_participants: {
+        Row: {
+          conversation_id: string
+          id: string
+          joined_at: string
+          last_read_at: string | null
+          left_at: string | null
+          participant_role: string
+          twilio_participant_sid: string | null
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          id: string
+          joined_at?: string
+          last_read_at?: string | null
+          left_at?: string | null
+          participant_role: string
+          twilio_participant_sid?: string | null
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          id?: string
+          joined_at?: string
+          last_read_at?: string | null
+          left_at?: string | null
+          participant_role?: string
+          twilio_participant_sid?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          last_message_at: string
+          resolution_notes: string | null
+          status: string
+          subject: string
+          topic: string
+          topic_ref_id: string | null
+          twilio_conversation_sid: string | null
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by: string
+          id: string
+          last_message_at?: string
+          resolution_notes?: string | null
+          status?: string
+          subject: string
+          topic: string
+          topic_ref_id?: string | null
+          twilio_conversation_sid?: string | null
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          last_message_at?: string
+          resolution_notes?: string | null
+          status?: string
+          subject?: string
+          topic?: string
+          topic_ref_id?: string | null
+          twilio_conversation_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dead_letter_submissions: {
         Row: {
           id: string
@@ -961,6 +1069,72 @@ export type Database = {
             foreignKeyName: "mechanics_id_fkey"
             columns: ["id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          body: string
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          delivery_status: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          idempotency_key: string | null
+          media_paths: string[]
+          sender_id: string
+          sender_kind: string
+          twilio_media_urls: string[]
+          twilio_message_sid: string | null
+        }
+        Insert: {
+          body: string
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string
+          error_code?: string | null
+          error_message?: string | null
+          id: string
+          idempotency_key?: string | null
+          media_paths?: string[]
+          sender_id: string
+          sender_kind?: string
+          twilio_media_urls?: string[]
+          twilio_message_sid?: string | null
+        }
+        Update: {
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          idempotency_key?: string | null
+          media_paths?: string[]
+          sender_id?: string
+          sender_kind?: string
+          twilio_media_urls?: string[]
+          twilio_message_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2236,6 +2410,7 @@ export type Database = {
       }
     }
     Functions: {
+      _comms_gen_id: { Args: { p_prefix: string }; Returns: string }
       approve_purchase_request: {
         Args: { p_approver_id: string; p_id: string }
         Returns: {
@@ -2274,6 +2449,29 @@ export type Database = {
           status: string
         }[]
       }
+      close_conversation: {
+        Args: { p_conversation_id: string; p_resolution_notes: string }
+        Returns: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          last_message_at: string
+          resolution_notes: string | null
+          status: string
+          subject: string
+          topic: string
+          topic_ref_id: string | null
+          twilio_conversation_sid: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       consume_driver_token: { Args: { p_token: string }; Returns: boolean }
       create_driver_token: {
         Args: { p_driver_id: string; p_hours?: number; p_scope: string }
@@ -2304,6 +2502,29 @@ export type Database = {
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
+      join_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: {
+          conversation_id: string
+          id: string
+          joined_at: string
+          last_read_at: string | null
+          left_at: string | null
+          participant_role: string
+          twilio_participant_sid: string | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "conversation_participants"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      leave_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
       list_cron_jobs: {
         Args: never
         Returns: {
@@ -2315,6 +2536,66 @@ export type Database = {
         }[]
       }
       lock_qbo_oauth_refresh: { Args: never; Returns: undefined }
+      mark_conversation_read: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
+      open_conversation: {
+        Args: {
+          p_counterparty_id: string
+          p_subject: string
+          p_topic: string
+          p_topic_ref_id: string
+        }
+        Returns: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          last_message_at: string
+          resolution_notes: string | null
+          status: string
+          subject: string
+          topic: string
+          topic_ref_id: string | null
+          twilio_conversation_sid: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      open_conversation_with_participants: {
+        Args: {
+          p_participant_ids: string[]
+          p_subject: string
+          p_topic: string
+          p_topic_ref_id: string
+        }
+        Returns: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          last_message_at: string
+          resolution_notes: string | null
+          status: string
+          subject: string
+          topic: string
+          topic_ref_id: string | null
+          twilio_conversation_sid: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       recent_cron_runs: {
         Args: { p_jobname?: string; p_limit?: number }
         Returns: {
@@ -2375,6 +2656,25 @@ export type Database = {
           ok: boolean
           status: string
         }[]
+      }
+      tag_admins: {
+        Args: { p_admin_ids?: string[]; p_conversation_id: string }
+        Returns: {
+          conversation_id: string
+          id: string
+          joined_at: string
+          last_read_at: string | null
+          left_at: string | null
+          participant_role: string
+          twilio_participant_sid: string | null
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "conversation_participants"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       top_up_client_tickets: {
         Args: {

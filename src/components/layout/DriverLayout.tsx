@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Home, Briefcase, FileText, User, Menu, Clock, Loader2, Lock, Wrench, Ticket } from "lucide-react";
+import { Home, Briefcase, FileText, User, Menu, Clock, Loader2, Lock, Wrench, Ticket, MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -23,6 +23,7 @@ const tabs = [
   // the driver a one-tap entry when they walk in with a paper ticket book
   // and need to record a debit before leaving the yard.
   { to: "/driver/tickets", label: "Tickets", icon: Ticket },
+  { to: "/driver/messages", label: "Messages", icon: MessagesSquare },
   { to: "/driver/profile", label: "Profile", icon: User },
 ];
 
@@ -128,7 +129,7 @@ export function DriverShell({ children }: { children?: ReactNode }) {
           </button>
         </header>
         <main className="flex-1 pb-20 overflow-x-hidden">{children ?? <Outlet />}</main>
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-card border-t border-border grid grid-cols-5 z-30">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[520px] bg-card border-t border-border grid grid-cols-6 z-30">
           {tabs.map((t) => {
             const active = t.exact ? pathname === t.to : pathname.startsWith(t.to);
             return (

@@ -105,6 +105,14 @@ export type QueueItem = (
       kind: "ticket-use";
       payload: Parameters<typeof api.recordTicketUse>[0];
     }
+  | {
+      // Outbound communications message. The api.sendMessage helper sets a
+      // client-side idempotency_key so a queued flush that races with the
+      // online retry never inserts a duplicate row (unique partial index on
+      // (sender_id, idempotency_key) enforces this server-side).
+      kind: "sendMessage";
+      payload: Parameters<typeof api.sendMessage>[0];
+    }
 ) & {
   id: string;
   queuedAt: string;
@@ -278,6 +286,9 @@ async function flushOne(item: QueueItem): Promise<{ outcome: FlushOutcome; item:
       }
       case "ticket-use":
         await api.recordTicketUse(item.payload);
+        break;
+      case "sendMessage":
+        await api.sendMessage(item.payload);
         break;
     }
     // Coupled consume: when the submission above carried a token to burn,

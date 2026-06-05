@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Home, ClipboardCheck, ShoppingCart, Wrench, Package, Menu, X } from "lucide-react";
+import { Home, ClipboardCheck, ShoppingCart, Wrench, Package, Menu, X, MessagesSquare } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
@@ -7,6 +7,7 @@ import { useApp } from "@/contexts/AppContext";
 const navItems = [
   { to: "/mechanic", label: "Dashboard", icon: Home, exact: true },
   { to: "/mechanic/work-orders", label: "Work orders assigned to me", icon: ClipboardCheck },
+  { to: "/mechanic/messages", label: "Messages", icon: MessagesSquare },
   { to: "/mechanic/purchase-requests", label: "Purchase requests (PO)", icon: ShoppingCart },
   { to: "/mechanic/maintenance", label: "Vehicle maintenance logs", icon: Wrench },
   { to: "/mechanic/inventory", label: "Parts inventory", icon: Package },

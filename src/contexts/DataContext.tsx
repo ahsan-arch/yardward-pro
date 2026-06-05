@@ -17,6 +17,9 @@ import {
   dbTimeEntryToDomain,
   dbVehicleToDomain,
   dbMaintenanceWorkOrderToDomain,
+  dbConversationToDomain,
+  dbConversationParticipantToDomain,
+  dbMessageToDomain,
 } from "@/lib/db-mappers";
 import { useAuth } from "./AuthContext";
 import type {
@@ -45,6 +48,9 @@ import type {
   FuelLog,
   MaintenanceWorkOrder,
   Mechanic,
+  Conversation,
+  ConversationParticipant,
+  Message,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -86,6 +92,13 @@ type Ctx = {
    */
   adjustInventoryReservation: (inventoryItemId: string, qtyDelta: number) => void;
   smsLogs: SmsLog[];
+  // ---- Communications ----
+  conversations: Conversation[];
+  conversationParticipants: ConversationParticipant[];
+  messages: Message[];
+  upsertConversation: (c: Conversation) => void;
+  upsertParticipant: (p: ConversationParticipant) => void;
+  upsertMessage: (m: Message) => void;
   notifications: Notification[];
   driverTokens: DriverToken[];
   ticketPhotos: TicketPhoto[];
@@ -298,6 +311,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     seed.inventoryItems,
   );
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(initEmpty ? [] : seed.smsLogs);
+  // Communications. Empty seed — no mock fixtures because the feature is
+  // strictly Supabase-backed; mock-mode developers see an empty inbox.
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationParticipants, setConversationParticipants] = useState<
+    ConversationParticipant[]
+  >([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [driverTokens, setTokens] = useState<DriverToken[]>(initEmpty ? [] : seed.driverTokens);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(() => {
     // E2E opt-in: when the test sets the open-shift flag, prepend a synthetic
@@ -433,6 +453,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setDrivers(data.drivers);
       setTools(data.tools);
       setTenders(data.tenders);
+      setConversations(data.conversations);
+      setConversationParticipants(data.conversationParticipants);
+      setMessages(data.messages);
     });
     return () => {
       cancelled = true;
@@ -564,6 +587,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setMaintenanceWorkOrders((prev) => upsertById(prev, next));
         },
       )
+      // Communications: admin observes every conversation + every message
+      // server-side via RLS. Local mirror keeps the inbox live without the
+      // user having to refresh.
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setConversations((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationToDomain(payload.new as Row<"conversations">);
+          setConversations((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversation_participants" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id)
+              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationParticipantToDomain(
+            payload.new as Row<"conversation_participants">,
+          );
+          setConversationParticipants((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbMessageToDomain(payload.new as Row<"messages">);
+          setMessages((prev) => upsertById(prev, next));
+        },
+      )
       .subscribe();
 
     return () => {
@@ -602,6 +670,115 @@ export function DataProvider({ children }: { children: ReactNode }) {
             payload.new as Row<"maintenance_work_orders">,
           );
           setMaintenanceWorkOrders((prev) => upsertById(prev, next));
+        },
+      )
+      // Communications subscriptions for mechanic. RLS filters to their own
+      // conversations so the channel only delivers what they're allowed to see.
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setConversations((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationToDomain(payload.new as Row<"conversations">);
+          setConversations((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversation_participants" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id)
+              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationParticipantToDomain(
+            payload.new as Row<"conversation_participants">,
+          );
+          setConversationParticipants((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbMessageToDomain(payload.new as Row<"messages">);
+          setMessages((prev) => upsertById(prev, next));
+        },
+      )
+      .subscribe();
+    return () => {
+      void sb.removeChannel(channel);
+    };
+  }, [authed, role]);
+
+  // Driver-side realtime. Previously drivers had no channel because their
+  // DataContext was read-only for the data they care about; the Communications
+  // feature is the first driver-mutable cross-cutting surface, so a dedicated
+  // channel keeps subscription noise off the admin/mechanic channels.
+  useEffect(() => {
+    if (!USE_SUPABASE || !supabase || !authed || role !== "driver") return;
+    const sb = supabase;
+    function upsertById<T extends { id: string }>(prev: T[], next: T): T[] {
+      return prev.some((x) => x.id === next.id)
+        ? prev.map((x) => (x.id === next.id ? next : x))
+        : [next, ...prev];
+    }
+    function removeById<T extends { id: string }>(prev: T[], id: string): T[] {
+      return prev.filter((x) => x.id !== id);
+    }
+    const channel = sb
+      .channel("yardward-pro:driver-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setConversations((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationToDomain(payload.new as Row<"conversations">);
+          setConversations((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversation_participants" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id)
+              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbConversationParticipantToDomain(
+            payload.new as Row<"conversation_participants">,
+          );
+          setConversationParticipants((prev) => upsertById(prev, next));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+            return;
+          }
+          const next = dbMessageToDomain(payload.new as Row<"messages">);
+          setMessages((prev) => upsertById(prev, next));
         },
       )
       .subscribe();
@@ -725,6 +902,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
   const addSms = useCallback((sms: SmsLog) => setSmsLogs((arr) => [sms, ...arr]), []);
+
+  // Communications mutators. Standard upsert-by-id semantics so optimistic
+  // local updates from api.ts and realtime echoes converge to the same state.
+  const upsertConversation = useCallback((c: Conversation) => {
+    setConversations((prev) =>
+      prev.some((x) => x.id === c.id)
+        ? prev.map((x) => (x.id === c.id ? c : x))
+        : [c, ...prev],
+    );
+  }, []);
+  const upsertParticipant = useCallback((p: ConversationParticipant) => {
+    setConversationParticipants((prev) =>
+      prev.some((x) => x.id === p.id)
+        ? prev.map((x) => (x.id === p.id ? p : x))
+        : [p, ...prev],
+    );
+  }, []);
+  const upsertMessage = useCallback((m: Message) => {
+    setMessages((prev) =>
+      prev.some((x) => x.id === m.id)
+        ? prev.map((x) => (x.id === m.id ? m : x))
+        : [m, ...prev],
+    );
+  }, []);
   const generateDriverToken = useCallback((token: DriverToken) => {
     setTokens((arr) => {
       const next = [token, ...arr];
@@ -864,6 +1065,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         inventoryItems,
         adjustInventoryReservation,
         smsLogs,
+        conversations,
+        conversationParticipants,
+        messages,
+        upsertConversation,
+        upsertParticipant,
+        upsertMessage,
         notifications,
         driverTokens,
         ticketPhotos,

@@ -31,6 +31,9 @@ import {
   dbDriverToDomain,
   dbToolToDomain,
   dbTenderToDomain,
+  dbConversationToDomain,
+  dbConversationParticipantToDomain,
+  dbMessageToDomain,
 } from "./db-mappers";
 import type {
   Client,
@@ -57,6 +60,9 @@ import type {
   Driver,
   Tool,
   Tender,
+  Conversation,
+  ConversationParticipant,
+  Message,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -85,6 +91,9 @@ export type HydratedData = {
   drivers: Driver[];
   tools: Tool[];
   tenders: Tender[];
+  conversations: Conversation[];
+  conversationParticipants: ConversationParticipant[];
+  messages: Message[];
 };
 
 // Standalone fetch for app_settings — used both during hydration and on demand
@@ -132,6 +141,9 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     driverProfiles,
     tools,
     tenders,
+    conversations,
+    conversationParticipants,
+    recentMessages,
   ] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("vehicles").select("*"),
@@ -185,6 +197,21 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       .from("tenders")
       .select("*")
       .order("scraped_at", { ascending: false }),
+    // Communications hydration. RLS filters by participant — drivers/mechanics
+    // see only their own threads; admins see everything via is_admin().
+    supabase
+      .from("conversations")
+      .select("*")
+      .order("last_message_at", { ascending: false })
+      .limit(500),
+    supabase.from("conversation_participants").select("*"),
+    // Hydrate only the most-recent N messages per session — older pages get
+    // lazy-loaded via api.fetchConversationMessages when a thread opens.
+    supabase
+      .from("messages")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
   ]);
 
   type LineItem = NonNullable<typeof invoiceLineItems.data>[number];
@@ -249,5 +276,10 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     }),
     tools: (tools.data ?? []).map(dbToolToDomain),
     tenders: (tenders.data ?? []).map(dbTenderToDomain),
+    conversations: (conversations.data ?? []).map(dbConversationToDomain),
+    conversationParticipants: (conversationParticipants.data ?? []).map(
+      dbConversationParticipantToDomain,
+    ),
+    messages: (recentMessages.data ?? []).map(dbMessageToDomain),
   };
 }
