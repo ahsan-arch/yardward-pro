@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -1192,44 +1193,154 @@ function NotificationsTab() {
 }
 
 function BillingTab() {
+  const { appSettings, drivers, vehicles } = useData();
+  const billing = appSettings.billing;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  // Live seats/vehicles usage — counted from the same arrays that drive the
+  // admin UI, so the headcount auto-updates when an admin adds a driver.
+  const seatsUsed = drivers.filter((d) => d.status === "active").length;
+  const vehiclesActive = vehicles.filter((v) => v.status === "operational").length;
+  const isCancelRequested = billing.status === "cancel-requested";
+  const isCancelled = billing.status === "cancelled";
+  const isPastDue = billing.status === "past-due";
+
+  async function confirmCancel() {
+    setCancelling(true);
+    try {
+      const result = await api.requestCancelSubscription(cancelReason.trim());
+      if (result.ok) {
+        toast.success("Cancellation requested — our team will reach out");
+        setCancelOpen(false);
+        setCancelReason("");
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
     <Card title="Billing & subscription">
-      <div className="bg-amber-brand/10 border border-amber-brand/30 rounded-md p-3 mb-4 flex items-center gap-2 text-sm">
-        <AlertCircle className="w-4 h-4 text-amber-brand" />
-        Mock-only. Real billing wires in once the backend is ready.
-      </div>
+      {isCancelRequested && (
+        <div className="bg-amber-brand/10 border border-amber-brand/30 rounded-md p-3 mb-4 flex items-start gap-2 text-sm">
+          <AlertCircle className="w-4 h-4 text-amber-brand mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">Cancellation requested</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {billing.cancelRequestedAt &&
+                `Submitted ${new Date(billing.cancelRequestedAt).toLocaleString()}.`}
+              {billing.cancelReason && ` Reason: ${billing.cancelReason}.`}
+              {" "}Our team will be in touch before the next renewal.
+            </p>
+          </div>
+        </div>
+      )}
+      {isCancelled && (
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 mb-4 flex items-center gap-2 text-sm">
+          <AlertCircle className="w-4 h-4 text-danger" />
+          Subscription cancelled. Read-only access until end of billing period.
+        </div>
+      )}
+      {isPastDue && (
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 mb-4 flex items-center gap-2 text-sm">
+          <AlertCircle className="w-4 h-4 text-danger" />
+          Past due. Please contact support to restore service.
+        </div>
+      )}
       <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
         <div>
           <Label>Plan</Label>
-          <div className="text-sm font-medium">Fleet — up to 25 drivers</div>
+          <div className="text-sm font-medium" data-testid="billing-plan">
+            {billing.planName}
+          </div>
         </div>
         <div>
           <Label>Renewal</Label>
-          <div className="font-mono text-sm">2026-12-01</div>
+          <div className="font-mono text-sm" data-testid="billing-renewal">
+            {billing.renewalDate ?? "—"}
+          </div>
         </div>
         <div>
           <Label>Seats used</Label>
-          <div className="text-sm">8 / 25</div>
+          <div className="text-sm" data-testid="billing-seats">
+            {seatsUsed} / {billing.seatsLimit}
+          </div>
         </div>
         <div>
           <Label>Active vehicles</Label>
-          <div className="text-sm">6 / 50</div>
+          <div className="text-sm" data-testid="billing-vehicles">
+            {vehiclesActive} / {billing.vehiclesLimit}
+          </div>
+        </div>
+        <div>
+          <Label>Status</Label>
+          <div className="text-sm font-medium capitalize" data-testid="billing-status">
+            {billing.status.replace("-", " ")}
+          </div>
         </div>
       </div>
-      <Button
-        variant="outline"
-        className="mt-4"
-        onClick={() => {
-          try {
-            toast.success("Subscription cancellation requested (mock)");
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            toast.error(`Cancel failed: ${msg}`);
-          }
+      <Dialog
+        open={cancelOpen}
+        onOpenChange={(o) => {
+          setCancelOpen(o);
+          if (!o) setCancelReason("");
         }}
       >
-        <Trash2 className="w-4 h-4 text-danger" /> Cancel subscription
-      </Button>
+        <Button
+          variant="outline"
+          className="mt-4"
+          disabled={isCancelRequested || isCancelled}
+          onClick={() => setCancelOpen(true)}
+          data-testid="open-cancel-subscription"
+        >
+          <Trash2 className="w-4 h-4 text-danger" />{" "}
+          {isCancelRequested ? "Cancellation pending" : "Cancel subscription"}
+        </Button>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel subscription</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            We&apos;ll process your cancellation and reach out before your next
+            renewal date ({billing.renewalDate ?? "—"}). Tell us why so we can
+            improve.
+          </p>
+          <div className="mt-3">
+            <Label htmlFor="cancel-reason">Reason (optional)</Label>
+            <Textarea
+              id="cancel-reason"
+              rows={3}
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              data-testid="cancel-reason"
+            />
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setCancelOpen(false)}
+              className="flex-1"
+            >
+              Keep subscription
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={cancelling}
+              onClick={() => void confirmCancel()}
+              data-testid="confirm-cancel-subscription"
+              className="flex-1"
+            >
+              {cancelling ? "Requesting…" : "Request cancellation"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

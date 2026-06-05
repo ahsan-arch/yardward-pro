@@ -38,8 +38,13 @@ import type {
   ToolCondition,
   Tender,
   NotificationPreferences,
+  BillingSubscription,
+  BillingStatus,
 } from "@/types/domain";
-import { DEFAULT_NOTIFICATION_PREFERENCES } from "@/types/domain";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  DEFAULT_BILLING_SUBSCRIPTION,
+} from "@/types/domain";
 
 // ---------- app settings (singleton) ----------
 export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
@@ -51,6 +56,18 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
   const prefs: NotificationPreferences = {
     ...DEFAULT_NOTIFICATION_PREFERENCES,
     ...(rawPrefs ?? {}),
+  };
+  // Billing fields live as separate columns on app_settings; bundled into a
+  // BillingSubscription object here so the BillingTab can consume one prop.
+  const billing: BillingSubscription = {
+    planName: r.billing_plan_name ?? DEFAULT_BILLING_SUBSCRIPTION.planName,
+    renewalDate: r.billing_renewal_date ?? null,
+    seatsLimit: r.billing_seats_limit ?? DEFAULT_BILLING_SUBSCRIPTION.seatsLimit,
+    vehiclesLimit:
+      r.billing_vehicles_limit ?? DEFAULT_BILLING_SUBSCRIPTION.vehiclesLimit,
+    status: (r.billing_status ?? "active") as BillingStatus,
+    cancelRequestedAt: r.billing_cancel_requested_at ?? null,
+    cancelReason: r.billing_cancel_reason ?? null,
   };
   return {
     gpsToleranceMinutes: r.gps_tolerance_minutes,
@@ -64,6 +81,7 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
     timezone: r.timezone ?? "America/Toronto",
     currency: r.currency ?? "CAD",
     notificationPreferences: prefs,
+    billing,
     updatedAt: r.updated_at,
   };
 }

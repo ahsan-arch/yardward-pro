@@ -169,7 +169,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     // filled in by the seed/blank defaults in the mapper.
     supabase
       .from("profiles")
-      .select("id, email, name, phone, role, status, created_at")
+      .select("id, email, name, phone, role, status, created_at, notification_preferences")
       .eq("role", "mechanic"),
     // Drivers: the driver-specific fields (license, initials, vehicle
     // assignment) live on public.drivers; the user-facing display fields
@@ -178,7 +178,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     supabase.from("drivers").select("*"),
     supabase
       .from("profiles")
-      .select("id, email, name, phone, role, status, created_at")
+      .select("id, email, name, phone, role, status, created_at, notification_preferences")
       .eq("role", "driver"),
     supabase.from("tools").select("*"),
     supabase

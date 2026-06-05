@@ -485,6 +485,66 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   dailySummaryEmail: false,
 };
 
+// Per-user notification preferences. Distinct from the org-wide flags in
+// AppSettings — these let an individual driver/mechanic opt in/out of
+// channels for themselves regardless of org defaults.
+export interface UserNotificationPreferences {
+  newJobAssignedSms: boolean;
+  workOrderAwaitingApproval: boolean;
+  toolFlaggedOnChecklist: boolean;
+  shiftReminders: boolean;
+  maintenanceAlerts: boolean;
+  dailySummaryEmail: boolean;
+}
+
+export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
+  newJobAssignedSms: true,
+  workOrderAwaitingApproval: true,
+  toolFlaggedOnChecklist: true,
+  shiftReminders: true,
+  maintenanceAlerts: true,
+  dailySummaryEmail: false,
+};
+
+// Billing subscription state — admin-only, lives as columns on the
+// app_settings singleton row. Cancellations flow through the SECDEF
+// request_cancel_subscription RPC which also drops a notification on
+// every admin profile.
+export type BillingStatus = "active" | "cancel-requested" | "cancelled" | "past-due";
+
+export interface BillingSubscription {
+  planName: string;
+  renewalDate: string | null;
+  seatsLimit: number;
+  vehiclesLimit: number;
+  status: BillingStatus;
+  cancelRequestedAt: string | null;
+  cancelReason: string | null;
+}
+
+export const DEFAULT_BILLING_SUBSCRIPTION: BillingSubscription = {
+  planName: "Fleet — up to 25 drivers",
+  renewalDate: null,
+  seatsLimit: 25,
+  vehiclesLimit: 50,
+  status: "active",
+  cancelRequestedAt: null,
+  cancelReason: null,
+};
+
+export interface SupportTicket {
+  id: string;
+  userId: string | null;
+  userEmail: string;
+  subject: string;
+  body: string;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolutionNotes: string | null;
+}
+
 export interface AppSettings {
   gpsToleranceMinutes: number;
   overtimeWarningHours: number;
@@ -499,6 +559,8 @@ export interface AppSettings {
   currency: string;
   // Notification preferences (admin/settings → Notifications tab)
   notificationPreferences: NotificationPreferences;
+  // Billing (admin/settings → Billing tab)
+  billing: BillingSubscription;
   updatedAt: string;
 }
 
@@ -514,5 +576,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   timezone: "America/Toronto",
   currency: "CAD",
   notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+  billing: DEFAULT_BILLING_SUBSCRIPTION,
   updatedAt: new Date(0).toISOString(),
 };

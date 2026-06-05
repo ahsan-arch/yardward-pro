@@ -1907,6 +1907,109 @@ export const api = {
     return next;
   },
 
+  // ---- Billing -----------------------------------------------------------
+  // Admin-only: flips billing_status to 'cancel-requested' via the SECDEF
+  // RPC and lets the local store mirror the new status. The RPC also drops
+  // a notification on every admin profile (handled server-side).
+  requestCancelSubscription: async (
+    reason: string,
+  ): Promise<{ ok: true; status: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      // Mock mode: optimistic local update only.
+      return { ok: true, status: "cancel-requested" };
+    }
+    const { data, error } = await supabase.rpc("request_cancel_subscription", {
+      p_reason: reason,
+    });
+    if (error) {
+      reportApiError("REQUEST_CANCEL_SUBSCRIPTION", error, { reason });
+      return { ok: false, reason: error.message };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.ok) {
+      return { ok: false, reason: row?.error ?? "Cancellation failed" };
+    }
+    return { ok: true, status: row.status };
+  },
+
+  // ---- Per-user notification preferences --------------------------------
+  // Reads the auth.uid()'s profile.notification_preferences. Returns the
+  // safe default in mock mode or if Supabase is unreachable.
+  getMyNotificationPreferences: async (): Promise<
+    import("@/types/domain").UserNotificationPreferences
+  > => {
+    const { DEFAULT_USER_NOTIFICATION_PREFERENCES } = await import(
+      "@/types/domain"
+    );
+    if (!USE_SUPABASE || !supabase) return DEFAULT_USER_NOTIFICATION_PREFERENCES;
+    const { data: authData } = await supabase.auth.getUser();
+    const uid = authData.user?.id;
+    if (!uid) return DEFAULT_USER_NOTIFICATION_PREFERENCES;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("notification_preferences")
+      .eq("id", uid)
+      .maybeSingle();
+    if (error || !data) return DEFAULT_USER_NOTIFICATION_PREFERENCES;
+    return {
+      ...DEFAULT_USER_NOTIFICATION_PREFERENCES,
+      ...((data as { notification_preferences?: object }).notification_preferences ?? {}),
+    };
+  },
+
+  updateMyNotificationPreferences: async (
+    prefs: import("@/types/domain").UserNotificationPreferences,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const uid = authData.user?.id;
+    if (!uid) return { ok: false, reason: "Not signed in" };
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        notification_preferences: prefs as unknown as import("./database.types").Json,
+      })
+      .eq("id", uid);
+    if (error) {
+      reportApiError("UPDATE_MY_NOTIF_PREFS", error, { uid });
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true };
+  },
+
+  // ---- Support tickets ---------------------------------------------------
+  // Driver/mechanic side of /driver/profile → Help & support row. Creates a
+  // row in support_tickets that admin can triage. user_id = auth.uid()
+  // enforced by RLS WITH CHECK; we still pass it explicitly for clarity.
+  createSupportTicket: async (input: {
+    subject: string;
+    body: string;
+  }): Promise<{ ok: true; ticketId: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, ticketId: uid("ST") };
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const u = authData.user;
+    if (!u) return { ok: false, reason: "Not signed in" };
+    const ticketId = uid("ST");
+    const { error } = await supabase.from("support_tickets").insert({
+      id: ticketId,
+      user_id: u.id,
+      user_email: u.email ?? "",
+      subject: input.subject,
+      body: input.body,
+    });
+    if (error) {
+      reportApiError("CREATE_SUPPORT_TICKET", error, { subject: input.subject });
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, ticketId };
+  },
+
   // ---- Timesheet flag overrides ----------------------------------------
   // Admin-only: clear or apply a manual flag on a time entry. Persists the
   // flag column so re-flagging due to a tolerance change won't silently

@@ -608,14 +608,17 @@ test.describe("Driver button audit", () => {
       expect(errors).toEqual([]);
     });
 
-    test("Notifications row is visible+enabled and fires a toast", async ({ page }) => {
+    test("Notifications row is visible+enabled and opens prefs sheet", async ({ page }) => {
       const errors = withErrorGuard(page);
       const btn = page.getByRole("button", { name: /^notifications$/i });
       await expect(btn).toBeVisible();
       await expect(btn).toBeEnabled();
       await btn.click();
+      // Click now opens a Sheet titled "Notification preferences" with the
+      // per-user toggle switches inside. Either the title or any of the
+      // toggle rows is a valid "the action fired" signal.
       await expect(
-        page.locator("text=/notification settings/i"),
+        page.locator("text=/notification preferences|shift reminders/i").first(),
       ).toBeVisible({ timeout: 5_000 });
       expect(errors).toEqual([]);
     });

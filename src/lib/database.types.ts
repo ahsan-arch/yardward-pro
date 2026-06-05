@@ -42,6 +42,13 @@ export type Database = {
       app_settings: {
         Row: {
           address: string
+          billing_cancel_reason: string | null
+          billing_cancel_requested_at: string | null
+          billing_plan_name: string
+          billing_renewal_date: string | null
+          billing_seats_limit: number
+          billing_status: string
+          billing_vehicles_limit: number
           business_name: string
           currency: string
           gps_tolerance_minutes: number
@@ -60,6 +67,13 @@ export type Database = {
         }
         Insert: {
           address?: string
+          billing_cancel_reason?: string | null
+          billing_cancel_requested_at?: string | null
+          billing_plan_name?: string
+          billing_renewal_date?: string | null
+          billing_seats_limit?: number
+          billing_status?: string
+          billing_vehicles_limit?: number
           business_name?: string
           currency?: string
           gps_tolerance_minutes?: number
@@ -78,6 +92,13 @@ export type Database = {
         }
         Update: {
           address?: string
+          billing_cancel_reason?: string | null
+          billing_cancel_requested_at?: string | null
+          billing_plan_name?: string
+          billing_renewal_date?: string | null
+          billing_seats_limit?: number
+          billing_status?: string
+          billing_vehicles_limit?: number
           business_name?: string
           currency?: string
           gps_tolerance_minutes?: number
@@ -989,6 +1010,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          notification_preferences: Json
           phone: string
           role: Database["public"]["Enums"]["user_role"]
           status: Database["public"]["Enums"]["user_status"]
@@ -998,6 +1020,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          notification_preferences?: Json
           phone?: string
           role: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["user_status"]
@@ -1007,6 +1030,7 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          notification_preferences?: Json
           phone?: string
           role?: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["user_status"]
@@ -1330,6 +1354,60 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          subject: string
+          user_email: string
+          user_id: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          subject: string
+          user_email: string
+          user_id?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          subject?: string
+          user_email?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_tickets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2289,6 +2367,14 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: string
+      }
+      request_cancel_subscription: {
+        Args: { p_reason: string }
+        Returns: {
+          error: string
+          ok: boolean
+          status: string
+        }[]
       }
       top_up_client_tickets: {
         Args: {
