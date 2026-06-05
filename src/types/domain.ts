@@ -462,6 +462,29 @@ export interface MaintenanceWorkOrder {
  * around instead of the 90-second drive-throughs the MTO flags. Read by
  * drivers (tolerance values), written by admins (everything).
  */
+// Notification preferences live in app_settings.notification_preferences as
+// jsonb. Boolean per channel — switches off in the UI flip the value to false.
+// Defaults match the seeded migration values.
+export interface NotificationPreferences {
+  newJobAssignedSms: boolean;
+  workOrderAwaitingApproval: boolean;
+  toolFlaggedOnChecklist: boolean;
+  gpsMismatchOnTimeEntry: boolean;
+  poAwaitingApproval: boolean;
+  vehicleMaintenanceOverdue: boolean;
+  dailySummaryEmail: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  newJobAssignedSms: true,
+  workOrderAwaitingApproval: true,
+  toolFlaggedOnChecklist: true,
+  gpsMismatchOnTimeEntry: true,
+  poAwaitingApproval: true,
+  vehicleMaintenanceOverdue: false,
+  dailySummaryEmail: false,
+};
+
 export interface AppSettings {
   gpsToleranceMinutes: number;
   overtimeWarningHours: number;
@@ -474,6 +497,8 @@ export interface AppSettings {
   address: string;
   timezone: string;
   currency: string;
+  // Notification preferences (admin/settings → Notifications tab)
+  notificationPreferences: NotificationPreferences;
   updatedAt: string;
 }
 
@@ -488,5 +513,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   address: "",
   timezone: "America/Toronto",
   currency: "CAD",
+  notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
   updatedAt: new Date(0).toISOString(),
 };

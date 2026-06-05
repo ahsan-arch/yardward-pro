@@ -59,7 +59,7 @@ function Page() {
     try {
       await api.pushInvoiceToQbo(inv?.id ?? "preview");
       setSyncStatus("synced");
-      toast.success("Pushed to QuickBooks (mock)");
+      toast.success("Pushed to QuickBooks");
     } catch (err) {
       setSyncStatus("failed");
       const msg = err instanceof Error ? err.message : String(err);

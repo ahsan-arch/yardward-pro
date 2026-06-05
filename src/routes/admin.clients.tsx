@@ -31,6 +31,18 @@ function Page() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  // Controlled form for the New client dialog. State resets on close so a
+  // second open starts fresh.
+  const EMPTY_CLIENT = {
+    name: "",
+    contactName: "",
+    email: "",
+    phone: "",
+    billingAddress: "",
+    notes: "",
+  };
+  const [newClient, setNewClient] = useState(EMPTY_CLIENT);
+  const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -151,62 +163,133 @@ function Page() {
         </SheetContent>
       </Sheet>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setNewClient(EMPTY_CLIENT);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New client</DialogTitle>
           </DialogHeader>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
+              const name = newClient.name.trim();
+              if (!name) {
+                toast.error("Company name is required");
+                return;
+              }
+              if (newClient.email.trim() && !/^\S+@\S+\.\S+$/.test(newClient.email.trim())) {
+                toast.error("Enter a valid email or leave blank");
+                return;
+              }
+              setCreating(true);
               try {
-                // Mock-only path — no api.createClient yet. Wrapped defensively
-                // so a future api wire-up automatically picks up the
-                // failure-toast path without touching this handler.
-                toast.success("Client created (mock)");
+                await api.createClient({
+                  name,
+                  contactName: newClient.contactName.trim(),
+                  email: newClient.email.trim(),
+                  phone: newClient.phone.trim(),
+                  billingAddress: newClient.billingAddress.trim(),
+                  notes: newClient.notes.trim(),
+                  rateTableId: null,
+                  status: "active",
+                  tickets: {
+                    enabled: false,
+                    balance: 0,
+                    threshold: 5,
+                    bundleSize: 50,
+                    bundlePrice: 0,
+                    autoBillEnabled: false,
+                    reportFrequency: "off",
+                    reportRecipients: [],
+                  },
+                });
+                toast.success(`Client created: ${name}`);
+                setNewClient(EMPTY_CLIENT);
                 setCreateOpen(false);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 toast.error(`Create client failed: ${msg}`);
+              } finally {
+                setCreating(false);
               }
             }}
             className="space-y-3"
             // Validation lives in the submit handler — `required` would block
             // the e2e button audit's empty-form click from ever reaching the
-            // toast.success path.
+            // toast path.
             noValidate
           >
             <div>
-              <Label>Company name</Label>
-              <Input />
+              <Label htmlFor="new-client-name">Company name</Label>
+              <Input
+                id="new-client-name"
+                value={newClient.name}
+                onChange={(e) => setNewClient((c) => ({ ...c, name: e.target.value }))}
+                data-testid="new-client-name"
+              />
             </div>
             <div>
-              <Label>Primary contact</Label>
-              <Input />
+              <Label htmlFor="new-client-contact">Primary contact</Label>
+              <Input
+                id="new-client-contact"
+                value={newClient.contactName}
+                onChange={(e) => setNewClient((c) => ({ ...c, contactName: e.target.value }))}
+                data-testid="new-client-contact"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Email</Label>
-                <Input type="email" />
+                <Label htmlFor="new-client-email">Email</Label>
+                <Input
+                  id="new-client-email"
+                  type="text"
+                  inputMode="email"
+                  value={newClient.email}
+                  onChange={(e) => setNewClient((c) => ({ ...c, email: e.target.value }))}
+                  data-testid="new-client-email"
+                />
               </div>
               <div>
-                <Label>Phone</Label>
-                <Input />
+                <Label htmlFor="new-client-phone">Phone</Label>
+                <Input
+                  id="new-client-phone"
+                  value={newClient.phone}
+                  onChange={(e) => setNewClient((c) => ({ ...c, phone: e.target.value }))}
+                  data-testid="new-client-phone"
+                />
               </div>
             </div>
             <div>
-              <Label>Billing address</Label>
-              <Input />
+              <Label htmlFor="new-client-address">Billing address</Label>
+              <Input
+                id="new-client-address"
+                value={newClient.billingAddress}
+                onChange={(e) => setNewClient((c) => ({ ...c, billingAddress: e.target.value }))}
+                data-testid="new-client-address"
+              />
             </div>
             <div>
-              <Label>Notes</Label>
-              <Textarea rows={2} />
+              <Label htmlFor="new-client-notes">Notes</Label>
+              <Textarea
+                id="new-client-notes"
+                value={newClient.notes}
+                onChange={(e) => setNewClient((c) => ({ ...c, notes: e.target.value }))}
+                rows={2}
+                data-testid="new-client-notes"
+              />
             </div>
             <Button
               type="submit"
+              disabled={creating}
+              data-testid="submit-create-client"
               className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
             >
-              Create client
+              {creating ? "Creating…" : "Create client"}
             </Button>
           </form>
         </DialogContent>

@@ -94,6 +94,7 @@ type Ctx = {
   vehicleInspections: VehicleInspection[];
   ticketTransactions: TicketTransaction[];
   ticketReplenishments: TicketReplenishment[];
+  createClient: (client: Client) => void;
   createJob: (job: Job) => void;
   updateJob: (id: string, patch: Partial<Job>) => void;
   /**
@@ -609,6 +610,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [authed, role]);
 
+  const createClient = useCallback(
+    (client: Client) => setClients((arr) => [client, ...arr]),
+    [],
+  );
   const createJob = useCallback((job: Job) => setJobs((j) => [job, ...j]), []);
   const updateJob = useCallback(
     (id: string, patch: Partial<Job>) =>
@@ -867,6 +872,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         vehicleInspections,
         ticketTransactions,
         ticketReplenishments,
+        createClient,
         createJob,
         updateJob,
         submitJobLog,

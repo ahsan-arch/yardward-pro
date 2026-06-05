@@ -7,6 +7,7 @@ import type {
   TimeEntry,
   SmsLog,
   SmsDeliveryStatus,
+  Client,
   DriverToken,
   InvoiceData,
   QboSyncStatus,
@@ -92,6 +93,7 @@ type SmsLogRow = {
   delivery_status: SmsDeliveryStatus;
 };
 import {
+  domainClientToDb,
   domainJobToDb,
   domainWorkOrderToDb,
   domainMaintenanceLogToDb,
@@ -190,6 +192,23 @@ export const api = {
   },
 
   // Jobs
+  createClient: async (input: Omit<Client, "id">) => {
+    const client: Client = { ...input, id: uid("C") };
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase
+        .from("clients")
+        .insert(domainClientToDb(client));
+      if (error) {
+        throw new Error(
+          `createClient: ${reportApiError("CREATE_CLIENT", error, { clientId: client.id })}`,
+        );
+      }
+    } else {
+      await wait();
+    }
+    getStore().createClient(client);
+    return client;
+  },
   createJob: async (input: Omit<Job, "id" | "createdAt">) => {
     const job: Job = { ...input, id: uid("JOB"), createdAt: new Date().toISOString() };
     if (USE_SUPABASE && supabase) {
@@ -1873,6 +1892,7 @@ export const api = {
           address: next.address,
           timezone: next.timezone,
           currency: next.currency,
+          notification_preferences: next.notificationPreferences as unknown as import("./database.types").Json,
           updated_at: next.updatedAt,
         })
         .eq("id", "default");

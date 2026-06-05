@@ -37,10 +37,21 @@ import type {
   Tool,
   ToolCondition,
   Tender,
+  NotificationPreferences,
 } from "@/types/domain";
+import { DEFAULT_NOTIFICATION_PREFERENCES } from "@/types/domain";
 
 // ---------- app settings (singleton) ----------
 export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
+  // notification_preferences is jsonb — Supabase returns the raw object. Cast
+  // through unknown so the partial fallback can fill missing keys without
+  // fighting TS over the Json type from the generated schema.
+  const rawPrefs = (r as unknown as { notification_preferences?: Partial<NotificationPreferences> | null })
+    .notification_preferences;
+  const prefs: NotificationPreferences = {
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
+    ...(rawPrefs ?? {}),
+  };
   return {
     gpsToleranceMinutes: r.gps_tolerance_minutes,
     overtimeWarningHours: Number(r.overtime_warning_hours),
@@ -52,6 +63,7 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
     address: r.address ?? "",
     timezone: r.timezone ?? "America/Toronto",
     currency: r.currency ?? "CAD",
+    notificationPreferences: prefs,
     updatedAt: r.updated_at,
   };
 }

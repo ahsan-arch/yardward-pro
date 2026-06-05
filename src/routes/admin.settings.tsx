@@ -1119,27 +1119,74 @@ function TokensTab() {
 }
 
 function NotificationsTab() {
+  const { appSettings } = useData();
+  // Mirror the SystemTab pattern: local draft, dirty check, save handler that
+  // patches app_settings.notification_preferences via api.updateAppSettings.
+  const [draft, setDraft] = useState(appSettings.notificationPreferences);
+  const [saving, setSaving] = useState(false);
+  const lastSeededRef = useRef<string>(appSettings.updatedAt);
+  useEffect(() => {
+    if (appSettings.updatedAt === lastSeededRef.current) return;
+    lastSeededRef.current = appSettings.updatedAt;
+    setDraft(appSettings.notificationPreferences);
+  }, [appSettings]);
+
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(appSettings.notificationPreferences);
+
+  async function save() {
+    if (!dirty) {
+      toast("No changes");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateAppSettings({ notificationPreferences: draft });
+      toast.success("Notification preferences saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Field config — keeps the rendered order + labels in one place. The keys
+  // match NotificationPreferences exactly so a typo at compile time.
+  const rows: Array<{ key: keyof typeof draft; label: string }> = [
+    { key: "newJobAssignedSms", label: "New job assigned (SMS)" },
+    { key: "workOrderAwaitingApproval", label: "Work order awaiting approval" },
+    { key: "toolFlaggedOnChecklist", label: "Tool flagged on checklist" },
+    { key: "gpsMismatchOnTimeEntry", label: "GPS mismatch on time entry" },
+    { key: "poAwaitingApproval", label: "PO awaiting approval" },
+    { key: "vehicleMaintenanceOverdue", label: "Vehicle maintenance overdue" },
+    { key: "dailySummaryEmail", label: "Daily summary email" },
+  ];
+
   return (
     <Card title="Notification preferences">
       <div className="space-y-4 max-w-xl">
-        {[
-          ["New job assigned (SMS)", true],
-          ["Work order awaiting approval", true],
-          ["Tool flagged on checklist", true],
-          ["GPS mismatch on time entry", true],
-          ["PO awaiting approval", true],
-          ["Vehicle maintenance overdue", false],
-          ["Daily summary email", false],
-        ].map(([label, on]) => (
+        {rows.map((row) => (
           <div
-            key={label as string}
+            key={row.key}
             className="flex items-center justify-between border-b border-border/50 pb-2"
           >
-            <div className="text-sm">{label}</div>
-            <Switch defaultChecked={on as boolean} />
+            <div className="text-sm">{row.label}</div>
+            <Switch
+              checked={draft[row.key]}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, [row.key]: v }))}
+              data-testid={`notif-pref-${row.key}`}
+            />
           </div>
         ))}
       </div>
+      <Button
+        className="mt-4 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        onClick={() => void save()}
+        disabled={saving}
+        data-testid="save-notification-prefs"
+      >
+        {saving ? "Saving…" : "Save changes"}
+      </Button>
     </Card>
   );
 }

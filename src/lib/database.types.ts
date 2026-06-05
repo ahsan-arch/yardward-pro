@@ -48,6 +48,7 @@ export type Database = {
           id: string
           inspection_max_duration_seconds: number
           inspection_min_duration_seconds: number
+          notification_preferences: Json
           overtime_alert_hours: number
           overtime_warning_hours: number
           prolonged_stop_minutes: number
@@ -65,6 +66,7 @@ export type Database = {
           id?: string
           inspection_max_duration_seconds?: number
           inspection_min_duration_seconds?: number
+          notification_preferences?: Json
           overtime_alert_hours?: number
           overtime_warning_hours?: number
           prolonged_stop_minutes?: number
@@ -82,6 +84,7 @@ export type Database = {
           id?: string
           inspection_max_duration_seconds?: number
           inspection_min_duration_seconds?: number
+          notification_preferences?: Json
           overtime_alert_hours?: number
           overtime_warning_hours?: number
           prolonged_stop_minutes?: number
