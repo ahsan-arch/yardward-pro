@@ -461,6 +461,100 @@ Deno.serve(async (req) => {
       const mediaUrls = pluckMediaUrls(formParams);
       const truncatedBody = (formParams.get("Body") ?? "").slice(0, BODY_MAX_CHARS);
       const localMsgId = genId("MSG");
+
+      // ---- Download Twilio media + persist to message-attachments bucket.
+      // Twilio media URLs have a TTL (~1h for SMS, longer for Conversations
+      // but never permanent). We download + reupload so the SPA can render
+      // via signed URLs minted on demand. Service-role uploads land with
+      // owner=NULL; we patch owner to senderProfileId so the participant
+      // RLS policy (owner = auth.uid()) lets the sender read their own
+      // attachment. Admin can already read everything via admin_all.
+      const TWILIO_API_KEY_SID = Deno.env.get("TWILIO_API_KEY_SID") ?? "";
+      const TWILIO_API_KEY_SECRET = Deno.env.get("TWILIO_API_KEY_SECRET") ?? "";
+      const persistedMediaPaths: string[] = [];
+      if (mediaUrls.length > 0 && TWILIO_API_KEY_SID && TWILIO_API_KEY_SECRET) {
+        const basicAuth = btoa(`${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}`);
+        for (let i = 0; i < mediaUrls.length; i++) {
+          const url = mediaUrls[i];
+          try {
+            // Twilio CDN URL — needs the same basic auth as the API.
+            const dlResp = await fetch(url, {
+              headers: { Authorization: `Basic ${basicAuth}` },
+              redirect: "follow",
+            });
+            if (!dlResp.ok) {
+              await logIssue("TWILIO_MMS_DOWNLOAD_FAILED", "Couldn't fetch MMS from Twilio", {
+                url: url.slice(0, 200),
+                status: dlResp.status,
+              });
+              continue;
+            }
+            const contentType =
+              dlResp.headers.get("content-type") ?? "application/octet-stream";
+            const ext =
+              contentType.includes("jpeg") || contentType.includes("jpg")
+                ? "jpg"
+                : contentType.includes("png")
+                  ? "png"
+                  : contentType.includes("webp")
+                    ? "webp"
+                    : contentType.includes("gif")
+                      ? "gif"
+                      : contentType.includes("pdf")
+                        ? "pdf"
+                        : "bin";
+            const path = `inbound/${localConvId}/${localMsgId}-${i}.${ext}`;
+            // PostgREST endpoint for Storage object upload, with x-upsert
+            // to overwrite if a retry runs into the same key.
+            const upResp = await fetch(
+              `${SUPABASE_URL}/storage/v1/object/message-attachments/${encodeURIComponent(path)}`,
+              {
+                method: "POST",
+                headers: {
+                  apikey: SUPABASE_SERVICE_ROLE_KEY,
+                  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                  "Content-Type": contentType,
+                  "x-upsert": "true",
+                },
+                body: await dlResp.arrayBuffer(),
+              },
+            );
+            if (!upResp.ok) {
+              const raw = await upResp.text();
+              await logIssue("TWILIO_MMS_UPLOAD_FAILED", "Couldn't upload to Storage", {
+                path,
+                status: upResp.status,
+                body: raw.slice(0, 200),
+              });
+              continue;
+            }
+            persistedMediaPaths.push(path);
+            // Set owner so the sender's RLS SELECT lets them read it back.
+            // (Admin already has all-access via message_attachments_admin_all.)
+            // storage.objects.owner is a uuid; we patch it via direct PATCH
+            // against storage.objects (service-role bypasses RLS there).
+            await fetch(
+              `${SUPABASE_URL}/rest/v1/objects?bucket_id=eq.message-attachments&name=eq.${encodeURIComponent(path)}`,
+              {
+                method: "PATCH",
+                headers: {
+                  apikey: SUPABASE_SERVICE_ROLE_KEY,
+                  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                  "Content-Type": "application/json",
+                  "Content-Profile": "storage",
+                },
+                body: JSON.stringify({ owner: senderProfileId }),
+              },
+            );
+          } catch (err) {
+            await logIssue(
+              "TWILIO_MMS_FETCH_THREW",
+              err instanceof Error ? err.message : String(err),
+              { url: url.slice(0, 200) },
+            );
+          }
+        }
+      }
       const insResp = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
         method: "POST",
         headers: {
@@ -474,7 +568,10 @@ Deno.serve(async (req) => {
           sender_id: senderProfileId,
           sender_kind: senderKind,
           body: truncatedBody,
-          media_paths: [],
+          // Storage paths first (durable, signed-on-render in the SPA).
+          media_paths: persistedMediaPaths,
+          // Twilio CDN URLs second (kept for diagnostics + as a fallback the
+          // SPA renders if the Storage upload happened to fail).
           twilio_media_urls: mediaUrls,
           delivery_status: "received",
           delivered_at: new Date().toISOString(),

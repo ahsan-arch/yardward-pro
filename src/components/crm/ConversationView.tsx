@@ -386,6 +386,33 @@ export function ConversationView({
                       ))}
                     </div>
                   )}
+                  {/* Inbound MMS fallback: when media_paths is empty but
+                      twilio_media_urls has entries, render those directly.
+                      Twilio CDN URLs have a TTL, so this is best-effort —
+                      the primary durable path is the webhook downloading +
+                      uploading to message-attachments. If that fails (logged
+                      to error_log), this fallback at least lets the recipient
+                      see the photo while it's still fresh. */}
+                  {m.mediaPaths.length === 0 && m.twilioMediaUrls.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {m.twilioMediaUrls.map((url, i) => (
+                        <a
+                          key={`tmu-${i}`}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs underline truncate"
+                          data-testid="message-attachment-twilio"
+                        >
+                          {isImageUrl(url) ? (
+                            <img src={url} alt="attachment" className="max-w-full rounded" />
+                          ) : (
+                            (url.split("/").pop() ?? "attachment").slice(0, 64)
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -516,4 +543,20 @@ export function ConversationView({
 
 function isImagePath(p: string): boolean {
   return /\.(jpe?g|png|webp|gif)$/i.test(p);
+}
+
+// Twilio CDN URLs typically don't have a file extension — the content type
+// is what tells us it's an image. As a heuristic we also try MimeType=
+// query params + path segments that hint at image content. Falling back to
+// "render as image if it's a Twilio media URL" is reasonable: Twilio
+// Conversations media is always image/audio/video/document and the bulk of
+// MMS traffic is photos.
+function isImageUrl(url: string): boolean {
+  if (/\.(jpe?g|png|webp|gif|heic)([?#].*)?$/i.test(url)) return true;
+  if (/image\/(jpe?g|png|webp|gif|heic)/i.test(url)) return true;
+  // Twilio MCS URLs: render-as-image is the right default. The img tag will
+  // gracefully degrade to a broken-image icon if the content is actually
+  // audio/video/PDF — the underlying <a> link still opens cleanly.
+  if (/twilio\.com\/.*Media/i.test(url)) return true;
+  return false;
 }
