@@ -51,6 +51,7 @@ import type {
   Conversation,
   ConversationParticipant,
   Message,
+  Admin,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -63,6 +64,9 @@ type Ctx = {
    * mode falls back to the seed.
    */
   mechanics: Mechanic[];
+  // Real admin profiles, hydrated from public.profiles WHERE role='admin'.
+  // Replaces the previous hardcoded "Alex Chen" placeholder in the Users tab.
+  admins: Admin[];
   vehicles: Vehicle[];
   clients: Client[];
   appSettings: AppSettings;
@@ -400,6 +404,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Mechanic roster — seeded for mock mode, replaced by the live profiles
   // rows on Supabase hydration so nameForMechanic resolves real UUIDs.
   const [mechanics, setMechanics] = useState<Mechanic[]>(initEmpty ? [] : seed.mechanics);
+  const [admins, setAdmins] = useState<Admin[]>([]);
 
   // Hydrate tokens from localStorage on mount so tokens generated in one tab
   // are visible (and validatable) in any other tab on the same origin.
@@ -455,6 +460,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setMaintenanceWorkOrders(data.maintenanceWorkOrders);
       setMechanics(data.mechanics);
       setDrivers(data.drivers);
+      setAdmins(data.admins);
       setTools(data.tools);
       setTenders(data.tenders);
       setConversations(data.conversations);
@@ -1060,6 +1066,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       value={{
         drivers,
         mechanics,
+        admins,
         vehicles,
         clients,
         appSettings,

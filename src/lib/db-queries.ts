@@ -28,6 +28,7 @@ import {
   dbTicketPhotoToDomain,
   dbMaintenanceWorkOrderToDomain,
   dbProfileToMechanic,
+  dbProfileToAdmin,
   dbDriverToDomain,
   dbToolToDomain,
   dbTenderToDomain,
@@ -63,6 +64,7 @@ import type {
   Conversation,
   ConversationParticipant,
   Message,
+  Admin,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -94,6 +96,7 @@ export type HydratedData = {
   conversations: Conversation[];
   conversationParticipants: ConversationParticipant[];
   messages: Message[];
+  admins: Admin[];
 };
 
 // Standalone fetch for app_settings — used both during hydration and on demand
@@ -144,6 +147,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     conversations,
     conversationParticipants,
     recentMessages,
+    adminProfiles,
   ] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("vehicles").select("*"),
@@ -212,6 +216,12 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       .select("*")
       .order("created_at", { ascending: false })
       .limit(500),
+    // Real admin profiles for the Users tab. Same select shape as the
+    // mechanic + driver queries.
+    supabase
+      .from("profiles")
+      .select("id, email, name, phone, role, status, created_at, notification_preferences")
+      .eq("role", "admin"),
   ]);
 
   type LineItem = NonNullable<typeof invoiceLineItems.data>[number];
@@ -281,5 +291,6 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       dbConversationParticipantToDomain,
     ),
     messages: (recentMessages.data ?? []).map(dbMessageToDomain),
+    admins: (adminProfiles.data ?? []).map(dbProfileToAdmin),
   };
 }

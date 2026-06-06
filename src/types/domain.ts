@@ -24,6 +24,10 @@ export interface Mechanic extends User {
   shopId: string;
 }
 
+// Plain admin profile — no side-table fields. Used by the Users tab to list
+// real admins instead of the previous hardcoded placeholder.
+export interface Admin extends User {}
+
 export type TicketReportFrequency = "off" | "daily" | "weekly" | "monthly";
 
 export interface ClientTicketSettings {

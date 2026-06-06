@@ -431,39 +431,81 @@ function SystemTab() {
 
 // Empty defaults for the Invite User form. Hoisted so the click handler can
 // fall back to these if any pre-fill logic throws.
-const EMPTY_INVITE_FORM = { email: "", role: "driver" as "driver" | "mechanic" | "admin" };
+const EMPTY_INVITE_FORM = {
+  email: "",
+  name: "",
+  phone: "",
+  role: "driver" as "driver" | "mechanic" | "admin",
+  // Driver-only — collected by the same dialog so we don't need to fork the
+  // form. Ignored when role !== 'driver'.
+  licenseNumber: "",
+  licenseExpiry: "",
+};
 
 function UsersTab() {
-  const { drivers, mechanics } = useData();
-  const all = [
-    ...drivers,
-    ...mechanics,
-    { id: "A-01", name: "Alex Chen", role: "admin" as const, email: "alex@fleetops.co" },
-  ];
+  const { drivers, mechanics, admins } = useData();
+  // Real roster from Supabase — admins, mechanics, drivers all from profiles.
+  const all = [...admins, ...mechanics, ...drivers];
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
+  const [creating, setCreating] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState<{
+    name: string;
+    email: string;
+    tempPassword: string;
+  } | null>(null);
 
-  // Open the Invite User dialog. setOpen(true) fires FIRST so the dialog is
-  // always shown, then defaults are seeded inside a try/catch — if anything
-  // in the seeding path throws (e.g. reading from a fetch-failed list), we
-  // fall back to the empty form.
   function openInvite() {
     setInviteOpen(true);
+    setCreatedInfo(null);
     try {
-      setInviteForm(EMPTY_INVITE_FORM);
+      const fiveYears = new Date();
+      fiveYears.setFullYear(fiveYears.getFullYear() + 5);
+      setInviteForm({ ...EMPTY_INVITE_FORM, licenseExpiry: fiveYears.toISOString().slice(0, 10) });
     } catch {
       setInviteForm(EMPTY_INVITE_FORM);
     }
   }
 
-  function sendInvite() {
-    if (!inviteForm.email.trim()) {
-      toast.error("Email is required");
-      return;
+  async function sendInvite() {
+    const email = inviteForm.email.trim();
+    const name = inviteForm.name.trim();
+    const phone = inviteForm.phone.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return toast.error("Valid email is required");
+    if (!name) return toast.error("Name is required");
+    if (phone && !/^\+[1-9]\d{9,14}$/.test(phone)) {
+      return toast.error("Phone must be E.164 (e.g. +14165550100) or empty");
     }
-    toast.success(`Invite sent to ${inviteForm.email} (mock)`);
-    setInviteOpen(false);
-    setInviteForm(EMPTY_INVITE_FORM);
+    if (inviteForm.role === "driver") {
+      if (!inviteForm.licenseNumber.trim()) {
+        return toast.error("License number is required for drivers");
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(inviteForm.licenseExpiry.trim())) {
+        return toast.error("License expiry (YYYY-MM-DD) required for drivers");
+      }
+    }
+    setCreating(true);
+    try {
+      const r = await api.createUser({
+        email,
+        name,
+        phone: phone || undefined,
+        role: inviteForm.role,
+        licenseNumber: inviteForm.role === "driver" ? inviteForm.licenseNumber.trim() : undefined,
+        licenseExpiry: inviteForm.role === "driver" ? inviteForm.licenseExpiry.trim() : undefined,
+      });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`${name} created`);
+      setCreatedInfo({ name, email, tempPassword: r.tempPassword });
+      if (r.warning) toast.warning(r.warning);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -479,47 +521,143 @@ function UsersTab() {
         </Button>
       </div>
 
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={(o) => {
+          setInviteOpen(o);
+          if (!o) setCreatedInfo(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite user</DialogTitle>
+            <DialogTitle>{createdInfo ? "User created" : "Invite user"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={inviteForm.email}
-                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="name@company.com"
-              />
-            </div>
-            <div>
-              <Label>Role</Label>
-              <Select
-                value={inviteForm.role}
-                onValueChange={(v) =>
-                  setInviteForm((f) => ({ ...f, role: v as typeof f.role }))
-                }
+          {createdInfo ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {createdInfo.name} has been created. Send these credentials to
+                them and ask them to rotate the password via the Forgot? link on
+                first sign in.
+              </p>
+              <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
+                <div>
+                  <span className="text-muted-foreground">Email:</span> {createdInfo.email}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Temp password:</span>{" "}
+                  <span data-testid="invite-temp-password">{createdInfo.tempPassword}</span>
+                </div>
+              </div>
+              <Button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(
+                    `Email: ${createdInfo.email}\nTemp password: ${createdInfo.tempPassword}`,
+                  );
+                  toast.success("Credentials copied to clipboard");
+                }}
+                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="driver">Driver</SelectItem>
-                  <SelectItem value="mechanic">Mechanic</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
+                Copy credentials
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInviteOpen(false);
+                  setCreatedInfo(null);
+                }}
+                className="w-full"
+              >
+                Done
+              </Button>
             </div>
-            <Button
-              onClick={sendInvite}
-              data-testid="submit-invite-user"
-              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-            >
-              <Send className="w-4 h-4" /> Send invite
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <Label>Name</Label>
+                <Input
+                  value={inviteForm.name}
+                  onChange={(e) => setInviteForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="e.g. Jane Doe"
+                  data-testid="invite-name"
+                />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="text"
+                  inputMode="email"
+                  value={inviteForm.email}
+                  onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="name@yardward.pro"
+                  data-testid="invite-email"
+                />
+              </div>
+              <div>
+                <Label>Phone (E.164, optional)</Label>
+                <Input
+                  value={inviteForm.phone}
+                  onChange={(e) => setInviteForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="+14165550100"
+                  className="font-mono"
+                  data-testid="invite-phone"
+                />
+              </div>
+              <div>
+                <Label>Role</Label>
+                <Select
+                  value={inviteForm.role}
+                  onValueChange={(v) =>
+                    setInviteForm((f) => ({ ...f, role: v as typeof f.role }))
+                  }
+                >
+                  <SelectTrigger data-testid="invite-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="driver">Driver</SelectItem>
+                    <SelectItem value="mechanic">Mechanic</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {inviteForm.role === "driver" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>License #</Label>
+                    <Input
+                      value={inviteForm.licenseNumber}
+                      onChange={(e) =>
+                        setInviteForm((f) => ({ ...f, licenseNumber: e.target.value }))
+                      }
+                      className="font-mono"
+                      placeholder="DL-XX"
+                      data-testid="invite-license"
+                    />
+                  </div>
+                  <div>
+                    <Label>License expiry</Label>
+                    <Input
+                      type="date"
+                      value={inviteForm.licenseExpiry}
+                      onChange={(e) =>
+                        setInviteForm((f) => ({ ...f, licenseExpiry: e.target.value }))
+                      }
+                      className="font-mono"
+                      data-testid="invite-license-expiry"
+                    />
+                  </div>
+                </div>
+              )}
+              <Button
+                onClick={() => void sendInvite()}
+                disabled={creating}
+                data-testid="submit-invite-user"
+                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+              >
+                <Send className="w-4 h-4" /> {creating ? "Creating…" : "Create user"}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
       <table className="w-full text-sm">

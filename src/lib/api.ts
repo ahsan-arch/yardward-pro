@@ -2010,6 +2010,58 @@ export const api = {
     return { ok: true, ticketId };
   },
 
+  // ---- User onboarding ---------------------------------------------------
+  // Admin-only path for creating a new user (driver/mechanic/admin). Routes
+  // through the admin-create-user edge function which uses the service-role
+  // key to call auth.admin.createUser — the only way to mint an auth.users
+  // row with a known email + role without going through the public signup
+  // flow (which is hardened to never grant 'admin' to self-signups). The
+  // function also patches profiles.phone and inserts the role-specific side
+  // row (drivers). Returns a one-time temporary password the admin hands to
+  // the new user; they should immediately rotate via /login → Forgot.
+  createUser: async (input: {
+    email: string;
+    name: string;
+    phone?: string;
+    role: "admin" | "driver" | "mechanic";
+    licenseNumber?: string;
+    licenseExpiry?: string;
+  }): Promise<
+    | { ok: true; userId: string; tempPassword: string; warning?: string }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return {
+        ok: true,
+        userId: `MOCK-${Math.random().toString(36).slice(2, 10)}`,
+        tempPassword: "mock-pw-12345",
+      };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      userId?: string;
+      tempPassword?: string;
+      warning?: string;
+      error?: string;
+    }>("admin-create-user", { body: input });
+    if (error) {
+      return {
+        ok: false,
+        reason: reportApiError("ADMIN_CREATE_USER", error, { email: input.email, role: input.role }),
+      };
+    }
+    if (!data || !data.ok || !data.userId || !data.tempPassword) {
+      return { ok: false, reason: data?.error ?? "createUser: empty response" };
+    }
+    return {
+      ok: true,
+      userId: data.userId,
+      tempPassword: data.tempPassword,
+      ...(data.warning ? { warning: data.warning } : {}),
+    };
+  },
+
   // ---- Profile / user phone management -----------------------------------
   // Admin-only path for updating someone else's profile.phone. Drivers can
   // also update their own (RLS profiles_self_update allows it). Used by the

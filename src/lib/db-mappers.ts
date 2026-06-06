@@ -115,6 +115,21 @@ export function dbProfileToMechanic(r: Row<"profiles">): Mechanic {
   };
 }
 
+// ---------- admins ----------
+// Plain profile-row mapper. Used by db-queries to hydrate the admins[] array
+// shown on /admin/settings → Users tab.
+export function dbProfileToAdmin(r: Row<"profiles">): import("@/types/domain").Admin {
+  return {
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: "admin",
+    phone: r.phone,
+    status: r.status,
+    createdAt: r.created_at,
+  };
+}
+
 // ---------- drivers ----------
 // drivers extends User. The User-side fields (name/email/phone/status) live on
 // public.profiles (linked via shared UUID); the driver-specific fields live on

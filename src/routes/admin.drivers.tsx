@@ -27,7 +27,13 @@ export const Route = createFileRoute("/admin/drivers")({
   component: Page,
 });
 
-const EMPTY_DRIVER_FORM = { name: "", phone: "", licenseNumber: "" };
+const EMPTY_DRIVER_FORM = {
+  name: "",
+  email: "",
+  phone: "",
+  licenseNumber: "",
+  licenseExpiry: "",
+};
 
 // Heuristic: an E.164 number passes this regex. Display helper warns admin
 // when a driver/mechanic has a placeholder so they know SMS won't deliver
@@ -52,29 +58,70 @@ function Page() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  const [creating, setCreating] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState<{
+    name: string;
+    email: string;
+    tempPassword: string;
+  } | null>(null);
+
   function openAddDriver() {
     setOpen(true);
+    setCreatedInfo(null);
     try {
       const nextId = drivers.length + 1;
+      // Default license_expiry to today+5y so the dialog opens with something
+      // sensible; admin can edit before submit.
+      const fiveYears = new Date();
+      fiveYears.setFullYear(fiveYears.getFullYear() + 5);
       setForm({
         ...EMPTY_DRIVER_FORM,
         licenseNumber: `DL-${String(nextId).padStart(2, "0")}`,
+        licenseExpiry: fiveYears.toISOString().slice(0, 10),
       });
     } catch {
       setForm(EMPTY_DRIVER_FORM);
     }
   }
 
-  function submit() {
-    if (!form.name.trim()) {
-      toast.error("Name is required");
-      return;
+  async function submit() {
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const phone = form.phone.trim();
+    const licenseNumber = form.licenseNumber.trim();
+    const licenseExpiry = form.licenseExpiry.trim();
+    if (!name) return toast.error("Name is required");
+    if (!/^\S+@\S+\.\S+$/.test(email)) return toast.error("Valid email is required");
+    if (phone && !/^\+[1-9]\d{9,14}$/.test(phone)) {
+      return toast.error("Phone must be E.164 (e.g. +14165550100) or empty");
     }
-    // Add-driver still mock — creating a new Supabase auth user requires the
-    // service-role key in an admin-only edge function. Left as a follow-up.
-    toast.success(`${form.name} would be created (admin user-creation UI is a follow-up)`);
-    setOpen(false);
-    setForm(EMPTY_DRIVER_FORM);
+    if (!licenseNumber) return toast.error("License number is required");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(licenseExpiry)) {
+      return toast.error("License expiry must be YYYY-MM-DD");
+    }
+    setCreating(true);
+    try {
+      const r = await api.createUser({
+        email,
+        name,
+        phone: phone || undefined,
+        role: "driver",
+        licenseNumber,
+        licenseExpiry,
+      });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`${name} created`);
+      setCreatedInfo({ name, email, tempPassword: r.tempPassword });
+      if (r.warning) toast.warning(r.warning);
+      // Don't close the dialog yet — show the temp password panel.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setCreating(false);
+    }
   }
 
   // Build a unified list of phone-bearing staff for the phone-edit Sheet
@@ -171,47 +218,125 @@ function Page() {
         </Button>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setCreatedInfo(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add driver</DialogTitle>
+            <DialogTitle>{createdInfo ? "Driver created" : "Add driver"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Name</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. Jane Doe"
-              />
+          {createdInfo ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {createdInfo.name} has been created. Send these credentials to them
+                and ask them to rotate the password via the Forgot? link on first sign in.
+              </p>
+              <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
+                <div>
+                  <span className="text-muted-foreground">Email:</span> {createdInfo.email}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Temp password:</span>{" "}
+                  <span data-testid="created-temp-password">{createdInfo.tempPassword}</span>
+                </div>
+              </div>
+              <Button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(
+                    `Email: ${createdInfo.email}\nTemp password: ${createdInfo.tempPassword}`,
+                  );
+                  toast.success("Credentials copied to clipboard");
+                }}
+                data-testid="copy-created-credentials"
+                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+              >
+                Copy credentials
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                  setCreatedInfo(null);
+                }}
+                className="w-full"
+              >
+                Done
+              </Button>
             </div>
-            <div>
-              <Label>Phone (E.164)</Label>
-              <Input
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="+14165550100"
-                className="font-mono"
-              />
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <Label>Name</Label>
+                <Input
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="e.g. Jane Doe"
+                  data-testid="add-driver-name"
+                />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="text"
+                  inputMode="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="jane@yardward.pro"
+                  data-testid="add-driver-email"
+                />
+              </div>
+              <div>
+                <Label>Phone (E.164)</Label>
+                <Input
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="+14165550100"
+                  className="font-mono"
+                  data-testid="add-driver-phone"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Optional but required for SMS delivery via Twilio.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>License number</Label>
+                  <Input
+                    value={form.licenseNumber}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, licenseNumber: e.target.value }))
+                    }
+                    className="font-mono"
+                    data-testid="add-driver-license"
+                  />
+                </div>
+                <div>
+                  <Label>License expiry</Label>
+                  <Input
+                    type="date"
+                    value={form.licenseExpiry}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, licenseExpiry: e.target.value }))
+                    }
+                    className="font-mono"
+                    data-testid="add-driver-license-expiry"
+                  />
+                </div>
+              </div>
+              <Button
+                onClick={() => void submit()}
+                disabled={creating}
+                data-testid="submit-add-driver"
+                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+              >
+                {creating ? "Creating…" : "Add driver"}
+              </Button>
             </div>
-            <div>
-              <Label>License number</Label>
-              <Input
-                value={form.licenseNumber}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, licenseNumber: e.target.value }))
-                }
-                className="font-mono"
-              />
-            </div>
-            <Button
-              onClick={submit}
-              data-testid="submit-add-driver"
-              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-            >
-              Add driver
-            </Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
 
