@@ -25,7 +25,7 @@ import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/settings")({
-  head: () => ({ meta: [{ title: "Settings — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Settings — Yardward Pro" }] }),
   component: Page,
 });
 

@@ -38,7 +38,7 @@ import { toast } from "sonner";
 import { VehicleMap } from "@/components/crm/VehicleMap";
 
 export const Route = createFileRoute("/admin/vehicles/$id")({
-  head: () => ({ meta: [{ title: "Vehicle detail — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Vehicle detail — Yardward Pro" }] }),
   component: Page,
 });
 

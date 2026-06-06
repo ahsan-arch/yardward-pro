@@ -63,7 +63,7 @@ export const Route = createFileRoute("/driver/messages")({
     const role = localStorage.getItem("fo:role");
     if (role !== "driver") throw redirect({ to: homeForRole(role) });
   },
-  head: () => ({ meta: [{ title: "Messages — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Messages — Yardward Pro" }] }),
   component: Page,
 });
 

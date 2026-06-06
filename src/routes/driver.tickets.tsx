@@ -39,7 +39,7 @@ export const Route = createFileRoute("/driver/tickets")({
   validateSearch: (s: Record<string, unknown>) => ({
     client: typeof s.client === "string" ? s.client : undefined,
   }),
-  head: () => ({ meta: [{ title: "Record ticket use — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Record ticket use — Yardward Pro" }] }),
   component: Page,
 });
 

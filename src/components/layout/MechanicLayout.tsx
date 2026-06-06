@@ -30,7 +30,7 @@ export function MechanicShell({ children, title }: { children?: ReactNode; title
             <Wrench className="w-4 h-4 text-amber-brand-foreground" />
           </div>
           <div>
-            <div className="font-bold text-sm tracking-tight">FleetOps CRM</div>
+            <div className="font-bold text-sm tracking-tight">Yardward Pro</div>
             <div className="text-[10px] font-mono text-sidebar-foreground/50">Workshop</div>
           </div>
         </div>

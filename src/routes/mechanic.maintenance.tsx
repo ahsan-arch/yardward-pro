@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/mechanic/maintenance")({
-  head: () => ({ meta: [{ title: "Vehicle maintenance logs — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Vehicle maintenance logs — Yardward Pro" }] }),
   component: Page,
 });
 

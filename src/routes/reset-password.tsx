@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Set new password — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Set new password — Yardward Pro" }] }),
   component: ResetPasswordPage,
 });
 
@@ -88,7 +88,7 @@ function ResetPasswordPage() {
           <div className="w-9 h-9 rounded-md bg-amber-brand grid place-items-center">
             <Truck className="w-5 h-5 text-amber-brand-foreground" />
           </div>
-          <div className="font-bold text-lg tracking-tight">FleetOps CRM</div>
+          <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
         </div>
 
         {phase === "verifying" && (
@@ -115,7 +115,7 @@ function ResetPasswordPage() {
             <div>
               <h1 className="text-2xl font-bold">Set a new password</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Choose a new password for your FleetOps account.
+                Choose a new password for your Yardward Pro account.
               </p>
             </div>
             <form onSubmit={onSubmit} noValidate className="space-y-4">

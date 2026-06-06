@@ -18,7 +18,7 @@ import { useMemo } from "react";
 type ChecklistSearch = { kind: ToolChecklistKind };
 
 export const Route = createFileRoute("/driver/tool-checklist")({
-  head: () => ({ meta: [{ title: "Tool checklist — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Tool checklist — Yardward Pro" }] }),
   validateSearch: (search: Record<string, unknown>): ChecklistSearch => {
     const k = search.kind;
     return { kind: k === "end_of_shift" ? "end_of_shift" : "start_of_shift" };

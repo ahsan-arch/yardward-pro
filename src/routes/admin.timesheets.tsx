@@ -53,7 +53,7 @@ function findChecklistForShift(
 type TimesheetSearch = { driverIds?: string };
 
 export const Route = createFileRoute("/admin/timesheets")({
-  head: () => ({ meta: [{ title: "Timesheets — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Timesheets — Yardward Pro" }] }),
   validateSearch: (s: Record<string, unknown>): TimesheetSearch => ({
     driverIds: typeof s.driverIds === "string" ? s.driverIds : undefined,
   }),

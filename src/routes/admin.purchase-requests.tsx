@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import type { InventoryItem, PurchaseRequest } from "@/types/domain";
 
 export const Route = createFileRoute("/admin/purchase-requests")({
-  head: () => ({ meta: [{ title: "Purchase requests — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Purchase requests — Yardward Pro" }] }),
   component: Page,
 });
 

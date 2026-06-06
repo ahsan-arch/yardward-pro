@@ -22,7 +22,7 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/admin/reports")({
-  head: () => ({ meta: [{ title: "Reports — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Reports — Yardward Pro" }] }),
   component: Page,
 });
 

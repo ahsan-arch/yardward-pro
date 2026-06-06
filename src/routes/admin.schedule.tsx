@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import type { JobStatus } from "@/types/domain";
 
 export const Route = createFileRoute("/admin/schedule")({
-  head: () => ({ meta: [{ title: "Schedule — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Schedule — Yardward Pro" }] }),
   component: Page,
 });
 

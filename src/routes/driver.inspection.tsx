@@ -36,7 +36,7 @@ import { haversineMeters } from "@/lib/geolocation";
 import type { InspectionItemStatus } from "@/types/domain";
 
 export const Route = createFileRoute("/driver/inspection")({
-  head: () => ({ meta: [{ title: "Vehicle inspection — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Vehicle inspection — Yardward Pro" }] }),
   component: Page,
 });
 

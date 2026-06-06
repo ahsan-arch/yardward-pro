@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { StatusBadge } from "@/components/crm/StatusBadge";
-import { activityFeed, jobDisplay } from "@/data/mockData";
+import { jobDisplay } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
 import { Briefcase, Users, ClipboardCheck, AlertTriangle, ArrowUpRight, Ticket, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { TimeEntry, Notification } from "@/types/domain";
 
 export const Route = createFileRoute("/admin/")({
-  head: () => ({ meta: [{ title: "Dashboard — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — Yardward Pro" }] }),
   component: Dashboard,
 });
 
@@ -109,8 +109,35 @@ function writeOtDedup(map: Record<string, true>) {
 }
 
 function Dashboard() {
-  const { jobs, vehicles, clients, timeEntries, appSettings, drivers, pushNotification } =
+  const { jobs, vehicles, clients, timeEntries, appSettings, drivers, notifications, pushNotification } =
     useData();
+
+  // Most-recent 10 notifications drive the activity feed. We sort defensively
+  // (the realtime channel upserts in arbitrary order) and slice — no mock.
+  const recentNotifs = useMemo(
+    () =>
+      [...notifications]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 10),
+    [notifications],
+  );
+
+  function notifTypeColor(type: string): string {
+    if (type === "alert") return "bg-danger";
+    if (type === "approval") return "bg-amber-brand";
+    if (type === "job") return "bg-info";
+    return "bg-success";
+  }
+  function relativeTimeLabel(iso: string): string {
+    const ms = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(ms / 60_000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
+  }
   // Track which driver/week pairs we've already alerted on across renders.
   // Ref keeps the value stable for the effect while still being writeable.
   const alertedRef = useRef<Record<string, true>>(readOtDedup());
@@ -358,24 +385,34 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Activity feed */}
+        {/* Activity feed — real notifications from the DB. Falls back to a
+            graceful empty state when nothing has happened yet. */}
         <div className="bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] p-4">
-          <h2 className="font-semibold mb-4">Recent Activity</h2>
-          <div className="relative pl-5">
-            <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
-            {activityFeed.map((e, i) => (
-              <div key={i} className="relative pb-4 last:pb-0">
-                <div
-                  className={cn(
-                    "absolute -left-[14px] top-1 w-2.5 h-2.5 rounded-full ring-2 ring-card",
-                    dotColor[e.type],
-                  )}
-                />
-                <div className="text-xs font-mono text-muted-foreground">{e.time}</div>
-                <div className="text-sm mt-0.5">{e.text}</div>
-              </div>
-            ))}
-          </div>
+          <h2 className="font-semibold mb-4">Recent activity</h2>
+          {recentNotifs.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">
+              No activity yet. New form submissions, job updates, and approvals
+              will appear here.
+            </p>
+          ) : (
+            <div className="relative pl-5">
+              <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
+              {recentNotifs.map((n) => (
+                <div key={n.id} className="relative pb-4 last:pb-0">
+                  <div
+                    className={cn(
+                      "absolute -left-[14px] top-1 w-2.5 h-2.5 rounded-full ring-2 ring-card",
+                      notifTypeColor(n.type),
+                    )}
+                  />
+                  <div className="text-xs font-mono text-muted-foreground">
+                    {relativeTimeLabel(n.createdAt)}
+                  </div>
+                  <div className="text-sm mt-0.5">{n.body}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </AdminShell>

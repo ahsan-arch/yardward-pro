@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, AlertTriangle, Truck as TruckIcon, Download, Loader2 } from "lucide-react";
-import { trucks } from "@/data/mockData";
+import { useData } from "@/contexts/DataContext";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 import { USE_SUPABASE } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/vehicles/")({
-  head: () => ({ meta: [{ title: "Vehicles — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Vehicles — Yardward Pro" }] }),
   component: Page,
 });
 
@@ -329,6 +329,30 @@ function Stat({
 const EMPTY_VEHICLE_FORM = { id: "", name: "", type: "truck", year: "" };
 
 function Page() {
+  const { vehicles, drivers } = useData();
+  // Build the display list from LIVE Supabase data. Resolves the driver
+  // assigned to each vehicle against the live drivers array — no mockData
+  // seed in the production render path.
+  const trucks = vehicles.map((v) => {
+    const d = drivers.find((x) => x.id === v.driverId);
+    return {
+      id: v.id,
+      name: v.name,
+      year: v.year,
+      type: v.type.charAt(0).toUpperCase() + v.type.slice(1),
+      odometer: v.odometer,
+      hours: v.engineHours,
+      lastService: v.lastService,
+      nextDue: v.nextServiceDue,
+      status:
+        v.status === "operational"
+          ? "Operational"
+          : v.status === "maintenance"
+            ? "In maintenance"
+            : "Out of service",
+      driver: d?.name ?? "Unassigned",
+    };
+  });
   const [fleetioOpen, setFleetioOpen] = useState(false);
   const [addVehicleOpen, setAddVehicleOpen] = useState(false);
   const [vehicleForm, setVehicleForm] = useState(EMPTY_VEHICLE_FORM);

@@ -21,7 +21,7 @@ import type { TicketReportFrequency, Client } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/prepaid-tickets")({
-  head: () => ({ meta: [{ title: "Prepaid tickets — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Prepaid tickets — Yardward Pro" }] }),
   component: Page,
 });
 

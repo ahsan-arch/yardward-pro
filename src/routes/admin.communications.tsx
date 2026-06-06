@@ -48,7 +48,7 @@ export const Route = createFileRoute("/admin/communications")({
     const role = localStorage.getItem("fo:role");
     if (role !== "admin") throw redirect({ to: homeForRole(role) });
   },
-  head: () => ({ meta: [{ title: "Communications — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Communications — Yardward Pro" }] }),
   component: Page,
 });
 

@@ -9,7 +9,7 @@ import { ArrowLeft, MapPin, Clock, Truck, ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/driver/jobs")({
-  head: () => ({ meta: [{ title: "My jobs — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "My jobs — Yardward Pro" }] }),
   component: Page,
 });
 

@@ -114,7 +114,7 @@ export function DriverShell({ children }: { children?: ReactNode }) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="font-bold tracking-tight inline-flex items-center gap-2">
-            FleetOps <PendingBadge />
+            Yardward <PendingBadge />
           </div>
           <button
             onClick={() => setOpen(true)}

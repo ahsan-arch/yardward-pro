@@ -26,7 +26,7 @@ import { useMemo } from "react";
 import { clearDriverTokenSession } from "@/hooks/use-driver-token-scope";
 
 export const Route = createFileRoute("/driver/work-order")({
-  head: () => ({ meta: [{ title: "New work order — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "New work order — Yardward Pro" }] }),
   component: Page,
 });
 

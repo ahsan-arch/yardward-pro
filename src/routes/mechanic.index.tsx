@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { mechanicWorkOrders } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -17,15 +16,47 @@ import { toast } from "sonner";
 import type { InventoryCheckSnapshot, InventoryItem } from "@/types/domain";
 
 export const Route = createFileRoute("/mechanic/")({
-  head: () => ({ meta: [{ title: "Mechanic — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Mechanic — Yardward Pro" }] }),
   component: Page,
 });
 
 const urgencies: ("low" | "medium" | "high")[] = ["low", "medium", "high"];
 
 function Page() {
-  const { purchaseRequests, inventoryItems } = useData();
+  const { purchaseRequests, inventoryItems, maintenanceWorkOrders, vehicles, drivers } = useData();
   const { user } = useAuth();
+
+  // Live work orders assigned to this mechanic, with vehicle + driver context
+  // resolved against the live Supabase arrays (no mock seed).
+  const myActiveMwos = useMemo(() => {
+    return maintenanceWorkOrders
+      .filter(
+        (w) =>
+          w.assignedMechanicId === user.id &&
+          (w.status === "in_progress" || w.status === "queued"),
+      )
+      .slice(0, 6)
+      .map((w) => {
+        const v = vehicles.find((x) => x.id === w.vehicleId);
+        const reporter = drivers.find((x) => x.id === w.reportedBy);
+        return {
+          id: w.id,
+          vehicle: v?.id ?? w.vehicleId,
+          vehicleName: v?.name ?? "",
+          issue: w.issueDescription,
+          priority: w.priority,
+          reportedBy: reporter?.name ?? "—",
+        };
+      });
+  }, [maintenanceWorkOrders, user.id, vehicles, drivers]);
+
+  const myPendingPos = useMemo(
+    () =>
+      purchaseRequests.filter(
+        (p) => p.mechanicId === user.id && p.status === "pending",
+      ).length,
+    [purchaseRequests, user.id],
+  );
   const [urgency, setUrgency] = useState<"low" | "medium" | "high">("medium");
   const [checkInv, setCheckInv] = useState(true);
   const [item, setItem] = useState("");
@@ -119,9 +150,11 @@ function Page() {
   return (
     <MechanicShell title="Workshop dashboard">
       <div className="mb-6">
-        <h2 className="text-lg font-semibold">Welcome back, Jamie</h2>
+        <h2 className="text-lg font-semibold">Welcome back, {user.name.split(" ")[0] || "Mechanic"}</h2>
         <p className="text-sm text-muted-foreground">
-          2 active work orders · 1 PO pending approval
+          {myActiveMwos.length} active work order{myActiveMwos.length === 1 ? "" : "s"}
+          {" · "}
+          {myPendingPos} PO{myPendingPos === 1 ? "" : "s"} pending approval
         </p>
       </div>
 
@@ -129,10 +162,15 @@ function Page() {
         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Active work orders assigned
         </h3>
+        {myActiveMwos.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">
+            No active work orders. Check the queue at /mechanic/work-orders to claim a new one.
+          </p>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {mechanicWorkOrders.map((w, i) => (
+          {myActiveMwos.map((w) => (
             <div
-              key={i}
+              key={w.id}
               className="bg-card border border-border rounded-lg p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
             >
               <div className="flex items-start justify-between gap-2">
@@ -156,6 +194,7 @@ function Page() {
             </div>
           ))}
         </div>
+        )}
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">

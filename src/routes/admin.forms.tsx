@@ -19,7 +19,7 @@ import {
 import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/admin/forms")({
-  head: () => ({ meta: [{ title: "Forms & Submissions — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Forms & Submissions — Yardward Pro" }] }),
   component: Page,
 });
 

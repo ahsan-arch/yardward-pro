@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Sign in — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Sign in — Yardward Pro" }] }),
   component: LoginPage,
 });
 
@@ -73,21 +73,26 @@ function LoginPage() {
     setErr(errs);
     if (Object.keys(errs).length) return;
 
-    // Demo short-circuit — see comment above DEMO_PASSWORD for rationale.
-    const demoRole = DEMO_ROLE_BY_EMAIL[email.trim().toLowerCase()];
-    if (demoRole && password === DEMO_PASSWORD) {
-      try {
-        localStorage.setItem("fo:authed", "1");
-        localStorage.setItem("fo:role", demoRole);
-      } catch {
-        /* storage may be unavailable in some embedded webviews */
+    // Demo short-circuit — only runs in dev / VITE_DEMO_MODE=true. In
+    // production this entire block is dead code (DEMO_MODE is false), so
+    // typing alex@fleetops.co / demo1234 falls through to the real Supabase
+    // signIn path below and gets rejected with "Invalid login credentials".
+    if (DEMO_MODE) {
+      const demoRole = DEMO_ROLE_BY_EMAIL[email.trim().toLowerCase()];
+      if (demoRole && password === DEMO_PASSWORD) {
+        try {
+          localStorage.setItem("fo:authed", "1");
+          localStorage.setItem("fo:role", demoRole);
+        } catch {
+          /* storage may be unavailable in some embedded webviews */
+        }
+        login(demoRole);
+        toast.success("Welcome back to Yardward Pro");
+        navigate({
+          to: demoRole === "driver" ? "/driver" : demoRole === "mechanic" ? "/mechanic" : "/admin",
+        });
+        return;
       }
-      login(demoRole);
-      toast.success("Welcome back to FleetOps");
-      navigate({
-        to: demoRole === "driver" ? "/driver" : demoRole === "mechanic" ? "/mechanic" : "/admin",
-      });
-      return;
     }
 
     setLoading(true);
@@ -101,7 +106,7 @@ function LoginPage() {
     }
     // Legacy fallback: when no Supabase env is set, hydrate role from the picker.
     if (!import.meta.env.VITE_SUPABASE_URL) login(role);
-    toast.success("Welcome back to FleetOps");
+    toast.success("Welcome back to Yardward Pro");
     // Prefer the user's actual role from Supabase (written to localStorage
     // by AuthContext.signIn) over the form picker, since the picker is just
     // a UI hint and may not match the real profile.role.
@@ -159,7 +164,7 @@ function LoginPage() {
           <div className="w-9 h-9 rounded-md bg-amber-brand grid place-items-center">
             <Truck className="w-5 h-5 text-amber-brand-foreground" />
           </div>
-          <div className="font-bold text-lg tracking-tight">FleetOps CRM</div>
+          <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
         </div>
         <div className="relative space-y-4 max-w-md">
           <h2 className="text-4xl font-bold leading-tight">
@@ -187,7 +192,7 @@ function LoginPage() {
           </div>
         </div>
         <div className="relative text-xs text-navy-foreground/50 font-mono">
-          © 2025 FleetOps Industries
+          © 2025 Yardward
         </div>
       </div>
 
@@ -198,7 +203,7 @@ function LoginPage() {
             <div className="w-8 h-8 rounded-md bg-amber-brand grid place-items-center">
               <Truck className="w-4 h-4 text-amber-brand-foreground" />
             </div>
-            <div className="font-bold">FleetOps</div>
+            <div className="font-bold">Yardward Pro</div>
           </div>
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="ml-auto">
             {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -210,7 +215,9 @@ function LoginPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold">Sign in</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Choose your role to continue. This is a demo — any password 6+ chars works.
+                {DEMO_MODE
+                  ? "Choose your role to continue. This is a demo — any password 6+ chars works."
+                  : "Welcome back."}
               </p>
             </div>
 
@@ -349,7 +356,7 @@ function LoginPage() {
                   <Loader2 className="w-4 h-4 animate-spin" /> Signing in…
                 </>
               ) : (
-                "Sign in to FleetOps"
+                "Sign in to Yardward Pro"
               )}
             </Button>
 

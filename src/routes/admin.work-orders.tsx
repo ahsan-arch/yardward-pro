@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/work-orders")({
-  head: () => ({ meta: [{ title: "Work Orders — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Work Orders — Yardward Pro" }] }),
   component: Page,
 });
 

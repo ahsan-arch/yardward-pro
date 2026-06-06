@@ -10,7 +10,7 @@ import { Plus, ShoppingCart, Package } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/mechanic/purchase-requests")({
-  head: () => ({ meta: [{ title: "Purchase requests — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Purchase requests — Yardward Pro" }] }),
   component: Page,
 });
 

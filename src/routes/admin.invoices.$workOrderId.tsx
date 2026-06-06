@@ -9,7 +9,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/invoices/$workOrderId")({
-  head: () => ({ meta: [{ title: "Invoice preview — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Invoice preview — Yardward Pro" }] }),
   component: Page,
 });
 

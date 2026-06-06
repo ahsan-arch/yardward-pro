@@ -23,7 +23,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/drivers")({
-  head: () => ({ meta: [{ title: "Drivers & mechanics — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Drivers & mechanics — Yardward Pro" }] }),
   component: Page,
 });
 

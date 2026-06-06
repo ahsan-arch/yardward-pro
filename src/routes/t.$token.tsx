@@ -6,7 +6,7 @@ import type { DriverToken } from "@/types/domain";
 import { driverById } from "@/data/mockData";
 
 export const Route = createFileRoute("/t/$token")({
-  head: () => ({ meta: [{ title: "Driver access — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Driver access — Yardward Pro" }] }),
   component: Page,
 });
 

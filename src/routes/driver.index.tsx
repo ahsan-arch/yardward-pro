@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { clientById, vehicleById } from "@/data/mockData";
 
 export const Route = createFileRoute("/driver/")({
-  head: () => ({ meta: [{ title: "Driver — FleetOps" }] }),
+  head: () => ({ meta: [{ title: "Driver — Yardward Pro" }] }),
   component: Home,
 });
 

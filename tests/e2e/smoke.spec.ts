@@ -73,7 +73,7 @@ test.describe("smoke", () => {
     const resp = await page.goto("/manifest.webmanifest");
     expect(resp?.status()).toBe(200);
     const body = await resp?.text();
-    expect(body).toContain("FleetOps");
+    expect(body).toContain("Yardward");
   });
 
   test("/driver/inspection is no longer a 404", async ({ page }) => {

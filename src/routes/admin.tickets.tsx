@@ -41,7 +41,7 @@ function SignedTicketImg(props: { path: string; alt: string; className?: string 
 }
 
 export const Route = createFileRoute("/admin/tickets")({
-  head: () => ({ meta: [{ title: "Tickets — FleetOps CRM" }] }),
+  head: () => ({ meta: [{ title: "Tickets — Yardward Pro" }] }),
   component: Page,
 });
 
