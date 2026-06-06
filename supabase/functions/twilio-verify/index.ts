@@ -8,6 +8,7 @@
 //   GET /Accounts/{Sid}/IncomingPhoneNumbers.json?PhoneNumber  — from number check
 
 interface VerifyResult {
+  // Phase 1 — basic creds for outbound SMS via twilio-send-sms
   accountValid: boolean;
   accountStatus: string | null;
   accountFriendlyName: string | null;
@@ -17,6 +18,14 @@ interface VerifyResult {
   fromNumberSmsCapable: boolean | null;
   fromNumberMmsCapable: boolean | null;
   fromNumberPrefix: string | null;
+  // Phase 2 — Twilio Conversations API
+  apiKeyConfigured: boolean;
+  apiKeyValid: boolean;
+  apiKeySidPrefix: string | null;
+  conversationsServiceConfigured: boolean;
+  conversationsServiceFound: boolean;
+  conversationsServiceFriendlyName: string | null;
+  conversationsServiceSidPrefix: string | null;
   errors: string[];
 }
 
@@ -131,6 +140,10 @@ Deno.serve(async (req) => {
   const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
   const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
   const TWILIO_FROM_NUMBER = Deno.env.get("TWILIO_FROM_NUMBER") ?? "";
+  const TWILIO_API_KEY_SID = Deno.env.get("TWILIO_API_KEY_SID") ?? "";
+  const TWILIO_API_KEY_SECRET = Deno.env.get("TWILIO_API_KEY_SECRET") ?? "";
+  const TWILIO_CONVERSATIONS_SERVICE_SID =
+    Deno.env.get("TWILIO_CONVERSATIONS_SERVICE_SID") ?? "";
 
   const result: VerifyResult = {
     accountValid: false,
@@ -142,6 +155,15 @@ Deno.serve(async (req) => {
     fromNumberSmsCapable: null,
     fromNumberMmsCapable: null,
     fromNumberPrefix: TWILIO_FROM_NUMBER ? TWILIO_FROM_NUMBER.slice(0, 6) + "…" : null,
+    apiKeyConfigured: !!TWILIO_API_KEY_SID && !!TWILIO_API_KEY_SECRET,
+    apiKeyValid: false,
+    apiKeySidPrefix: TWILIO_API_KEY_SID ? TWILIO_API_KEY_SID.slice(0, 6) + "…" : null,
+    conversationsServiceConfigured: !!TWILIO_CONVERSATIONS_SERVICE_SID,
+    conversationsServiceFound: false,
+    conversationsServiceFriendlyName: null,
+    conversationsServiceSidPrefix: TWILIO_CONVERSATIONS_SERVICE_SID
+      ? TWILIO_CONVERSATIONS_SERVICE_SID.slice(0, 6) + "…"
+      : null,
     errors: [],
   };
 
@@ -162,8 +184,36 @@ Deno.serve(async (req) => {
     result.errors.push("TWILIO_FROM_NUMBER is not E.164 format (e.g. +15551234567)");
   }
 
-  // Bail before hitting Twilio if we know basics are broken.
-  if (result.errors.length > 0) {
+  // Phase 2 format checks. These are warnings, not blockers — Phase 1 SMS
+  // still works without them.
+  if (TWILIO_API_KEY_SID && !/^SK[0-9a-f]{32}$/i.test(TWILIO_API_KEY_SID)) {
+    result.errors.push(
+      "TWILIO_API_KEY_SID is not the expected format (SK + 32 hex chars)",
+    );
+  }
+  if (TWILIO_API_KEY_SECRET && TWILIO_API_KEY_SECRET.length < 32) {
+    result.errors.push(
+      "TWILIO_API_KEY_SECRET is shorter than expected (32 chars)",
+    );
+  }
+  if (
+    TWILIO_CONVERSATIONS_SERVICE_SID &&
+    !/^IS[0-9a-f]{32}$/i.test(TWILIO_CONVERSATIONS_SERVICE_SID)
+  ) {
+    result.errors.push(
+      "TWILIO_CONVERSATIONS_SERVICE_SID is not the expected format (IS + 32 hex chars)",
+    );
+  }
+
+  // Only bail if the Phase 1 basics are broken — Phase 2 is optional.
+  const phase1Broken =
+    !TWILIO_ACCOUNT_SID ||
+    !TWILIO_AUTH_TOKEN ||
+    !TWILIO_FROM_NUMBER ||
+    !/^AC[0-9a-f]{32}$/i.test(TWILIO_ACCOUNT_SID) ||
+    TWILIO_AUTH_TOKEN.length < 32 ||
+    !/^\+[1-9]\d{9,14}$/.test(TWILIO_FROM_NUMBER);
+  if (phase1Broken) {
     return new Response(JSON.stringify({ result }), {
       status: 200,
       headers: corsHeaders,
@@ -231,6 +281,71 @@ Deno.serve(async (req) => {
     } else {
       result.errors.push(
         `From-number probe failed: HTTP ${nums.status} — ${nums.raw.slice(0, 200)}`,
+      );
+    }
+  }
+
+  // ---- Live probe 3: API Key auth (Phase 2)
+  if (result.apiKeyConfigured && TWILIO_API_KEY_SID && TWILIO_API_KEY_SECRET) {
+    const apiKeyAuth = btoa(`${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}`);
+    type TwilioAccount = { sid: string };
+    const probe = await getJson<TwilioAccount>(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}.json`,
+      apiKeyAuth,
+    );
+    if (probe.ok && probe.body) {
+      result.apiKeyValid = true;
+    } else if (probe.status === 401) {
+      result.errors.push(
+        "Twilio API key probe got 401 — TWILIO_API_KEY_SID and/or TWILIO_API_KEY_SECRET are wrong, or the key doesn't belong to this account.",
+      );
+    } else if (probe.status === 0) {
+      result.errors.push(
+        `Network error reaching Twilio for API key probe: ${probe.raw.slice(0, 200)}`,
+      );
+    } else {
+      result.errors.push(
+        `API key probe failed: HTTP ${probe.status} — ${probe.raw.slice(0, 200)}`,
+      );
+    }
+  } else if (TWILIO_API_KEY_SID || TWILIO_API_KEY_SECRET) {
+    result.errors.push(
+      "TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET must BOTH be set (only one is configured).",
+    );
+  }
+
+  // ---- Live probe 4: Conversations service exists (Phase 2)
+  if (
+    result.conversationsServiceConfigured &&
+    TWILIO_CONVERSATIONS_SERVICE_SID &&
+    result.apiKeyValid
+  ) {
+    type ConversationsService = {
+      sid: string;
+      friendly_name: string;
+    };
+    // Conversations API works with either account auth or API key auth;
+    // we use the API key (preferred — matches what the production functions
+    // will use).
+    const apiKeyAuth = btoa(`${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}`);
+    const svc = await getJson<ConversationsService>(
+      `https://conversations.twilio.com/v1/Services/${TWILIO_CONVERSATIONS_SERVICE_SID}`,
+      apiKeyAuth,
+    );
+    if (svc.ok && svc.body) {
+      result.conversationsServiceFound = true;
+      result.conversationsServiceFriendlyName = svc.body.friendly_name ?? null;
+    } else if (svc.status === 404) {
+      result.errors.push(
+        "TWILIO_CONVERSATIONS_SERVICE_SID not found. Either the SID is wrong or the Conversations Service was deleted.",
+      );
+    } else if (svc.status === 401 || svc.status === 403) {
+      result.errors.push(
+        `Conversations service probe got HTTP ${svc.status} — the API key may not have access to Conversations resources.`,
+      );
+    } else {
+      result.errors.push(
+        `Conversations service probe failed: HTTP ${svc.status} — ${svc.raw.slice(0, 200)}`,
       );
     }
   }

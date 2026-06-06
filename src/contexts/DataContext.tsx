@@ -99,6 +99,10 @@ type Ctx = {
   upsertConversation: (c: Conversation) => void;
   upsertParticipant: (p: ConversationParticipant) => void;
   upsertMessage: (m: Message) => void;
+  // Updates the cached `phone` on a driver or mechanic locally. Called from
+  // the admin/drivers Sheet after api.updateUserPhone succeeds so the UI
+  // reflects the new number without waiting for a refetch.
+  setUserPhone: (userId: string, phone: string) => void;
   notifications: Notification[];
   driverTokens: DriverToken[];
   ticketPhotos: TicketPhoto[];
@@ -926,6 +930,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         : [m, ...prev],
     );
   }, []);
+  const setUserPhone = useCallback((userId: string, phone: string) => {
+    setDrivers((prev) =>
+      prev.map((d) => (d.id === userId ? { ...d, phone } : d)),
+    );
+    setMechanics((prev) =>
+      prev.map((m) => (m.id === userId ? { ...m, phone } : m)),
+    );
+  }, []);
   const generateDriverToken = useCallback((token: DriverToken) => {
     setTokens((arr) => {
       const next = [token, ...arr];
@@ -1069,6 +1081,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         conversationParticipants,
         messages,
         upsertConversation,
+        setUserPhone,
         upsertParticipant,
         upsertMessage,
         notifications,

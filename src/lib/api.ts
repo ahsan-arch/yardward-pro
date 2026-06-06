@@ -2010,6 +2010,38 @@ export const api = {
     return { ok: true, ticketId };
   },
 
+  // ---- Profile / user phone management -----------------------------------
+  // Admin-only path for updating someone else's profile.phone. Drivers can
+  // also update their own (RLS profiles_self_update allows it). Used by the
+  // admin/drivers page so admins can set real E.164 phone numbers on drivers
+  // and mechanics — required before outbound SMS via Twilio will reach them.
+  //
+  // E.164 validation happens client-side; we re-validate here as defense in
+  // depth and return a structured error rather than throwing for the common
+  // "bad format" case.
+  updateUserPhone: async (input: {
+    userId: string;
+    phone: string;
+  }): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    const trimmed = input.phone.trim();
+    if (!/^\+[1-9]\d{9,14}$/.test(trimmed)) {
+      return { ok: false, reason: "Phone must be E.164 format (e.g. +14165550100)" };
+    }
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ phone: trimmed })
+      .eq("id", input.userId);
+    if (error) {
+      reportApiError("UPDATE_USER_PHONE", error, { userId: input.userId });
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true };
+  },
+
   // ---- Communications ----------------------------------------------------
   // All mutations route through SECDEF RPCs so the server enforces role +
   // participant invariants. Local DataContext mirrors via realtime, but
@@ -2101,9 +2133,15 @@ export const api = {
     return conv;
   },
 
-  // Sends a message into a conversation. Phase 1: direct INSERT (RLS gates
-  // by participant). Phase 2+ will route through the twilio-send-message
-  // edge function. idempotencyKey makes offline-queue replays safe.
+  // Sends a message into a conversation. Routes through the
+  // twilio-send-message edge function, which posts to Twilio Conversations
+  // API and mirrors to public.messages. The function handles lazy creation
+  // of the Twilio Conversation + per-participant bindings on first send.
+  // idempotencyKey makes offline-queue replays safe (server-side unique
+  // index on (sender_id, idempotency_key) blocks duplicate inserts).
+  //
+  // Mock mode (no Supabase env): synthesizes a local row only — no Twilio
+  // hop. Useful for dev + E2E that doesn't need real SMS delivery.
   sendMessage: async (input: {
     conversationId: string;
     body: string;
@@ -2130,28 +2168,27 @@ export const api = {
       getStore().upsertMessage(msg);
       return msg;
     }
-    const { data: authData } = await supabase.auth.getUser();
-    const senderId = authData.user?.id;
-    if (!senderId) throw new Error("sendMessage: not signed in");
-    const id = uid("MSG");
-    const { data, error } = await supabase
-      .from("messages")
-      .insert({
-        id,
-        conversation_id: input.conversationId,
-        sender_id: senderId,
-        sender_kind: "in_app",
-        body: input.body,
-        media_paths: input.mediaPaths ?? [],
-        delivery_status: "sent",
-        idempotency_key: input.idempotencyKey ?? null,
-      })
-      .select()
-      .single();
-    if (error)
-      throw new Error(`sendMessage: ${reportApiError("SEND_MESSAGE", error, { conversationId: input.conversationId })}`);
+    // Route through edge function → Twilio → DB. Returns the persisted row.
+    const { data, error } = await supabase.functions.invoke<{ message: Row<"messages"> }>(
+      "twilio-send-message",
+      {
+        body: {
+          conversationId: input.conversationId,
+          body: input.body,
+          mediaPaths: input.mediaPaths ?? [],
+          idempotencyKey: input.idempotencyKey ?? null,
+        },
+      },
+    );
+    if (error) {
+      throw new Error(
+        `sendMessage: ${reportApiError("SEND_MESSAGE", error, { conversationId: input.conversationId })}`,
+      );
+    }
+    const row = data?.message;
+    if (!row) throw new Error("sendMessage: edge function returned no message");
     const { dbMessageToDomain } = await import("./db-mappers");
-    const msg = dbMessageToDomain(data as Row<"messages">);
+    const msg = dbMessageToDomain(row);
     getStore().upsertMessage(msg);
     return msg;
   },
