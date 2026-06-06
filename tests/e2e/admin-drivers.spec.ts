@@ -10,7 +10,9 @@ test.describe("Admin drivers", () => {
   test("driver cards render with names + license", async ({ page }) => {
     await expect(page.locator("text=/Tom Morrison/")).toBeVisible();
     await expect(page.locator("text=/Raja Singh/")).toBeVisible();
-    await expect(page.locator("text=/license:/i").first()).toBeVisible();
+    // After the Phase 2 refactor the subtitle reads "License DL-01" (no
+    // colon) — matches either pattern so future copy tweaks don't break this.
+    await expect(page.locator("text=/license[: ]/i").first()).toBeVisible();
   });
 
   test("Add driver button is present", async ({ page }) => {
