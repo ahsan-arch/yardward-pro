@@ -396,18 +396,101 @@ Deno.serve(async (req) => {
     // still see it in-app via Supabase realtime).
   }
 
-  // ---- POST the message to Twilio
-  const msgPost = await twilioFetch<TwilioMessage>(
-    `${twilioBase}/Conversations/${twilioConvSid}/Messages`,
-    basicAuth,
-    {
-      method: "POST",
-      bodyParams: {
-        Author: `profile:${callerId}`,
-        Body: bodyText,
+  // ---- Outbound MMS: upload each Storage path to Twilio Media Content Service
+  // Twilio expects either a public URL or pre-uploaded MediaSid(s) in the
+  // message body. We mint a 1h signed URL for each Storage path and POST it
+  // to MCS, which returns a MediaSid we attach to the Conversations message.
+  const mediaSids: string[] = [];
+  for (const path of mediaPaths) {
+    // Mint signed URL via Storage REST endpoint.
+    const signResp = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/sign/message-attachments/${encodeURIComponent(path)}`,
+      {
+        method: "POST",
+        headers: sbHeaders,
+        body: JSON.stringify({ expiresIn: 3600 }),
       },
-    },
-  );
+    );
+    if (!signResp.ok) {
+      // Soft-fail this attachment, continue with text. Operator will see
+      // a partial-failure in error_log if they wire it.
+      continue;
+    }
+    const signed = (await signResp.json()) as { signedURL?: string; signedUrl?: string };
+    const relUrl = signed.signedURL ?? signed.signedUrl ?? "";
+    if (!relUrl) continue;
+    const fullSignedUrl = relUrl.startsWith("http")
+      ? relUrl
+      : `${SUPABASE_URL}/storage/v1${relUrl}`;
+
+    // POST to Twilio MCS. Conversations Media is at the global MCS endpoint
+    // scoped to the Conversations Service.
+    const mcsResp = await fetch(
+      `https://mcs.us1.twilio.com/v1/Services/${TWILIO_CONVERSATIONS_SERVICE_SID}/Media`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${basicAuth}`,
+          "Content-Type": "application/octet-stream",
+        },
+        // Twilio's "create from URL" doesn't exist for MCS — we must stream
+        // the bytes through. Fetch the signed URL, pipe to MCS.
+        body: await (await fetch(fullSignedUrl)).arrayBuffer(),
+      },
+    );
+    if (!mcsResp.ok) continue;
+    const mcsBody = (await mcsResp.json()) as { sid?: string };
+    if (mcsBody.sid) mediaSids.push(mcsBody.sid);
+  }
+
+  // ---- POST the message to Twilio
+  const msgBodyParams: Record<string, string | undefined> = {
+    Author: `profile:${callerId}`,
+    Body: bodyText,
+  };
+  // MediaSid is repeatable — Twilio accepts MediaSid=IS... multiple times.
+  // formEncode flattens a single value; we use a manual builder below.
+  let messageBody = "";
+  for (const [k, v] of Object.entries(msgBodyParams)) {
+    if (v === undefined || v === "") continue;
+    messageBody += `${encodeURIComponent(k)}=${encodeURIComponent(v)}&`;
+  }
+  for (const sid of mediaSids) {
+    messageBody += `MediaSid=${encodeURIComponent(sid)}&`;
+  }
+  if (messageBody.endsWith("&")) messageBody = messageBody.slice(0, -1);
+
+  const msgPost = await (async () => {
+    try {
+      const resp = await fetch(
+        `${twilioBase}/Conversations/${twilioConvSid}/Messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${basicAuth}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "application/json",
+          },
+          body: messageBody,
+        },
+      );
+      const raw = await resp.text();
+      let body: TwilioMessage | null = null;
+      try {
+        body = JSON.parse(raw) as TwilioMessage;
+      } catch {
+        body = null;
+      }
+      return { ok: resp.ok, status: resp.status, body, raw };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        body: null as TwilioMessage | null,
+        raw: err instanceof Error ? err.message : String(err),
+      };
+    }
+  })();
   if (!msgPost.ok || !msgPost.body) {
     return new Response(
       JSON.stringify({

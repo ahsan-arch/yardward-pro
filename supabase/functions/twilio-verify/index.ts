@@ -26,6 +26,11 @@ interface VerifyResult {
   conversationsServiceFound: boolean;
   conversationsServiceFriendlyName: string | null;
   conversationsServiceSidPrefix: string | null;
+  // Phase 3 — Inbound webhook
+  webhookUrlConfigured: boolean;
+  webhookUrlMatchesExpected: boolean;
+  webhookUrlExpected: string | null;
+  webhookUrlOnTwilio: string | null;
   errors: string[];
 }
 
@@ -164,6 +169,10 @@ Deno.serve(async (req) => {
     conversationsServiceSidPrefix: TWILIO_CONVERSATIONS_SERVICE_SID
       ? TWILIO_CONVERSATIONS_SERVICE_SID.slice(0, 6) + "…"
       : null,
+    webhookUrlConfigured: !!Deno.env.get("TWILIO_WEBHOOK_BASE_URL"),
+    webhookUrlMatchesExpected: false,
+    webhookUrlExpected: Deno.env.get("TWILIO_WEBHOOK_BASE_URL") ?? null,
+    webhookUrlOnTwilio: null,
     errors: [],
   };
 
@@ -346,6 +355,47 @@ Deno.serve(async (req) => {
     } else {
       result.errors.push(
         `Conversations service probe failed: HTTP ${svc.status} — ${svc.raw.slice(0, 200)}`,
+      );
+    }
+  }
+
+  // ---- Live probe 5: Service webhook URL config (Phase 3)
+  if (
+    result.conversationsServiceFound &&
+    result.apiKeyValid &&
+    TWILIO_API_KEY_SID &&
+    TWILIO_API_KEY_SECRET
+  ) {
+    type ServiceConfig = {
+      pre_webhook_url?: string | null;
+      post_webhook_url?: string | null;
+      webhook_method?: string | null;
+      webhook_filters?: string[];
+    };
+    const apiKeyAuth = btoa(`${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}`);
+    const cfg = await getJson<ServiceConfig>(
+      `https://conversations.twilio.com/v1/Services/${TWILIO_CONVERSATIONS_SERVICE_SID}/Configuration/Webhooks`,
+      apiKeyAuth,
+    );
+    if (cfg.ok && cfg.body) {
+      result.webhookUrlOnTwilio = cfg.body.post_webhook_url ?? null;
+      const expected = Deno.env.get("TWILIO_WEBHOOK_BASE_URL") ?? "";
+      if (cfg.body.post_webhook_url && expected) {
+        result.webhookUrlMatchesExpected =
+          cfg.body.post_webhook_url === expected;
+        if (!result.webhookUrlMatchesExpected) {
+          result.errors.push(
+            `Webhook URL on Twilio (${cfg.body.post_webhook_url}) does not match TWILIO_WEBHOOK_BASE_URL (${expected}). HMAC signatures will fail until they match byte-for-byte.`,
+          );
+        }
+      } else if (!cfg.body.post_webhook_url) {
+        result.errors.push(
+          "Conversations Service has no post_webhook_url configured. Set it in Twilio Console → Conversations → Services → Webhooks → Post-event URL.",
+        );
+      }
+    } else {
+      result.errors.push(
+        `Webhook config probe failed: HTTP ${cfg.status} — ${cfg.raw.slice(0, 200)}`,
       );
     }
   }
