@@ -158,9 +158,15 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
   // Look for a stored OAuth token row — if none exists, the admin hasn't
   // completed the OAuth handshake yet. Reachable=null here means "configured
   // for OAuth but no user has connected their QBO company yet".
+  //
+  // Schema note: qbo_oauth_tokens stores one row keyed by `id` (typically a
+  // singleton "default" row) with access_token + refresh_token + an expiry
+  // column named access_token_expires_at. No realm_id column — the realm
+  // is encoded inside the OAuth tokens themselves. We surface a generic
+  // "authorized" message when a non-expired token exists.
   try {
     const tokResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/qbo_oauth_tokens?select=realm_id,expires_at&limit=1`,
+      `${SUPABASE_URL}/rest/v1/qbo_oauth_tokens?select=id,access_token_expires_at&limit=1`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -169,14 +175,18 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
       },
     );
     if (!tokResp.ok) {
+      const raw = await tokResp.text();
       return {
         configured: true,
         reachable: null,
         rawProbeMsg: `Couldn't read qbo_oauth_tokens (HTTP ${tokResp.status})`,
-        lastError: null,
+        lastError: raw.slice(0, 200),
       };
     }
-    const rows = (await tokResp.json()) as Array<{ realm_id: string; expires_at: string }>;
+    const rows = (await tokResp.json()) as Array<{
+      id: string;
+      access_token_expires_at: string | null;
+    }>;
     if (rows.length === 0) {
       return {
         configured: true,
@@ -186,14 +196,25 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
       };
     }
     const r = rows[0];
-    const expired = new Date(r.expires_at).getTime() < Date.now();
+    // access_token_expires_at may be null if a row was inserted without a
+    // token yet (e.g. mid-OAuth). Treat null as "expired/pending" because
+    // we can't prove validity.
+    if (!r.access_token_expires_at) {
+      return {
+        configured: true,
+        reachable: false,
+        rawProbeMsg: `OAuth row exists but no access token recorded — re-authorize`,
+        lastError: "access_token_expires_at is null",
+      };
+    }
+    const expired = new Date(r.access_token_expires_at).getTime() < Date.now();
     return {
       configured: true,
       reachable: !expired,
       rawProbeMsg: expired
-        ? `Token for realm ${r.realm_id.slice(-6)} expired ${r.expires_at}`
-        : `Realm ${r.realm_id.slice(-6)} authorized (${env || "sandbox"})`,
-      lastError: expired ? "OAuth token expired — re-authorize" : null,
+        ? `Access token expired ${r.access_token_expires_at} — refresh or re-authorize`
+        : `Authorized (${env || "sandbox"}) — token valid until ${r.access_token_expires_at.slice(0, 19)}Z`,
+      lastError: expired ? "Access token expired" : null,
     };
   } catch (err) {
     return {
@@ -288,7 +309,7 @@ async function recentAlertsByIntegration(): Promise<Record<string, string>> {
 Deno.serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, content-type",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Content-Type": "application/json",
   };
