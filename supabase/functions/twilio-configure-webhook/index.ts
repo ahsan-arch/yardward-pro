@@ -71,8 +71,14 @@ Deno.serve(async (req) => {
     }
     const userData = await userResp.json();
     const uid = userData?.id;
+    if (!uid || typeof uid !== "string") {
+      return new Response(JSON.stringify({ error: "auth/v1/user returned no user id" }), {
+        status: 401,
+        headers: corsHeaders,
+      });
+    }
     const profResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=role`,
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,

@@ -13,11 +13,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-// Pre-fill demo creds ONLY in dev mode (or when the deployment explicitly
-// opts in via VITE_DEMO_MODE=true). Production builds start with blank
-// fields so the real user types their own credentials.
-const DEMO_MODE =
-  import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true";
+import { DEMO_MODE } from "@/lib/demo-mode";
 
 function LoginPage() {
   const { login, signIn, theme, toggleTheme, sendPasswordReset } = useApp();
@@ -69,7 +65,7 @@ function LoginPage() {
     e.preventDefault();
     const errs: typeof err = {};
     if (!/^\S+@\S+\.\S+$/.test(email)) errs.email = "Enter a valid email";
-    if (password.length < 6) errs.password = "Min 6 characters";
+    if (password.length < 8) errs.password = "Min 8 characters";
     setErr(errs);
     if (Object.keys(errs).length) return;
 

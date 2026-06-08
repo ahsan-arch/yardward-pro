@@ -78,8 +78,19 @@ Deno.serve(async (req) => {
     }
     const userData = await userResp.json();
     const uid = userData?.id;
+    // Guard against a malformed /auth/v1/user response that returned 200 but
+    // omitted the id. Without this, the next fetch interpolates 'undefined'
+    // into the URL and PostgREST WHERE-matches on that literal string,
+    // returning [] — admin check then silently rejects with 403, masking
+    // the real bug ("auth service returned malformed body").
+    if (!uid || typeof uid !== "string") {
+      return new Response(
+        JSON.stringify({ error: "auth/v1/user returned no user id" }),
+        { status: 401, headers: corsHeaders },
+      );
+    }
     const profResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=role`,
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,

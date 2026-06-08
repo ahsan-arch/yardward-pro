@@ -60,7 +60,7 @@ function ResetPasswordPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs: typeof err = {};
-    if (pw.length < 6) errs.pw = "Min 6 characters";
+    if (pw.length < 8) errs.pw = "Min 8 characters";
     if (pw !== confirm) errs.confirm = "Passwords don't match";
     setErr(errs);
     if (Object.keys(errs).length) return;

@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       });
     }
     const profResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=role`,
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,

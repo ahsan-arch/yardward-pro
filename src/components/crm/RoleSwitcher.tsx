@@ -3,17 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Moon, Sun, Shield, Truck, Wrench, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-
-// "Demo mode" — when the user can flip between admin / driver / mechanic views
-// from the top bar — is a dev-only convenience. Production builds (npm run
-// build) flip import.meta.env.DEV to false, which hides the DEMO MODE label
-// and the role-switcher buttons. Theme + logout always render so the top bar
-// still has the standard chrome.
-//
-// To force-enable demo in a dev session (e.g. local prod-like testing) flip
-// the env var VITE_DEMO_MODE=true.
-const DEMO_MODE =
-  import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true";
+import { DEMO_MODE } from "@/lib/demo-mode";
 
 export function RoleSwitcher() {
   const { role, setRole, theme, toggleTheme, logout, isDriverTokenSession } = useApp();

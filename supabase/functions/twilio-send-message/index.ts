@@ -228,9 +228,22 @@ Deno.serve(async (req) => {
   } as const;
 
   const callerCpResp = await fetch(
-    `${SUPABASE_URL}/rest/v1/conversation_participants?conversation_id=eq.${encodeURIComponent(conversationId)}&user_id=eq.${callerId}&left_at=is.null&select=id`,
+    `${SUPABASE_URL}/rest/v1/conversation_participants?conversation_id=eq.${encodeURIComponent(conversationId)}&user_id=eq.${encodeURIComponent(callerId)}&left_at=is.null&select=id`,
     { headers: sbHeaders },
   );
+  // Inspect status BEFORE parsing JSON — a 5xx from PostgREST returns an
+  // error envelope, not the array shape the .as cast expects. Without this,
+  // .json() throws SyntaxError and surfaces as a generic "internal" 500
+  // instead of the clearer 502 + DB-error message below.
+  if (!callerCpResp.ok) {
+    const raw = await callerCpResp.text();
+    return new Response(
+      JSON.stringify({
+        error: `Couldn't verify participant status: HTTP ${callerCpResp.status} — ${raw.slice(0, 200)}`,
+      }),
+      { status: 502, headers: corsHeaders },
+    );
+  }
   const callerCpRows = (await callerCpResp.json()) as Array<{ id: string }>;
   if (!Array.isArray(callerCpRows) || callerCpRows.length === 0) {
     return new Response(

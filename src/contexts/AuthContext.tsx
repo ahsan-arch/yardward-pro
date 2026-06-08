@@ -298,34 +298,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data }) => hydrateFromSession(data.session));
 
+    // Single shared handler for PASSWORD_RECOVERY navigation. Used by both
+    // the auth-state-change listener (fires when supabase-js parses the
+    // recovery hash) and the one-shot mount-time check (catches the case
+    // where the hash is already in the URL but the event hasn't fired
+    // synchronously yet). Both paths preserve the URL hash so the
+    // recovery session info isn't lost across the navigation — even
+    // though supabase-js stores it in localStorage independently, keeping
+    // the hash is belt-and-braces for any client lib that re-reads it.
+    let recoveryNavigated = false;
+    function navigateToResetPassword() {
+      if (typeof window === "undefined") return;
+      if (window.location.pathname.startsWith("/reset-password")) return;
+      if (recoveryNavigated) return; // already kicked off — don't double-nav
+      recoveryNavigated = true;
+      const hash = window.location.hash || "";
+      window.location.assign(`/reset-password${hash}`);
+    }
+
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       hydrateFromSession(session);
-      // Global PASSWORD_RECOVERY handler. Supabase's recovery email link
-      // sets redirect_to to site_url (NOT the per-call redirect_to we pass
-      // — a known gotrue quirk). So users may land on the SPA root '/'
-      // with a #type=recovery hash instead of /reset-password. supabase-js
-      // parses the hash + fires PASSWORD_RECOVERY; we navigate to the
-      // reset form so the user can actually set their new password.
-      if (event === "PASSWORD_RECOVERY") {
-        if (
-          typeof window !== "undefined" &&
-          !window.location.pathname.startsWith("/reset-password")
-        ) {
-          window.location.assign("/reset-password");
-        }
-      }
+      // Supabase's recovery email link sets redirect_to to site_url (not
+      // the per-call redirect_to we pass — known gotrue quirk). Users land
+      // on the SPA root with a #type=recovery hash; we route them to the
+      // reset form.
+      if (event === "PASSWORD_RECOVERY") navigateToResetPassword();
     });
 
-    // One-shot mount check: if the URL hash already carries a recovery
-    // token (the user just landed from the email link and the auth state
-    // change hasn't fired yet), navigate proactively. Same guard against
-    // an infinite loop if we're already on /reset-password.
+    // One-shot mount-time check for the same case (event may have fired
+    // before this listener attached, or may not fire if the session was
+    // already established in a prior render cycle).
     if (
       typeof window !== "undefined" &&
-      window.location.hash.includes("type=recovery") &&
-      !window.location.pathname.startsWith("/reset-password")
+      window.location.hash.includes("type=recovery")
     ) {
-      window.location.assign(`/reset-password${window.location.hash}`);
+      navigateToResetPassword();
     }
 
     return () => {
@@ -418,8 +425,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!USE_SUPABASE || !supabase) {
       return { error: null };
     }
-    if (newPassword.length < 6) {
-      return { error: "Password must be at least 6 characters" };
+    if (newPassword.length < 8) {
+      return { error: "Password must be at least 8 characters" };
     }
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) return { error: error.message };
