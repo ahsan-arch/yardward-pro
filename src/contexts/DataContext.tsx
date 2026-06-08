@@ -168,6 +168,13 @@ type Ctx = {
   recordTicketReplenishment: (rep: TicketReplenishment, invoice: InvoiceData) => void;
   pushNotification: (n: Notification) => void;
   /**
+   * Stamp `readAt` on every still-unread notification belonging to `userId`.
+   * Called optimistically when the user opens NotificationsBell so the badge
+   * clears immediately and individual rows lose their unread treatment;
+   * api.markAllNotificationsRead persists the same UPDATE to Supabase.
+   */
+  markAllNotificationsRead: (userId: string, readAt: string) => void;
+  /**
    * Replace the current admin-tunable app settings (GPS tolerance, overtime
    * thresholds, inspection window). Called by api.updateAppSettings after a
    * successful Supabase write.
@@ -212,6 +219,12 @@ type Ctx = {
    * tabs reflect the change without waiting on a realtime tick.
    */
   upsertMaintenanceWorkOrder: (wo: MaintenanceWorkOrder) => void;
+  /**
+   * Upsert a vehicle into local state. Used by api.createVehicle after a
+   * successful insert so the admin vehicles grid reflects the new row without
+   * waiting on the realtime tick.
+   */
+  upsertVehicle: (v: Vehicle) => void;
 };
 
 const DataCtx = createContext<Ctx | null>(null);
@@ -1003,6 +1016,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }),
     [],
   );
+  const markAllNotificationsRead = useCallback(
+    (userId: string, readAt: string) =>
+      setNotifications((arr) =>
+        arr.map((n) =>
+          n.userId === userId && !n.readAt ? { ...n, readAt } : n,
+        ),
+      ),
+    [],
+  );
   const setTimeEntryFlag = useCallback(
     (entryId: string, flagged: boolean, reason: string) =>
       setTimeEntries((arr) =>
@@ -1038,6 +1060,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         arr.some((x) => x.id === wo.id)
           ? arr.map((x) => (x.id === wo.id ? wo : x))
           : [wo, ...arr],
+      ),
+    [],
+  );
+  const upsertVehicle = useCallback(
+    (v: Vehicle) =>
+      setVehicles((arr) =>
+        arr.some((x) => x.id === v.id)
+          ? arr.map((x) => (x.id === v.id ? v : x))
+          : [v, ...arr],
       ),
     [],
   );
@@ -1123,6 +1154,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         recordTicketTransaction,
         recordTicketReplenishment,
         pushNotification,
+        markAllNotificationsRead,
         setAppSettings,
         setTimeEntryFlag,
         addTicketPhoto,
@@ -1131,6 +1163,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addMaintenanceLog,
         addFuelLog,
         upsertMaintenanceWorkOrder,
+        upsertVehicle,
       }}
     >
       {children}

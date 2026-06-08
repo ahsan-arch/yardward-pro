@@ -230,6 +230,7 @@ function Page() {
                 id="new-client-name"
                 value={newClient.name}
                 onChange={(e) => setNewClient((c) => ({ ...c, name: e.target.value }))}
+                placeholder="e.g. Maple City Construction"
                 data-testid="new-client-name"
               />
             </div>
@@ -239,6 +240,7 @@ function Page() {
                 id="new-client-contact"
                 value={newClient.contactName}
                 onChange={(e) => setNewClient((c) => ({ ...c, contactName: e.target.value }))}
+                placeholder="e.g. Jane Smith"
                 data-testid="new-client-contact"
               />
             </div>
@@ -251,6 +253,7 @@ function Page() {
                   inputMode="email"
                   value={newClient.email}
                   onChange={(e) => setNewClient((c) => ({ ...c, email: e.target.value }))}
+                  placeholder="e.g. jane@mapleconstruction.com"
                   data-testid="new-client-email"
                 />
               </div>
@@ -260,6 +263,7 @@ function Page() {
                   id="new-client-phone"
                   value={newClient.phone}
                   onChange={(e) => setNewClient((c) => ({ ...c, phone: e.target.value }))}
+                  placeholder="+1 416 555 0100"
                   data-testid="new-client-phone"
                 />
               </div>
@@ -270,6 +274,7 @@ function Page() {
                 id="new-client-address"
                 value={newClient.billingAddress}
                 onChange={(e) => setNewClient((c) => ({ ...c, billingAddress: e.target.value }))}
+                placeholder="e.g. 123 Industrial Rd, Toronto ON M1A 1A1"
                 data-testid="new-client-address"
               />
             </div>
@@ -280,6 +285,7 @@ function Page() {
                 value={newClient.notes}
                 onChange={(e) => setNewClient((c) => ({ ...c, notes: e.target.value }))}
                 rows={2}
+                placeholder="Internal notes…"
                 data-testid="new-client-notes"
               />
             </div>

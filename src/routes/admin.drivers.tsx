@@ -175,14 +175,20 @@ function Page() {
     const q = search.trim().toLowerCase();
     if (!q) return drivers;
     return drivers.filter(
-      (d) => d.name.toLowerCase().includes(q) || d.phone.includes(q),
+      (d) =>
+        d.name.toLowerCase().includes(q) ||
+        d.email.toLowerCase().includes(q) ||
+        d.phone.toLowerCase().includes(q),
     );
   }, [drivers, search]);
   const visibleMechanics = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return mechanics;
     return mechanics.filter(
-      (m) => m.name.toLowerCase().includes(q) || m.phone.includes(q),
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.phone.toLowerCase().includes(q),
     );
   }, [mechanics, search]);
 
@@ -215,7 +221,7 @@ function Page() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or phone…"
+          placeholder="Search by name, email, or phone…"
           className="max-w-sm"
           data-testid="staff-search"
         />
@@ -290,7 +296,14 @@ function Page() {
               </Button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit();
+              }}
+              data-testid="add-driver-form"
+            >
               <div>
                 <Label>Name</Label>
                 <Input
@@ -350,14 +363,14 @@ function Page() {
                 </div>
               </div>
               <Button
-                onClick={() => void submit()}
+                type="submit"
                 disabled={creating}
                 data-testid="submit-add-driver"
                 className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
               >
                 {creating ? "Creating…" : "Add driver"}
               </Button>
-            </div>
+            </form>
           )}
         </DialogContent>
       </Dialog>

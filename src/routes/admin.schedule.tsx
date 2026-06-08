@@ -57,12 +57,39 @@ function Page() {
   const { drivers, vehicles, clients, jobs } = useData();
   const nav = useNavigate();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const filteredJobs = useMemo(
-    () => (statusFilter === "all" ? jobs : jobs.filter((j) => j.status === statusFilter)),
-    [jobs, statusFilter],
-  );
+  const [dateRangeFilter, setDateRangeFilter] = useState<"all" | "week" | "next">("all");
+  const [driverFilter, setDriverFilter] = useState<string>("all");
+  const [truckFilter, setTruckFilter] = useState<string>("all");
+  // Range bounds for "This week" (Mon..Sun) and "Next week" relative to today.
+  // Computed inline so the memo deps stay simple — jobs change frequently
+  // enough that a stale window for a few seconds is harmless.
+  const filteredJobs = useMemo(() => {
+    const now = new Date();
+    const todayIdx = (now.getDay() + 6) % 7; // Mon=0
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayIdx);
+    const weekStart = monday.getTime();
+    const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+    const nextStart = weekEnd;
+    const nextEnd = nextStart + 7 * 24 * 60 * 60 * 1000;
+    return jobs.filter((j) => {
+      if (statusFilter !== "all" && j.status !== statusFilter) return false;
+      if (driverFilter !== "all" && j.driverId !== driverFilter) return false;
+      if (truckFilter !== "all" && j.vehicleId !== truckFilter) return false;
+      if (dateRangeFilter !== "all") {
+        const t = new Date(j.scheduledAt).getTime();
+        if (dateRangeFilter === "week" && (t < weekStart || t >= weekEnd)) return false;
+        if (dateRangeFilter === "next" && (t < nextStart || t >= nextEnd)) return false;
+      }
+      return true;
+    });
+  }, [jobs, statusFilter, driverFilter, truckFilter, dateRangeFilter]);
   const display = filteredJobs.map((j) => ({ ...jobDisplay(j), rawStatus: j.status }));
-  const draftCount = useMemo(() => jobs.filter((j) => j.status === "draft").length, [jobs]);
+  // Drafts panel honors the same filters as the grid above — the operator's
+  // mental model is "I narrowed my view; everything I see is consistent with
+  // that". Counting against the unfiltered jobs array used to leak hidden
+  // drafts into the badge.
+  const draftJobs = useMemo(() => filteredJobs.filter((j) => j.status === "draft"), [filteredJobs]);
+  const draftCount = draftJobs.length;
   const [open, setOpen] = useState(false);
   // `saving` carries which button is mid-flight so we can show the right
   // spinner without disabling the other action entirely.
@@ -80,6 +107,13 @@ function Page() {
     notes: "",
   };
   const [form, setForm] = useState(EMPTY_FORM);
+  // Per-field validation errors for the Create Job dialog. Keys mirror form
+  // field names. Cleared on field edit so the message disappears as soon as
+  // the user starts addressing it. Mirrors the pattern in src/routes/login.tsx.
+  type FormErrors = Partial<
+    Record<"clientId" | "address" | "date" | "time" | "driverId" | "vehicleId", string>
+  >;
+  const [errors, setErrors] = useState<FormErrors>({});
 
   // Open the Create Job dialog. setOpen(true) fires FIRST so the dialog
   // appears reliably even if seeding defaults from drivers/vehicles/clients
@@ -93,13 +127,13 @@ function Page() {
   // occurrence of that weekday. dayIndex is 0=Mon..6=Sun (matches `days`).
   function openCreateJob(preset?: { driverId?: string; dayIndex?: number }) {
     setOpen(true);
+    setErrors({});
     try {
       // Resolve the driver: caller-supplied wins, otherwise first available.
       const driverId = preset?.driverId ?? drivers[0]?.id ?? "";
       // If the driver has an assigned vehicle, default to that — otherwise
       // fall back to the first vehicle in the fleet.
-      const assignedVehicle =
-        drivers.find((d) => d.id === driverId)?.vehicleAssignmentId ?? null;
+      const assignedVehicle = drivers.find((d) => d.id === driverId)?.vehicleAssignmentId ?? null;
       const vehicleId = assignedVehicle ?? vehicles[0]?.id ?? "";
       // Map weekday index → YYYY-MM-DD for the next occurrence (including
       // today). Our `days` array is Mon..Sun (Mon=0). JS Date.getDay() is
@@ -118,7 +152,16 @@ function Page() {
   }
 
   async function submit(target: "draft" | "publish") {
-    if (!form.clientId || !form.driverId || !form.vehicleId || !form.date || !form.time) {
+    // Build per-field errors so the user can see exactly which input is
+    // missing rather than a single non-targeted toast.
+    const nextErrors: FormErrors = {};
+    if (!form.clientId) nextErrors.clientId = "Choose a client";
+    if (!form.driverId) nextErrors.driverId = "Choose a driver";
+    if (!form.vehicleId) nextErrors.vehicleId = "Choose a truck";
+    if (!form.date) nextErrors.date = "Pick a date";
+    if (!form.time) nextErrors.time = "Pick a start time";
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       toast.error("Fill all required fields");
       return;
     }
@@ -155,6 +198,7 @@ function Page() {
       }
       setOpen(false);
       setForm(EMPTY_FORM);
+      setErrors({});
     } finally {
       setSaving(null);
     }
@@ -184,20 +228,25 @@ function Page() {
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Filter className="w-4 h-4" /> Filters:
           </div>
-          <Select>
-            <SelectTrigger className="w-[150px] h-9">
+          <Select
+            value={dateRangeFilter}
+            onValueChange={(v) => setDateRangeFilter(v as "all" | "week" | "next")}
+          >
+            <SelectTrigger className="w-[150px] h-9" data-testid="date-range-filter">
               <SelectValue placeholder="Date range" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">Any date</SelectItem>
               <SelectItem value="week">This week</SelectItem>
               <SelectItem value="next">Next week</SelectItem>
             </SelectContent>
           </Select>
-          <Select>
-            <SelectTrigger className="w-[140px] h-9">
+          <Select value={driverFilter} onValueChange={(v) => setDriverFilter(v)}>
+            <SelectTrigger className="w-[140px] h-9" data-testid="driver-filter">
               <SelectValue placeholder="Driver" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All drivers</SelectItem>
               {drivers.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
                   {d.name}
@@ -205,11 +254,12 @@ function Page() {
               ))}
             </SelectContent>
           </Select>
-          <Select>
-            <SelectTrigger className="w-[120px] h-9">
+          <Select value={truckFilter} onValueChange={(v) => setTruckFilter(v)}>
+            <SelectTrigger className="w-[120px] h-9" data-testid="truck-filter">
               <SelectValue placeholder="Truck" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All trucks</SelectItem>
               {vehicles.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
                   {t.id}
@@ -217,10 +267,7 @@ function Page() {
               ))}
             </SelectContent>
           </Select>
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-          >
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
             <SelectTrigger className="w-[140px] h-9" data-testid="status-filter">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -363,9 +410,7 @@ function Page() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() =>
-                          openCreateJob({ driverId: driver.id, dayIndex: di })
-                        }
+                        onClick={() => openCreateJob({ driverId: driver.id, dayIndex: di })}
                         aria-label={`Create job for ${driver.name} on ${days[di]}`}
                         data-testid={`schedule-cell-add-${driver.id}-${di}`}
                         className="w-full h-full min-h-[60px] rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted/50 flex items-center justify-center text-muted-foreground transition-opacity cursor-pointer"
@@ -392,55 +437,59 @@ function Page() {
             </p>
           </div>
           <div className="space-y-2">
-            {jobs
-              .filter((j) => j.status === "draft")
-              .map((j) => {
-                const d = drivers.find((dr) => dr.id === j.driverId);
-                const v = vehicles.find((vh) => vh.id === j.vehicleId);
-                const c = clients.find((cl) => cl.id === j.clientId);
-                const dt = new Date(j.scheduledAt);
-                return (
-                  <div
-                    key={j.id}
-                    data-testid="draft-row"
-                    className="flex items-center justify-between gap-3 border border-dashed border-border rounded-md p-3 bg-muted/30 opacity-90"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded bg-muted-foreground/15 text-muted-foreground border border-muted-foreground/20">
-                        Draft
-                      </span>
-                      <div className="min-w-0">
-                        <div className="font-mono text-xs text-amber-brand">{j.id}</div>
-                        <div className="text-sm font-medium truncate">
-                          {c?.name ?? "—"} · {j.location.address || "TBD"}
-                        </div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {dt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} ·{" "}
-                          {d?.name ?? "Unassigned"} · {v?.id ?? "—"}
-                        </div>
+            {draftJobs.map((j) => {
+              const d = drivers.find((dr) => dr.id === j.driverId);
+              const v = vehicles.find((vh) => vh.id === j.vehicleId);
+              const c = clients.find((cl) => cl.id === j.clientId);
+              const dt = new Date(j.scheduledAt);
+              return (
+                <div
+                  key={j.id}
+                  data-testid="draft-row"
+                  className="flex items-center justify-between gap-3 border border-dashed border-border rounded-md p-3 bg-muted/30 opacity-90"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded bg-muted-foreground/15 text-muted-foreground border border-muted-foreground/20">
+                      Draft
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-amber-brand">{j.id}</div>
+                      <div className="text-sm font-medium truncate">
+                        {c?.name ?? "—"} · {j.location.address || "TBD"}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {dt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} ·{" "}
+                        {d?.name ?? "Unassigned"} · {v?.id ?? "—"}
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      data-testid={`publish-draft-${j.id}`}
-                      onClick={() => publishDraft(j.id)}
-                      disabled={publishingId === j.id}
-                      className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-                    >
-                      {publishingId === j.id ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing…
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-3.5 h-3.5" /> Publish
-                        </>
-                      )}
-                    </Button>
                   </div>
-                );
-              })}
+                  <Button
+                    size="sm"
+                    data-testid={`publish-draft-${j.id}`}
+                    onClick={() => publishDraft(j.id)}
+                    disabled={publishingId === j.id}
+                    className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                  >
+                    {publishingId === j.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing…
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" /> Publish
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
+        </section>
+      )}
+      {/* empty-state when filters narrowed away all drafts */}
+      {jobs.some((j) => j.status === "draft") && draftCount === 0 && (
+        <section className="mt-6 text-xs text-muted-foreground italic">
+          Drafts hidden by current filter. Clear filters above to see all drafts.
         </section>
       )}
 
@@ -474,9 +523,15 @@ function Page() {
               ) : (
                 <Select
                   value={form.clientId}
-                  onValueChange={(v) => setForm((f) => ({ ...f, clientId: v }))}
+                  onValueChange={(v) => {
+                    setForm((f) => ({ ...f, clientId: v }));
+                    setErrors((e) => ({ ...e, clientId: undefined }));
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    aria-invalid={!!errors.clientId}
+                    className={cn(errors.clientId && "border-danger focus-visible:ring-danger")}
+                  >
                     <SelectValue placeholder="Choose client" />
                   </SelectTrigger>
                   <SelectContent>
@@ -487,6 +542,11 @@ function Page() {
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {errors.clientId && (
+                <p className="text-xs text-danger mt-1" data-testid="error-clientId">
+                  {errors.clientId}
+                </p>
               )}
             </div>
             <div>
@@ -503,16 +563,36 @@ function Page() {
                 <Input
                   type="date"
                   value={form.date}
-                  onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, date: e.target.value }));
+                    setErrors((er) => ({ ...er, date: undefined }));
+                  }}
+                  aria-invalid={!!errors.date}
+                  className={cn(errors.date && "border-danger focus-visible:ring-danger")}
                 />
+                {errors.date && (
+                  <p className="text-xs text-danger mt-1" data-testid="error-date">
+                    {errors.date}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Start time</Label>
                 <Input
                   type="time"
                   value={form.time}
-                  onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, time: e.target.value }));
+                    setErrors((er) => ({ ...er, time: undefined }));
+                  }}
+                  aria-invalid={!!errors.time}
+                  className={cn(errors.time && "border-danger focus-visible:ring-danger")}
                 />
+                {errors.time && (
+                  <p className="text-xs text-danger mt-1" data-testid="error-time">
+                    {errors.time}
+                  </p>
+                )}
               </div>
             </div>
             <div>
@@ -527,9 +607,15 @@ function Page() {
               ) : (
                 <Select
                   value={form.driverId}
-                  onValueChange={(v) => setForm((f) => ({ ...f, driverId: v }))}
+                  onValueChange={(v) => {
+                    setForm((f) => ({ ...f, driverId: v }));
+                    setErrors((er) => ({ ...er, driverId: undefined }));
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    aria-invalid={!!errors.driverId}
+                    className={cn(errors.driverId && "border-danger focus-visible:ring-danger")}
+                  >
                     <SelectValue placeholder="Choose driver" />
                   </SelectTrigger>
                   <SelectContent>
@@ -540,6 +626,11 @@ function Page() {
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {errors.driverId && (
+                <p className="text-xs text-danger mt-1" data-testid="error-driverId">
+                  {errors.driverId}
+                </p>
               )}
             </div>
             <div>
@@ -554,9 +645,15 @@ function Page() {
               ) : (
                 <Select
                   value={form.vehicleId}
-                  onValueChange={(v) => setForm((f) => ({ ...f, vehicleId: v }))}
+                  onValueChange={(v) => {
+                    setForm((f) => ({ ...f, vehicleId: v }));
+                    setErrors((er) => ({ ...er, vehicleId: undefined }));
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    aria-invalid={!!errors.vehicleId}
+                    className={cn(errors.vehicleId && "border-danger focus-visible:ring-danger")}
+                  >
                     <SelectValue placeholder="Choose truck" />
                   </SelectTrigger>
                   <SelectContent>
@@ -567,6 +664,11 @@ function Page() {
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+              {errors.vehicleId && (
+                <p className="text-xs text-danger mt-1" data-testid="error-vehicleId">
+                  {errors.vehicleId}
+                </p>
               )}
             </div>
             <div>

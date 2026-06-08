@@ -233,7 +233,10 @@ function Page() {
           {open && (
             <>
               <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
+                {/* pr-8 reserves space for the auto-rendered SheetContent close
+                    X at right-4 so the ml-auto StatusBadge doesn't collide
+                    with / sit behind the close icon. */}
+                <SheetTitle className="flex items-center gap-2 pr-8">
                   <ShoppingCart className="w-4 h-4" />
                   <span className="font-mono">{open.id}</span>
                   <StatusBadge status={open.status} className="ml-auto" />

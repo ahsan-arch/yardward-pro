@@ -333,13 +333,16 @@ function Page() {
   // Build the display list from LIVE Supabase data. Resolves the driver
   // assigned to each vehicle against the live drivers array — no mockData
   // seed in the production render path.
-  const trucks = vehicles.map((v) => {
+  const allTrucks = vehicles.map((v) => {
     const d = drivers.find((x) => x.id === v.driverId);
     return {
       id: v.id,
       name: v.name,
       year: v.year,
       type: v.type.charAt(0).toUpperCase() + v.type.slice(1),
+      // Keep the raw enum around so the type filter can match without doing
+      // a case-insensitive substring on the display string.
+      rawType: v.type,
       odometer: v.odometer,
       hours: v.engineHours,
       lastService: v.lastService,
@@ -356,6 +359,23 @@ function Page() {
   const [fleetioOpen, setFleetioOpen] = useState(false);
   const [addVehicleOpen, setAddVehicleOpen] = useState(false);
   const [vehicleForm, setVehicleForm] = useState(EMPTY_VEHICLE_FORM);
+  const [submittingVehicle, setSubmittingVehicle] = useState(false);
+  // Search + type filter. Empty `search` and "all" type mean no filter — the
+  // grid renders every vehicle. Search matches case-insensitive against id,
+  // name, assigned driver, and the human-readable status string.
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const needle = search.trim().toLowerCase();
+  const trucks = allTrucks.filter((t) => {
+    if (typeFilter !== "all" && t.rawType !== typeFilter) return false;
+    if (!needle) return true;
+    return (
+      t.id.toLowerCase().includes(needle) ||
+      t.name.toLowerCase().includes(needle) ||
+      t.driver.toLowerCase().includes(needle) ||
+      t.status.toLowerCase().includes(needle)
+    );
+  });
   // Per-card "Add record" dialog: a single dialog shared across cards so we
   // don't mount N dialogs. `addRecordFor` doubles as both the open flag (truthy)
   // and the vehicle id whose record we're about to file.
@@ -382,12 +402,14 @@ function Page() {
   }
 
   // Open the Add Vehicle dialog. setOpen(true) BEFORE seeding so the dialog
-  // appears reliably; seeding the next-id from `trucks` is wrapped in
-  // try/catch in case the list ever fails to load.
+  // appears reliably; seeding the next-id from the unfiltered `allTrucks`
+  // list is wrapped in try/catch in case the list ever fails to load. We
+  // intentionally count off the full fleet, not the filtered grid, so the
+  // suggested id doesn't shift when an admin types in the search box.
   function openAddVehicle() {
     setAddVehicleOpen(true);
     try {
-      const nextNum = trucks.length + 1;
+      const nextNum = allTrucks.length + 1;
       setVehicleForm({
         ...EMPTY_VEHICLE_FORM,
         id: `T-${String(nextNum).padStart(2, "0")}`,
@@ -397,14 +419,42 @@ function Page() {
     }
   }
 
-  function submitVehicle() {
+  async function submitVehicle() {
     if (!vehicleForm.id.trim() || !vehicleForm.name.trim()) {
       toast.error("Vehicle ID and name are required");
       return;
     }
-    toast.success(`${vehicleForm.id} added (mock)`);
-    setAddVehicleOpen(false);
-    setVehicleForm(EMPTY_VEHICLE_FORM);
+    const yearNum = Number(vehicleForm.year);
+    if (!Number.isFinite(yearNum) || yearNum < 1900 || yearNum > 2100) {
+      toast.error("Year must be a valid number");
+      return;
+    }
+    // Narrow the free-form Select string into the domain enum so api.ts
+    // gets the right type. The Select only ever surfaces these three values.
+    const type =
+      vehicleForm.type === "trailer"
+        ? ("trailer" as const)
+        : vehicleForm.type === "equipment"
+          ? ("equipment" as const)
+          : ("truck" as const);
+    setSubmittingVehicle(true);
+    try {
+      const result = await api.createVehicle({
+        id: vehicleForm.id.trim(),
+        name: vehicleForm.name.trim(),
+        type,
+        year: yearNum,
+      });
+      if (!result.ok) {
+        toast.error(`Add vehicle failed: ${result.reason}`);
+        return;
+      }
+      toast.success(`${result.vehicle.id} added`);
+      setAddVehicleOpen(false);
+      setVehicleForm(EMPTY_VEHICLE_FORM);
+    } finally {
+      setSubmittingVehicle(false);
+    }
   }
 
   return (
@@ -412,10 +462,16 @@ function Page() {
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search by ID, name, driver…" className="pl-9" />
+          <Input
+            placeholder="Search by ID, name, driver…"
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid="vehicle-search"
+          />
         </div>
-        <Select>
-          <SelectTrigger className="w-[160px]">
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[160px]" data-testid="vehicle-type-filter">
             <SelectValue placeholder="All types" />
           </SelectTrigger>
           <SelectContent>
@@ -494,8 +550,9 @@ function Page() {
           <DialogHeader>
             <DialogTitle>Add vehicle</DialogTitle>
             <DialogDescription>
-              Register a new truck, trailer, or piece of equipment. Mock-only
-              until the backend is wired.
+              Register a new truck, trailer, or piece of equipment. The vehicle
+              is created immediately — refine plate, VIN, and assignments on
+              the vehicle detail page.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -545,10 +602,14 @@ function Page() {
             </div>
             <Button
               onClick={submitVehicle}
+              disabled={submittingVehicle}
               data-testid="submit-add-vehicle"
               className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
             >
-              Add vehicle
+              {submittingVehicle ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : null}
+              {submittingVehicle ? "Adding…" : "Add vehicle"}
             </Button>
           </div>
         </DialogContent>

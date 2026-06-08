@@ -19,7 +19,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
-import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send, HelpCircle, Loader2, RefreshCw } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Plus,
+  Trash2,
+  Copy,
+  ExternalLink,
+  Send,
+  HelpCircle,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
@@ -294,18 +306,15 @@ function SystemTab() {
   return (
     <Card title="System thresholds">
       <p className="text-xs text-muted-foreground mb-5 max-w-xl">
-        These values drive automated flagging, overtime alerts, and the driver
-        circle-check lockout window. Changes take effect immediately for all
-        admins and drivers.
+        These values drive automated flagging, overtime alerts, and the driver circle-check lockout
+        window. Changes take effect immediately for all admins and drivers.
       </p>
       <div className="space-y-7 max-w-xl">
         {/* GPS tolerance */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <Label>GPS correlation tolerance</Label>
-            <span className="font-mono text-sm tabular-nums">
-              {draft.gpsToleranceMinutes} min
-            </span>
+            <span className="font-mono text-sm tabular-nums">{draft.gpsToleranceMinutes} min</span>
           </div>
           <Slider
             min={5}
@@ -381,8 +390,8 @@ function SystemTab() {
             className="font-mono"
           />
           <p className="text-[11px] text-muted-foreground mt-1.5">
-            Pre-trip inspections finishing faster than this raise an audit flag. Default: 780s
-            (13 min).
+            Pre-trip inspections finishing faster than this raise an audit flag. Default: 780s (13
+            min).
           </p>
         </div>
 
@@ -402,8 +411,8 @@ function SystemTab() {
             className="font-mono"
           />
           <p className="text-[11px] text-muted-foreground mt-1.5">
-            Pre-trip inspections taking longer than this raise an audit flag. Default: 1200s
-            (20 min).
+            Pre-trip inspections taking longer than this raise an audit flag. Default: 1200s (20
+            min).
           </p>
         </div>
       </div>
@@ -544,9 +553,8 @@ function UsersTab() {
           {createdInfo ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                {createdInfo.name} has been created. Send these credentials to
-                them and ask them to rotate the password via the Forgot? link on
-                first sign in.
+                {createdInfo.name} has been created. Send these credentials to them and ask them to
+                rotate the password via the Forgot? link on first sign in.
               </p>
               {createdInfo.warning && (
                 <div
@@ -627,9 +635,7 @@ function UsersTab() {
                 <Label>Role</Label>
                 <Select
                   value={inviteForm.role}
-                  onValueChange={(v) =>
-                    setInviteForm((f) => ({ ...f, role: v as typeof f.role }))
-                  }
+                  onValueChange={(v) => setInviteForm((f) => ({ ...f, role: v as typeof f.role }))}
                 >
                   <SelectTrigger data-testid="invite-role">
                     <SelectValue />
@@ -721,9 +727,7 @@ function UsersTab() {
 //
 // This replaces the previous hardcoded {Geotab connected, Twilio connected,
 // QBO disconnected, Fleetio disconnected} array which was lying to operators.
-type IntegrationStatus = Awaited<
-  ReturnType<typeof api.probeIntegrations>
->["integrations"][number];
+type IntegrationStatus = Awaited<ReturnType<typeof api.probeIntegrations>>["integrations"][number];
 
 function IntegrationsTab() {
   const [data, setData] = useState<IntegrationStatus[] | null>(null);
@@ -731,6 +735,34 @@ function IntegrationsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connectingQbo, setConnectingQbo] = useState(false);
+
+  // Launches the QBO OAuth flow. Calls qbo-oauth-start to mint a state token
+  // + the Intuit authorize URL, stashes the state in sessionStorage (the
+  // callback route reads it back), and navigates the browser away. Intuit
+  // then bounces back to QBO_REDIRECT_URI = origin + /admin/qbo-callback.
+  async function connectQuickBooks() {
+    setConnectingQbo(true);
+    try {
+      const r = await api.startQboOAuth();
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      // sessionStorage clears on tab close — the round-trip to Intuit happens
+      // in the same tab via window.location, so the value survives.
+      window.sessionStorage.setItem("qbo_oauth_state", r.state);
+      window.location.assign(r.authorizeUrl);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `Failed to start QBO OAuth: ${err.message}`
+          : "Failed to start QBO OAuth",
+      );
+    } finally {
+      setConnectingQbo(false);
+    }
+  }
 
   async function runProbe(isRefresh: boolean) {
     if (isRefresh) setRefreshing(true);
@@ -749,10 +781,42 @@ function IntegrationsTab() {
       // SOMETHING and can hit Refresh.
       const now = new Date().toISOString();
       setData([
-        { name: "Twilio", desc: "SMS notifications + driver/mechanic Communications", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
-        { name: "Geotab", desc: "GPS + telematics + timesheet cross-reference", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
-        { name: "QuickBooks Online", desc: "Invoice + payroll sync", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
-        { name: "Fleetio", desc: "One-time vehicle data migration", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
+        {
+          name: "Twilio",
+          desc: "SMS notifications + driver/mechanic Communications",
+          configured: false,
+          reachable: null,
+          rawProbeMsg: "Couldn't reach probe endpoint",
+          lastError: null,
+          checkedAt: now,
+        },
+        {
+          name: "Geotab",
+          desc: "GPS + telematics + timesheet cross-reference",
+          configured: false,
+          reachable: null,
+          rawProbeMsg: "Couldn't reach probe endpoint",
+          lastError: null,
+          checkedAt: now,
+        },
+        {
+          name: "QuickBooks Online",
+          desc: "Invoice + payroll sync",
+          configured: false,
+          reachable: null,
+          rawProbeMsg: "Couldn't reach probe endpoint",
+          lastError: null,
+          checkedAt: now,
+        },
+        {
+          name: "Fleetio",
+          desc: "One-time vehicle data migration",
+          configured: false,
+          reachable: null,
+          rawProbeMsg: "Couldn't reach probe endpoint",
+          lastError: null,
+          checkedAt: now,
+        },
       ]);
     } finally {
       setLoading(false);
@@ -772,8 +836,7 @@ function IntegrationsTab() {
     <div className="space-y-3 max-w-3xl" data-testid="integrations-tab">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Live probes — credentials are checked against each integration's
-          real API. Last refreshed{" "}
+          Live probes — credentials are checked against each integration's real API. Last refreshed{" "}
           {lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : "—"}.
         </p>
         <Button
@@ -815,7 +878,11 @@ function IntegrationsTab() {
           ? { label: "Connected", icon: CheckCircle2, color: "text-success" }
           : isDown
             ? { label: "Probe failed", icon: XCircle, color: "text-danger" }
-            : { label: i.configured ? "Awaiting setup" : "Not configured", icon: HelpCircle, color: "text-muted-foreground" };
+            : {
+                label: i.configured ? "Awaiting setup" : "Not configured",
+                icon: HelpCircle,
+                color: "text-muted-foreground",
+              };
         const BadgeIcon = badge.icon;
         return (
           <div
@@ -844,6 +911,22 @@ function IntegrationsTab() {
               )}
             </div>
             <div className="flex gap-2 shrink-0">
+              {i.name === "QuickBooks Online" && (
+                <Button
+                  size="sm"
+                  onClick={() => void connectQuickBooks()}
+                  disabled={connectingQbo}
+                  data-testid="qbo-connect-button"
+                  className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                >
+                  {connectingQbo ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-3 h-3" />
+                  )}
+                  <span className="ml-1">{isUp ? "Reconnect" : "Connect"}</span>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -859,10 +942,9 @@ function IntegrationsTab() {
       })}
 
       <p className="text-[11px] text-muted-foreground italic mt-4">
-        Integration credentials are set via{" "}
-        <code className="font-mono">supabase secrets set</code> on the CLI —
-        the dashboard cannot edit them. After updating a secret, click
-        Refresh above to re-probe.
+        Integration credentials are set via <code className="font-mono">supabase secrets set</code>{" "}
+        on the CLI — the dashboard cannot edit them. After updating a secret, click Refresh above to
+        re-probe.
       </p>
     </div>
   );
@@ -944,9 +1026,9 @@ function QboMappingTab() {
   return (
     <Card title="QuickBooks employee mapping">
       <p className="text-xs text-muted-foreground mb-4 max-w-2xl">
-        Map each driver to their QuickBooks Online Employee Id so the payroll
-        sync (Timesheets → Export to QuickBooks) can route hours to the right
-        person. Leave the field blank to unmap a driver.
+        Map each driver to their QuickBooks Online Employee Id so the payroll sync (Timesheets →
+        Export to QuickBooks) can route hours to the right person. Leave the field blank to unmap a
+        driver.
       </p>
 
       {loading ? (
@@ -971,9 +1053,7 @@ function QboMappingTab() {
                   return (
                     <tr key={d.id} className="border-t border-border">
                       <td className="px-3 py-2 font-medium">{d.name}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                        {d.id}
-                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{d.id}</td>
                       <td className="px-3 py-2">
                         <Input
                           value={current}
@@ -1170,7 +1250,10 @@ function TokensTab() {
                 <td className="px-3 py-2">
                   <StatusBadge status={state} />
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={url}>
+                <td
+                  className="px-3 py-2 font-mono text-xs text-muted-foreground truncate max-w-[200px]"
+                  title={url}
+                >
                   {url}
                 </td>
                 <td className="px-3 py-2">
@@ -1355,8 +1438,7 @@ function NotificationsTab() {
     setDraft(appSettings.notificationPreferences);
   }, [appSettings]);
 
-  const dirty =
-    JSON.stringify(draft) !== JSON.stringify(appSettings.notificationPreferences);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(appSettings.notificationPreferences);
 
   async function save() {
     if (!dirty) {
@@ -1458,8 +1540,8 @@ function BillingTab() {
             <p className="text-xs text-muted-foreground mt-1">
               {billing.cancelRequestedAt &&
                 `Submitted ${new Date(billing.cancelRequestedAt).toLocaleString()}.`}
-              {billing.cancelReason && ` Reason: ${billing.cancelReason}.`}
-              {" "}Our team will be in touch before the next renewal.
+              {billing.cancelReason && ` Reason: ${billing.cancelReason}.`} Our team will be in
+              touch before the next renewal.
             </p>
           </div>
         </div>
@@ -1530,9 +1612,8 @@ function BillingTab() {
             <DialogTitle>Cancel subscription</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            We&apos;ll process your cancellation and reach out before your next
-            renewal date ({billing.renewalDate ?? "—"}). Tell us why so we can
-            improve.
+            We&apos;ll process your cancellation and reach out before your next renewal date (
+            {billing.renewalDate ?? "—"}). Tell us why so we can improve.
           </p>
           <div className="mt-3">
             <Label htmlFor="cancel-reason">Reason (optional)</Label>
@@ -1545,11 +1626,7 @@ function BillingTab() {
             />
           </div>
           <div className="flex gap-2 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setCancelOpen(false)}
-              className="flex-1"
-            >
+            <Button variant="outline" onClick={() => setCancelOpen(false)} className="flex-1">
               Keep subscription
             </Button>
             <Button

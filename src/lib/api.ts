@@ -65,7 +65,10 @@ export class MaintenanceWorkOrderError extends Error {
 // will throw to callers. Keeps each call site to two lines instead of five.
 function reportApiError(
   errorCode: string,
-  err: { message: string; details?: string | null; hint?: string | null; code?: string | null } | null | undefined,
+  err:
+    | { message: string; details?: string | null; hint?: string | null; code?: string | null }
+    | null
+    | undefined,
   context: Record<string, unknown> = {},
 ): string {
   const message = err?.message ?? "Unknown supabase error";
@@ -195,9 +198,7 @@ export const api = {
   createClient: async (input: Omit<Client, "id">) => {
     const client: Client = { ...input, id: uid("C") };
     if (USE_SUPABASE && supabase) {
-      const { error } = await supabase
-        .from("clients")
-        .insert(domainClientToDb(client));
+      const { error } = await supabase.from("clients").insert(domainClientToDb(client));
       if (error) {
         throw new Error(
           `createClient: ${reportApiError("CREATE_CLIENT", error, { clientId: client.id })}`,
@@ -213,7 +214,8 @@ export const api = {
     const job: Job = { ...input, id: uid("JOB"), createdAt: new Date().toISOString() };
     if (USE_SUPABASE && supabase) {
       const { error } = await supabase.from("jobs").insert(domainJobToDb(job));
-      if (error) throw new Error(`createJob: ${reportApiError("CREATE_JOB", error, { jobId: job.id })}`);
+      if (error)
+        throw new Error(`createJob: ${reportApiError("CREATE_JOB", error, { jobId: job.id })}`);
     } else {
       await wait();
     }
@@ -233,7 +235,8 @@ export const api = {
           ...(patch.durationMin !== undefined && { duration_min: patch.durationMin }),
         })
         .eq("id", id);
-      if (error) throw new Error(`updateJob: ${reportApiError("UPDATE_JOB", error, { jobId: id })}`);
+      if (error)
+        throw new Error(`updateJob: ${reportApiError("UPDATE_JOB", error, { jobId: id })}`);
     } else {
       await wait();
     }
@@ -308,7 +311,12 @@ export const api = {
           idempotency_key: input.idempotencyKey,
         });
       } catch (err) {
-        const e = err as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `submitJobLog: ${reportApiError("SUBMIT_JOB_LOG", e, { jobLogId: log.id, jobId: log.jobId })}`,
         );
@@ -340,7 +348,12 @@ export const api = {
           idempotency_key: input.idempotencyKey,
         });
       } catch (err) {
-        const e = err as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `submitWorkOrder: ${reportApiError("SUBMIT_WORK_ORDER", e, { workOrderId: wo.id })}`,
         );
@@ -357,7 +370,9 @@ export const api = {
     const j = wo ? jobById(wo.jobId) : undefined;
     // Prefer the live client row (post-hydration) over the static mock so a
     // rate_table_id assigned at runtime via api.upsertRateTable is honored.
-    const c = j ? (s.clients.find((x) => x.id === j.clientId) ?? clientById(j.clientId)) : undefined;
+    const c = j
+      ? (s.clients.find((x) => x.id === j.clientId) ?? clientById(j.clientId))
+      : undefined;
     // Resolve the per-tonne rate from the client's rate table. Falls back to
     // the legacy 24/tonne flat rate (with a console.warn) so a missing or
     // unmatched table never blocks approval — but it does surface the gap so
@@ -442,8 +457,8 @@ export const api = {
     s.approveWorkOrder(id, approverId, invoice);
     if (wo && c?.id && wo.dumpSite) {
       // Fire-and-forget so approval UX isn't blocked by ticket bookkeeping.
-      debitTicketForWorkOrder(id, c.id, j?.vehicleId ?? null, wo.dumpSite, approverId).catch((err) =>
-        console.warn("ticket debit failed:", err.message),
+      debitTicketForWorkOrder(id, c.id, j?.vehicleId ?? null, wo.dumpSite, approverId).catch(
+        (err) => console.warn("ticket debit failed:", err.message),
       );
     }
     return invoice;
@@ -655,7 +670,12 @@ export const api = {
           idempotency_key: input.idempotencyKey,
         });
       } catch (err) {
-        const e = err as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `submitToolChecklist: ${reportApiError("SUBMIT_TOOL_CHECKLIST", e, { submissionId: s.id })}`,
         );
@@ -731,10 +751,7 @@ export const api = {
           gps_clock_out_lng: gps?.lng ?? null,
         })
         .eq("id", entryId);
-      if (error)
-        throw new Error(
-          `clockOut: ${reportApiError("CLOCK_OUT", error, { entryId })}`,
-        );
+      if (error) throw new Error(`clockOut: ${reportApiError("CLOCK_OUT", error, { entryId })}`);
     } else {
       await wait();
     }
@@ -757,7 +774,9 @@ export const api = {
     const hi = Math.max(lo, Math.max(minSec, maxSec));
     const submittedAt = input.flagged
       ? nowIso
-      : new Date(now.getTime() - (lo + Math.floor(Math.random() * (hi - lo + 1))) * 1000).toISOString();
+      : new Date(
+          now.getTime() - (lo + Math.floor(Math.random() * (hi - lo + 1))) * 1000,
+        ).toISOString();
     const inspection: VehicleInspection = {
       ...input,
       id: uid("INS"),
@@ -796,7 +815,12 @@ export const api = {
           inspection.id = persistedRow.id;
         }
       } catch (insErr) {
-        const e = insErr as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = insErr as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `submitVehicleInspection: ${reportApiError("SUBMIT_VEHICLE_INSPECTION", e, { inspectionId: inspection.id })}`,
         );
@@ -875,7 +899,12 @@ export const api = {
           idempotency_key: input.idempotencyKey,
         });
       } catch (err) {
-        const e = err as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `submitPurchaseRequest: ${reportApiError("SUBMIT_PURCHASE_REQUEST", e, { purchaseRequestId: pr.id })}`,
         );
@@ -979,9 +1008,7 @@ export const api = {
     const pr = store.purchaseRequests.find((p) => p.id === id);
     if (!pr) throw new Error(`markPurchaseRequestOrdered: PR ${id} not found`);
     if (pr.status !== "approved")
-      throw new Error(
-        `markPurchaseRequestOrdered: PR ${id} is ${pr.status}, must be approved`,
-      );
+      throw new Error(`markPurchaseRequestOrdered: PR ${id} is ${pr.status}, must be approved`);
 
     // Best-effort grab of the calling user id for the audit trail. When
     // running on mocks we fall back to the approver so the row still has a
@@ -1105,7 +1132,9 @@ export const api = {
     return {
       lat: coords.lat + jitter,
       lng: coords.lng - jitter,
-      capturedAt: new Date(Date.now() - 60_000 - (vehicleId.charCodeAt(0) % 5) * 60_000).toISOString(),
+      capturedAt: new Date(
+        Date.now() - 60_000 - (vehicleId.charCodeAt(0) % 5) * 60_000,
+      ).toISOString(),
     };
   },
   fetchGeotabTelematics: async (vehicleId: string) => {
@@ -1273,26 +1302,27 @@ export const api = {
       // caller passed land on the row — passing `undefined` would have
       // Supabase null-stamp the column. Typed against the generated
       // table-Update shape so excess-properties checks stay strict.
-      const update: import("./database.types").Database["public"]["Tables"]["maintenance_work_orders"]["Update"] = {
-        ...(patch.status !== undefined && { status: patch.status }),
-        ...(patch.assignedMechanicId !== undefined && {
-          assigned_mechanic_id: patch.assignedMechanicId,
-        }),
-        ...(patch.claimedAt !== undefined && { claimed_at: patch.claimedAt }),
-        ...(patch.startedAt !== undefined && { started_at: patch.startedAt }),
-        ...(patch.completedAt !== undefined && { completed_at: patch.completedAt }),
-        ...(patch.laborHours !== undefined && { labor_hours: patch.laborHours }),
-        ...(patch.laborNotes !== undefined && { labor_notes: patch.laborNotes }),
-        ...(patch.partsUsed !== undefined && {
-          parts_used: JSON.parse(
-            JSON.stringify(patch.partsUsed),
-          ) as import("./database.types").Json,
-        }),
-        ...(patch.finalCost !== undefined && { final_cost: patch.finalCost }),
-        ...(patch.completionNotes !== undefined && {
-          completion_notes: patch.completionNotes,
-        }),
-      };
+      const update: import("./database.types").Database["public"]["Tables"]["maintenance_work_orders"]["Update"] =
+        {
+          ...(patch.status !== undefined && { status: patch.status }),
+          ...(patch.assignedMechanicId !== undefined && {
+            assigned_mechanic_id: patch.assignedMechanicId,
+          }),
+          ...(patch.claimedAt !== undefined && { claimed_at: patch.claimedAt }),
+          ...(patch.startedAt !== undefined && { started_at: patch.startedAt }),
+          ...(patch.completedAt !== undefined && { completed_at: patch.completedAt }),
+          ...(patch.laborHours !== undefined && { labor_hours: patch.laborHours }),
+          ...(patch.laborNotes !== undefined && { labor_notes: patch.laborNotes }),
+          ...(patch.partsUsed !== undefined && {
+            parts_used: JSON.parse(
+              JSON.stringify(patch.partsUsed),
+            ) as import("./database.types").Json,
+          }),
+          ...(patch.finalCost !== undefined && { final_cost: patch.finalCost }),
+          ...(patch.completionNotes !== undefined && {
+            completion_notes: patch.completionNotes,
+          }),
+        };
       // Releasing back to the queue: the mechanic explicitly nulls
       // assigned_mechanic_id. The `.eq(mechanicId)` guard on the WHERE
       // would otherwise still apply because the row STILL belongs to them
@@ -1328,14 +1358,9 @@ export const api = {
           .eq("id", id)
           .maybeSingle();
         if (probe) {
-          throw new MaintenanceWorkOrderError(
-            "reassigned",
-            "Work order was reassigned",
-          );
+          throw new MaintenanceWorkOrderError("reassigned", "Work order was reassigned");
         }
-        throw new Error(
-          "updateMaintenanceWorkOrder: row not found or not owned by mechanic",
-        );
+        throw new Error("updateMaintenanceWorkOrder: row not found or not owned by mechanic");
       }
       getStore().upsertMaintenanceWorkOrder(dbMaintenanceWorkOrderToDomain(data));
       return { ok: true as const };
@@ -1430,10 +1455,7 @@ export const api = {
       );
     }
     if (existing.assignedMechanicId !== mechanicId) {
-      throw new MaintenanceWorkOrderError(
-        "release-failed",
-        "not your work order to release",
-      );
+      throw new MaintenanceWorkOrderError("release-failed", "not your work order to release");
     }
     if (existing.status !== "claimed" && existing.status !== "in_progress") {
       throw new MaintenanceWorkOrderError(
@@ -1513,7 +1535,12 @@ export const api = {
         if (p.created_at) wo.createdAt = p.created_at;
         if (p.updated_at) wo.updatedAt = p.updated_at;
       } catch (err) {
-        const e = err as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `createMaintenanceWorkOrder: ${reportApiError("CREATE_MAINTENANCE_WO", e, { id: wo.id, vehicleId: wo.vehicleId })}`,
         );
@@ -1595,17 +1622,15 @@ export const api = {
       } catch {
         mappedBy = null;
       }
-      const { error } = await supabase
-        .from("qbo_employee_mappings")
-        .upsert(
-          {
-            driver_id: driverId,
-            qbo_employee_id: trimmed,
-            mapped_by: mappedBy,
-            mapped_at: new Date().toISOString(),
-          },
-          { onConflict: "driver_id" },
-        );
+      const { error } = await supabase.from("qbo_employee_mappings").upsert(
+        {
+          driver_id: driverId,
+          qbo_employee_id: trimmed,
+          mapped_by: mappedBy,
+          mapped_at: new Date().toISOString(),
+        },
+        { onConflict: "driver_id" },
+      );
       if (error)
         throw new Error(
           `upsertQboEmployeeMapping: ${reportApiError("UPSERT_QBO_EMPLOYEE_MAPPING", error, { driverId })}`,
@@ -1892,7 +1917,8 @@ export const api = {
           address: next.address,
           timezone: next.timezone,
           currency: next.currency,
-          notification_preferences: next.notificationPreferences as unknown as import("./database.types").Json,
+          notification_preferences:
+            next.notificationPreferences as unknown as import("./database.types").Json,
           updated_at: next.updatedAt,
         })
         .eq("id", "default");
@@ -1938,9 +1964,7 @@ export const api = {
   getMyNotificationPreferences: async (): Promise<
     import("@/types/domain").UserNotificationPreferences
   > => {
-    const { DEFAULT_USER_NOTIFICATION_PREFERENCES } = await import(
-      "@/types/domain"
-    );
+    const { DEFAULT_USER_NOTIFICATION_PREFERENCES } = await import("@/types/domain");
     if (!USE_SUPABASE || !supabase) return DEFAULT_USER_NOTIFICATION_PREFERENCES;
     const { data: authData } = await supabase.auth.getUser();
     const uid = authData.user?.id;
@@ -1978,6 +2002,33 @@ export const api = {
       return { ok: false, reason: error.message };
     }
     return { ok: true };
+  },
+
+  // ---- Notifications: mark-as-read --------------------------------------
+  // Flips read_at = now() for every unread notification owned by the given
+  // user. Called when the user opens the bell so the badge clears and rows
+  // lose their unread treatment. RLS policy `notifications_self_update`
+  // already restricts the UPDATE to user_id = auth.uid(); we still narrow
+  // by userId client-side so admins reviewing the dropdown don't accidentally
+  // clear someone else's row when their session is open. Idempotent — only
+  // touches rows where read_at IS NULL.
+  markAllNotificationsRead: async (userId: string): Promise<{ ok: true; readAt: string }> => {
+    const readAt = new Date().toISOString();
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ read_at: readAt })
+        .eq("user_id", userId)
+        .is("read_at", null);
+      if (error)
+        throw new Error(
+          `markAllNotificationsRead: ${reportApiError("MARK_NOTIFICATIONS_READ", error, { userId })}`,
+        );
+    } else {
+      await wait(50);
+    }
+    getStore().markAllNotificationsRead(userId, readAt);
+    return { ok: true as const, readAt };
   },
 
   // ---- Support tickets ---------------------------------------------------
@@ -2048,7 +2099,10 @@ export const api = {
     if (error) {
       return {
         ok: false,
-        reason: reportApiError("ADMIN_CREATE_USER", error, { email: input.email, role: input.role }),
+        reason: reportApiError("ADMIN_CREATE_USER", error, {
+          email: input.email,
+          role: input.role,
+        }),
       };
     }
     if (!data || !data.ok || !data.userId || !data.tempPassword) {
@@ -2060,6 +2114,67 @@ export const api = {
       tempPassword: data.tempPassword,
       ...(data.warning ? { warning: data.warning } : {}),
     };
+  },
+
+  // ---- Vehicles ----------------------------------------------------------
+  // Admin-only path for adding a vehicle from the /admin/vehicles grid. The
+  // Add-vehicle dialog only collects the four required-NOT-NULL columns on
+  // public.vehicles (id, name, type, year) plus we synthesise placeholder
+  // plate + vin so the NOT NULL constraints don't blow up; admins refine
+  // those on the vehicle detail page. Mirrors the createUser shape: mock-mode
+  // branch, structured { ok, reason } returns so the dialog can surface the
+  // failure inline rather than crashing on a thrown error.
+  createVehicle: async (input: {
+    id: string;
+    name: string;
+    type: "truck" | "trailer" | "equipment";
+    year: number;
+  }): Promise<
+    { ok: true; vehicle: import("@/types/domain").Vehicle } | { ok: false; reason: string }
+  > => {
+    // Build the domain object first so both code paths return the same shape
+    // for the local-store upsert at the end.
+    const vehicle: import("@/types/domain").Vehicle = {
+      id: input.id,
+      name: input.name,
+      plate: "",
+      year: input.year,
+      type: input.type,
+      vin: "",
+      odometer: 0,
+      engineHours: 0,
+      lastService: "",
+      nextServiceDue: "",
+      driverId: null,
+      geotabDeviceId: null,
+      status: "operational",
+    };
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      getStore().upsertVehicle(vehicle);
+      return { ok: true, vehicle };
+    }
+    const { error } = await supabase.from("vehicles").insert({
+      id: vehicle.id,
+      name: vehicle.name,
+      plate: vehicle.plate,
+      year: vehicle.year,
+      type: vehicle.type,
+      vin: vehicle.vin,
+      odometer: vehicle.odometer,
+      engine_hours: vehicle.engineHours,
+      status: vehicle.status,
+      driver_id: vehicle.driverId,
+      geotab_device_id: vehicle.geotabDeviceId,
+    });
+    if (error) {
+      return {
+        ok: false,
+        reason: reportApiError("CREATE_VEHICLE", error, { vehicleId: vehicle.id }),
+      };
+    }
+    getStore().upsertVehicle(vehicle);
+    return { ok: true, vehicle };
   },
 
   // ---- Integrations health probe -----------------------------------------
@@ -2143,6 +2258,93 @@ export const api = {
       };
     }
     return data;
+  },
+
+  // ---- QBO OAuth onboarding ----------------------------------------------
+  // Two-step authorization-code flow:
+  //   1. startQboOAuth() asks the qbo-oauth-start edge function for the
+  //      Intuit authorize URL + a random `state` token. Caller stashes
+  //      state in sessionStorage and window.location.assign(authorizeUrl).
+  //   2. After the admin grants access, Intuit redirects to QBO_REDIRECT_URI
+  //      (the /admin/settings/qbo-callback route) with ?code, ?realmId, ?state
+  //      in the URL. The route calls completeQboOAuth() which hands the code
+  //      + state + the sessionStorage value to qbo-oauth-callback, which
+  //      exchanges for refresh_token and persists.
+  startQboOAuth: async (): Promise<
+    | { ok: true; authorizeUrl: string; state: string; redirectUri: string }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      return { ok: false, reason: "Set VITE_USE_SUPABASE=true to run OAuth" };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      authorizeUrl?: string;
+      state?: string;
+      redirectUri?: string;
+      error?: string;
+    }>("qbo-oauth-start", { body: {} });
+    if (error) return { ok: false, reason: error.message };
+    if (!data) return { ok: false, reason: "Empty response from qbo-oauth-start" };
+    if (data.error) return { ok: false, reason: data.error };
+    if (!data.authorizeUrl || !data.state || !data.redirectUri) {
+      return { ok: false, reason: "Malformed response from qbo-oauth-start" };
+    }
+    return {
+      ok: true,
+      authorizeUrl: data.authorizeUrl,
+      state: data.state,
+      redirectUri: data.redirectUri,
+    };
+  },
+  completeQboOAuth: async (input: {
+    code: string;
+    realmId: string;
+    state: string;
+    expectedState: string;
+  }): Promise<
+    | {
+        ok: true;
+        realmId: string;
+        env: string;
+        refreshedSelfTest: boolean;
+        selfTestMsg: string | null;
+      }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      return { ok: false, reason: "Set VITE_USE_SUPABASE=true to run OAuth" };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok?: boolean;
+      realmId?: string;
+      env?: string;
+      refreshedSelfTest?: boolean;
+      selfTestMsg?: string | null;
+      error?: string;
+      step?: string;
+      intuitError?: string;
+      intuitStatus?: number;
+      hint?: string;
+    }>("qbo-oauth-callback", { body: input });
+    if (error) return { ok: false, reason: error.message };
+    if (!data) return { ok: false, reason: "Empty response from qbo-oauth-callback" };
+    if (data.ok !== true) {
+      const parts = [
+        data.error ?? "qbo-oauth-callback returned ok=false",
+        data.step ? `(step: ${data.step})` : "",
+        data.intuitStatus ? `Intuit HTTP ${data.intuitStatus}` : "",
+        data.intuitError ? data.intuitError : "",
+        data.hint ?? "",
+      ].filter(Boolean);
+      return { ok: false, reason: parts.join(" — ") };
+    }
+    return {
+      ok: true,
+      realmId: data.realmId ?? input.realmId,
+      env: data.env ?? "sandbox",
+      refreshedSelfTest: data.refreshedSelfTest === true,
+      selfTestMsg: data.selfTestMsg ?? null,
+    };
   },
 
   // ---- Profile / user phone management -----------------------------------
@@ -2342,8 +2544,7 @@ export const api = {
       p_conversation_id: input.conversationId,
       ...(input.adminIds ? { p_admin_ids: input.adminIds } : {}),
     });
-    if (error)
-      throw new Error(`tagAdmins: ${reportApiError("TAG_ADMINS", error, input)}`);
+    if (error) throw new Error(`tagAdmins: ${reportApiError("TAG_ADMINS", error, input)}`);
     const rows = (data ?? []) as Row<"conversation_participants">[];
     const { dbConversationParticipantToDomain } = await import("./db-mappers");
     const cps = rows.map(dbConversationParticipantToDomain);
@@ -2373,7 +2574,9 @@ export const api = {
       p_conversation_id: conversationId,
     });
     if (error)
-      throw new Error(`joinConversation: ${reportApiError("JOIN_CONVERSATION", error, { conversationId })}`);
+      throw new Error(
+        `joinConversation: ${reportApiError("JOIN_CONVERSATION", error, { conversationId })}`,
+      );
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error("joinConversation: empty response");
     const { dbConversationParticipantToDomain } = await import("./db-mappers");
@@ -2391,7 +2594,9 @@ export const api = {
       p_conversation_id: conversationId,
     });
     if (error)
-      throw new Error(`leaveConversation: ${reportApiError("LEAVE_CONVERSATION", error, { conversationId })}`);
+      throw new Error(
+        `leaveConversation: ${reportApiError("LEAVE_CONVERSATION", error, { conversationId })}`,
+      );
   },
 
   markConversationRead: async (conversationId: string): Promise<void> => {
@@ -2400,7 +2605,9 @@ export const api = {
       p_conversation_id: conversationId,
     });
     if (error)
-      throw new Error(`markConversationRead: ${reportApiError("MARK_CONVERSATION_READ", error, { conversationId })}`);
+      throw new Error(
+        `markConversationRead: ${reportApiError("MARK_CONVERSATION_READ", error, { conversationId })}`,
+      );
   },
 
   closeConversation: async (
@@ -2420,7 +2627,9 @@ export const api = {
       p_resolution_notes: resolutionNotes,
     });
     if (error)
-      throw new Error(`closeConversation: ${reportApiError("CLOSE_CONVERSATION", error, { conversationId })}`);
+      throw new Error(
+        `closeConversation: ${reportApiError("CLOSE_CONVERSATION", error, { conversationId })}`,
+      );
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error("closeConversation: empty response");
     const { dbConversationToDomain } = await import("./db-mappers");
@@ -2444,19 +2653,22 @@ export const api = {
     const { data: authData } = await supabase.auth.getUser();
     const uploaderId = authData.user?.id ?? "anon";
     const path = `${input.conversationId}/${uploaderId}-${Date.now()}-${input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const { error } = await supabase.storage
-      .from("message-attachments")
-      .upload(path, input.file, {
-        contentType: input.file.type || "application/octet-stream",
-        upsert: false,
-      });
+    const { error } = await supabase.storage.from("message-attachments").upload(path, input.file, {
+      contentType: input.file.type || "application/octet-stream",
+      upsert: false,
+    });
     if (error)
-      throw new Error(`uploadMessageAttachment: ${reportApiError("UPLOAD_MESSAGE_ATTACHMENT", error, { conversationId: input.conversationId })}`);
+      throw new Error(
+        `uploadMessageAttachment: ${reportApiError("UPLOAD_MESSAGE_ATTACHMENT", error, { conversationId: input.conversationId })}`,
+      );
     return path;
   },
 
   // Mints a fresh signed URL for an attachment path. Default 1-hour TTL.
-  signMessageAttachment: async (path: string, ttlSeconds: number = 3600): Promise<string | null> => {
+  signMessageAttachment: async (
+    path: string,
+    ttlSeconds: number = 3600,
+  ): Promise<string | null> => {
     if (!USE_SUPABASE || !supabase) return path; // mock path is already a URL-shaped string
     if (path.startsWith("http") || path.startsWith("data:")) return path;
     const { data, error } = await supabase.storage
@@ -2482,7 +2694,9 @@ export const api = {
     if (opts.before) q = q.lt("created_at", opts.before);
     const { data, error } = await q;
     if (error)
-      throw new Error(`fetchConversationMessages: ${reportApiError("FETCH_CONVERSATION_MESSAGES", error, { conversationId })}`);
+      throw new Error(
+        `fetchConversationMessages: ${reportApiError("FETCH_CONVERSATION_MESSAGES", error, { conversationId })}`,
+      );
     const { dbMessageToDomain } = await import("./db-mappers");
     return (data ?? []).map((r) => dbMessageToDomain(r as Row<"messages">));
   },
@@ -2513,10 +2727,7 @@ export const api = {
   },
 
   // ---- Prepaid dump tickets ---------------------------------------------
-  updateClientTicketSettings: async (
-    clientId: string,
-    patch: Partial<ClientTicketSettings>,
-  ) => {
+  updateClientTicketSettings: async (clientId: string, patch: Partial<ClientTicketSettings>) => {
     if (USE_SUPABASE && supabase) {
       const { error } = await supabase
         .from("clients")
@@ -2755,7 +2966,12 @@ export const api = {
         if (r.photo_url) persistedPath = r.photo_url;
         if (r.uploaded_at) persistedUploadedAt = r.uploaded_at;
       } catch (insErr) {
-        const e = insErr as { message: string; details?: string | null; hint?: string | null; code?: string | null };
+        const e = insErr as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
         throw new Error(
           `uploadTicketPhoto.insert: ${reportApiError("UPLOAD_TICKET_PHOTO_INSERT", e, { id })}`,
         );
@@ -3005,6 +3221,45 @@ export const api = {
     return { ok: true };
   },
 
+  // Admin "Mark resolved" action from /admin/errors → Errors tab. Stamps
+  // public.error_log with resolved_at = now(), resolved_by = auth.uid(), and
+  // optional notes. Returns { ok: false, reason } instead of throwing so the
+  // route can surface a precise toast.
+  resolveError: async (
+    errorId: string,
+    notes?: string | null,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      return { ok: false, reason: "supabase unavailable" };
+    }
+    try {
+      let userId: string | null = null;
+      try {
+        const { data } = await supabase.auth.getUser();
+        userId = data.user?.id ?? null;
+      } catch {
+        userId = null;
+      }
+      const { error } = await supabase
+        .from("error_log")
+        .update({
+          resolved_at: new Date().toISOString(),
+          resolved_by: userId,
+          resolution_notes: notes ?? null,
+        })
+        .eq("id", errorId);
+      if (error) {
+        reportApiError("RESOLVE_ERROR", error, { errorId });
+        return { ok: false, reason: error.message };
+      }
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      reportApiError("RESOLVE_ERROR", { message: msg }, { errorId });
+      return { ok: false, reason: msg };
+    }
+  },
+
   // Admin "Requeue" action from /admin/errors → Dead-letter queue tab.
   // Reads the dead-lettered row, drops it back into the localStorage offline
   // queue with retryCount=0, and deletes the DLQ row. The next online flush
@@ -3122,8 +3377,7 @@ function resolveLineItemRate(
   const needle = loadType.trim().toLowerCase();
   if (!needle) return null;
   const isDescriptionMatch = (li: RateLineItem) =>
-    li.description.toLowerCase().includes(needle) ||
-    needle.includes(li.description.toLowerCase());
+    li.description.toLowerCase().includes(needle) || needle.includes(li.description.toLowerCase());
   // Try the preferred unit first (e.g. 'tonne' for a weight-based WO), then
   // fall back through load -> flat -> hour. A client rate sheet that only
   // lists 'load' or 'flat' pricing for this load type still resolves so the
@@ -3200,8 +3454,7 @@ async function debitTicketForWorkOrder(
 
   // Threshold check: if we just crossed, auto-replenish (or alert only)
   const crossed =
-    client.tickets.balance > client.tickets.threshold &&
-    newBalance <= client.tickets.threshold;
+    client.tickets.balance > client.tickets.threshold && newBalance <= client.tickets.threshold;
   if (crossed && client.tickets.autoBillEnabled) {
     await api.topUpTickets(clientId, client.tickets.bundleSize, actorId);
     const note: Notification = {

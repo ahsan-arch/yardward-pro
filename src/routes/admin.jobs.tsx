@@ -44,7 +44,15 @@ function Page() {
   const rows = jobs.map((j) => ({ ...jobDisplay(j), rawStatus: j.status }));
   type Row = (typeof rows)[number];
   const [sort, setSort] = useState<{ k: keyof Row; dir: 1 | -1 }>({ k: "id", dir: 1 });
-  const sorted = [...rows].sort(
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter((r) =>
+        [r.id, r.client, r.location, r.driver]
+          .some((v) => String(v ?? "").toLowerCase().includes(q)),
+      )
+    : rows;
+  const sorted = [...filtered].sort(
     (a, b) => (((a[sort.k] ?? "") as any) > ((b[sort.k] ?? "") as any) ? 1 : -1) * sort.dir,
   );
   const toggle = (k: any) => setSort((s) => ({ k, dir: s.k === k ? (s.dir === 1 ? -1 : 1) : 1 }));
@@ -122,7 +130,13 @@ function Page() {
   return (
     <AdminShell title="Jobs">
       <div className="flex gap-2 mb-4">
-        <Input placeholder="Search jobs…" className="max-w-sm" />
+        <Input
+          placeholder="Search jobs…"
+          className="max-w-sm"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          data-testid="jobs-search"
+        />
         <Button
           onClick={openNewJob}
           data-testid="open-new-job"

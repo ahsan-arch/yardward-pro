@@ -44,6 +44,7 @@ import { Route as AdminSmsLogRouteImport } from './routes/admin.sms-log'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
+import { Route as AdminQboCallbackRouteImport } from './routes/admin.qbo-callback'
 import { Route as AdminPurchaseRequestsRouteImport } from './routes/admin.purchase-requests'
 import { Route as AdminPrepaidTicketsRouteImport } from './routes/admin.prepaid-tickets'
 import { Route as AdminMapRouteImport } from './routes/admin.map'
@@ -234,6 +235,11 @@ const AdminReportsRoute = AdminReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminQboCallbackRoute = AdminQboCallbackRouteImport.update({
+  id: '/qbo-callback',
+  path: '/qbo-callback',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPurchaseRequestsRoute = AdminPurchaseRequestsRouteImport.update({
   id: '/purchase-requests',
   path: '/purchase-requests',
@@ -312,6 +318,7 @@ export interface FileRoutesByFullPath {
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
+  '/admin/qbo-callback': typeof AdminQboCallbackRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -358,6 +365,7 @@ export interface FileRoutesByTo {
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
+  '/admin/qbo-callback': typeof AdminQboCallbackRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -408,6 +416,7 @@ export interface FileRoutesById {
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
+  '/admin/qbo-callback': typeof AdminQboCallbackRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -459,6 +468,7 @@ export interface FileRouteTypes {
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
+    | '/admin/qbo-callback'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -505,6 +515,7 @@ export interface FileRouteTypes {
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
+    | '/admin/qbo-callback'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -554,6 +565,7 @@ export interface FileRouteTypes {
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
+    | '/admin/qbo-callback'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -846,6 +858,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReportsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/qbo-callback': {
+      id: '/admin/qbo-callback'
+      path: '/qbo-callback'
+      fullPath: '/admin/qbo-callback'
+      preLoaderRoute: typeof AdminQboCallbackRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/purchase-requests': {
       id: '/admin/purchase-requests'
       path: '/purchase-requests'
@@ -943,6 +962,7 @@ interface AdminRouteChildren {
   AdminMapRoute: typeof AdminMapRoute
   AdminPrepaidTicketsRoute: typeof AdminPrepaidTicketsRoute
   AdminPurchaseRequestsRoute: typeof AdminPurchaseRequestsRoute
+  AdminQboCallbackRoute: typeof AdminQboCallbackRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
@@ -967,6 +987,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminMapRoute: AdminMapRoute,
   AdminPrepaidTicketsRoute: AdminPrepaidTicketsRoute,
   AdminPurchaseRequestsRoute: AdminPurchaseRequestsRoute,
+  AdminQboCallbackRoute: AdminQboCallbackRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
   AdminSettingsRoute: AdminSettingsRoute,

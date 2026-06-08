@@ -93,10 +93,6 @@ const sourceLabel: Record<string, string> = {
   driver_app: "Driver app",
 };
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
 // Mock error_log rows used when Supabase isn't wired up. Kept small but
 // covers a couple of severities + sources so the filters have something
 // meaningful to operate on.
@@ -291,8 +287,9 @@ function ErrorsTab() {
   const load = useCallback(async () => {
     if (!USE_SUPABASE || !supabase) {
       // Mock-mode rows so admins (and e2e) can exercise the resolve flow
-      // without a live Supabase. These get re-filtered by the same
-      // search / source / severity controls as real rows would.
+      // without a live Supabase. Filters are applied client-side in the
+      // filteredRows useMemo below, so mock and real rows funnel through
+      // the same predicate set.
       setRows(MOCK_ERROR_ROWS);
       return;
     }
@@ -300,9 +297,6 @@ function ErrorsTab() {
     const sb = supabase as unknown as {
       from: (t: string) => {
         select: (columns: string) => {
-          ilike: (col: string, val: string) => any;
-          eq: (col: string, val: string) => any;
-          is: (col: string, val: unknown) => any;
           order: (col: string, opts: { ascending: boolean }) => any;
         };
       };
@@ -311,16 +305,13 @@ function ErrorsTab() {
     // Always query the error_log table directly. The unresolved_errors view
     // does not carry FK metadata, so the profiles embed below would fail with
     // "Could not find a relationship between unresolved_errors and profiles".
-    let query: any = sb
+    // Filtering happens client-side (see filteredRows) so the search box and
+    // source/severity selectors stay responsive without a round trip per
+    // keystroke, and mock-mode behaves identically.
+    const query: any = sb
       .from("error_log")
-      .select("*, profiles!error_log_user_id_fkey(name, email)");
-
-    if (!showResolved) query = query.is("resolved_at", null);
-    if (search.trim()) query = query.ilike("message", `%${search.trim()}%`);
-    if (source !== "all") query = query.eq("source", source);
-    if (severity !== "all") query = query.eq("severity", severity);
-
-    query = query.order("created_at", { ascending: false });
+      .select("*, profiles!error_log_user_id_fkey(name, email)")
+      .order("created_at", { ascending: false });
 
     const { data, error } = await query;
     if (error) {
@@ -330,7 +321,7 @@ function ErrorsTab() {
       setRows((data ?? []) as ErrorRow[]);
     }
     setLoading(false);
-  }, [search, source, severity, showResolved]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -344,6 +335,27 @@ function ErrorsTab() {
   useEffect(() => {
     setResolutionNotes(current?.resolution_notes ?? "");
   }, [current?.id, current?.resolution_notes]);
+
+  // Client-side filter pipeline. Runs against whatever rows the loader pulled
+  // (mock fixtures or live Supabase). Keeps mock-mode and real-mode behaviour
+  // identical, and makes the search box / selectors / show-resolved toggle
+  // feel instantaneous instead of waiting on a refetch per keystroke.
+  const filteredRows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (!showResolved && r.resolved_at) return false;
+      if (source !== "all" && r.source !== source) return false;
+      if (severity !== "all" && r.severity !== severity) return false;
+      if (needle) {
+        const hay =
+          (r.message ?? "").toLowerCase() +
+          " " +
+          (r.error_code ?? "").toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [rows, search, source, severity, showResolved]);
 
   const stats = useMemo(() => {
     const unresolved = rows.filter((r) => !r.resolved_at).length;
@@ -370,23 +382,9 @@ function ErrorsTab() {
     }
     setSubmitting(true);
     try {
-      const sb = supabase as unknown as {
-        from: (t: string) => {
-          update: (vals: Record<string, unknown>) => {
-            eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>;
-          };
-        };
-      };
-      const { error } = await sb
-        .from("error_log")
-        .update({
-          resolved_at: nowIso(),
-          resolved_by: user.id,
-          resolution_notes: resolutionNotes || null,
-        })
-        .eq("id", id);
-      if (error) {
-        toast.error(`Could not resolve: ${error.message}`);
+      const result = await api.resolveError(id, resolutionNotes || null);
+      if (!result.ok) {
+        toast.error(`Could not resolve: ${result.reason}`);
         return;
       }
       // Real-write success path: toast unconditionally before refreshing
@@ -489,7 +487,7 @@ function ErrorsTab() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {filteredRows.map((r) => {
               const isResolved = !!r.resolved_at;
               const profileName = r.profiles?.name ?? r.profiles?.email ?? "—";
               return (
@@ -548,7 +546,7 @@ function ErrorsTab() {
                 </tr>
               );
             })}
-            {rows.length === 0 && (
+            {filteredRows.length === 0 && (
               <tr>
                 <td
                   colSpan={8}

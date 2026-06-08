@@ -1,16 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Bell, CheckCircle2, AlertTriangle, Briefcase, Settings } from "lucide-react";
 
 export function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
-  const { notifications } = useData();
+  const { notifications, markAllNotificationsRead } = useData();
   const mine = notifications.filter((n) => n.userId === user.id);
   const unread = mine.filter((n) => !n.readAt).length;
+
+  // When the user opens the bell, optimistically clear the unread state for
+  // every notification of theirs and persist the read_at stamp to Supabase.
+  // We fire only when `open` transitions to true AND there's actually unread
+  // work to do, so closing/reopening an empty inbox doesn't spam the network.
+  // Optimistic local update mirrors the same readAt the API will write so the
+  // badge + row treatments clear immediately without waiting on realtime.
+  useEffect(() => {
+    if (!open || unread === 0) return;
+    const readAt = new Date().toISOString();
+    markAllNotificationsRead(user.id, readAt);
+    void api.markAllNotificationsRead(user.id).catch(() => {
+      // Swallow the error here — the realtime subscription will reconcile
+      // the local state with whatever truly persisted. We deliberately do
+      // not surface a toast: viewing the bell is implicit, not user-initiated
+      // mutation, so a transient network failure should be silent.
+    });
+  }, [open, unread, user.id, markAllNotificationsRead]);
 
   const iconFor = (t: string) => {
     if (t === "approval") return CheckCircle2;

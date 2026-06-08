@@ -4,6 +4,7 @@ import { useData } from "@/contexts/DataContext";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -119,11 +120,18 @@ function Page() {
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
+            <DialogTitle className="flex items-center justify-between gap-2 pr-10">
               <span>{activeCard?.title ?? "Report"}</span>
-              <Button variant="outline" size="sm" onClick={() => setActive(null)}>
-                Close
-              </Button>
+              <DialogClose asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="close-report"
+                  onClick={() => setActive(null)}
+                >
+                  Close
+                </Button>
+              </DialogClose>
             </DialogTitle>
           </DialogHeader>
           {active && <ReportBody report={active} />}
