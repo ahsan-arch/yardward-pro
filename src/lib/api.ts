@@ -2062,6 +2062,89 @@ export const api = {
     };
   },
 
+  // ---- Integrations health probe -----------------------------------------
+  // Hits the integrations-probe edge function which runs a live auth-handshake
+  // probe against each external integration (Twilio, Geotab, QBO, Fleetio)
+  // and returns structured status. Used by /admin/settings → Integrations to
+  // render real status badges instead of the hardcoded mock data that used
+  // to live in that component.
+  //
+  // Mock mode (USE_SUPABASE=false): returns a static "probed but not really"
+  // payload so the dev experience is still meaningful — the badge subtitle
+  // says "Mock mode" and reachable=null so the badge renders gray.
+  probeIntegrations: async (): Promise<{
+    ok: boolean;
+    integrations: Array<{
+      name: string;
+      desc: string;
+      configured: boolean;
+      reachable: boolean | null;
+      rawProbeMsg: string;
+      lastError: string | null;
+      checkedAt: string;
+    }>;
+    checkedAt: string;
+  }> => {
+    if (!USE_SUPABASE || !supabase) {
+      const now = new Date().toISOString();
+      const mock = (name: string, desc: string) => ({
+        name,
+        desc,
+        configured: false,
+        reachable: null,
+        rawProbeMsg: "Mock mode — probe skipped (set VITE_USE_SUPABASE=true)",
+        lastError: null,
+        checkedAt: now,
+      });
+      return {
+        ok: true,
+        checkedAt: now,
+        integrations: [
+          mock("Twilio", "SMS notifications + driver/mechanic Communications"),
+          mock("Geotab", "GPS + telematics + timesheet cross-reference"),
+          mock("QuickBooks Online", "Invoice + payroll sync"),
+          mock("Fleetio", "One-time vehicle data migration"),
+        ],
+      };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      integrations: Array<{
+        name: string;
+        desc: string;
+        configured: boolean;
+        reachable: boolean | null;
+        rawProbeMsg: string;
+        lastError: string | null;
+        checkedAt: string;
+      }>;
+      checkedAt: string;
+    }>("integrations-probe", { body: {} });
+    if (error || !data) {
+      const now = new Date().toISOString();
+      const fail = (name: string, desc: string) => ({
+        name,
+        desc,
+        configured: false,
+        reachable: false,
+        rawProbeMsg: `Probe call failed: ${error?.message ?? "no response"}`,
+        lastError: null,
+        checkedAt: now,
+      });
+      return {
+        ok: false,
+        checkedAt: now,
+        integrations: [
+          fail("Twilio", "SMS notifications + driver/mechanic Communications"),
+          fail("Geotab", "GPS + telematics + timesheet cross-reference"),
+          fail("QuickBooks Online", "Invoice + payroll sync"),
+          fail("Fleetio", "One-time vehicle data migration"),
+        ],
+      };
+    }
+    return data;
+  },
+
   // ---- Profile / user phone management -----------------------------------
   // Admin-only path for updating someone else's profile.phone. Drivers can
   // also update their own (RLS profiles_self_update allows it). Used by the

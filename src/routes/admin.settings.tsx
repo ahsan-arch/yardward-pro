@@ -19,7 +19,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
-import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Plus, Trash2, Copy, ExternalLink, Send, HelpCircle, Loader2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
 import { toast } from "sonner";
@@ -706,99 +707,163 @@ function UsersTab() {
   );
 }
 
+// Renders the live state of each external integration. Calls
+// api.probeIntegrations on mount + on Refresh — the underlying edge function
+// does real auth handshakes against Twilio / Geotab / Fleetio and a token
+// freshness check for QBO. The status badge uses a tri-state model:
+//
+//   reachable === true   -> green "Connected" — credentials work right now
+//   reachable === false  -> red "Probe failed" — credentials are set but
+//                            the probe call didn't get a 2xx back
+//   reachable === null   -> gray "Not configured" / "Awaiting setup" — env
+//                            vars aren't set, or (for QBO) no OAuth handshake
+//                            has happened yet
+//
+// This replaces the previous hardcoded {Geotab connected, Twilio connected,
+// QBO disconnected, Fleetio disconnected} array which was lying to operators.
+type IntegrationStatus = Awaited<
+  ReturnType<typeof api.probeIntegrations>
+>["integrations"][number];
+
 function IntegrationsTab() {
-  const integrations = [
-    {
-      name: "Geotab",
-      desc: "GPS + telematics data",
-      status: "connected" as const,
-      lastSync: "2 min ago",
-    },
-    {
-      name: "Twilio",
-      desc: "SMS notifications to drivers",
-      status: "connected" as const,
-      lastSync: "Live",
-    },
-    {
-      name: "QuickBooks Online",
-      desc: "Invoice + payroll sync",
-      status: "disconnected" as const,
-      lastSync: "—",
-    },
-    {
-      name: "Fleetio",
-      desc: "One-time vehicle data migration",
-      status: "disconnected" as const,
-      lastSync: "—",
-    },
-  ];
+  const [data, setData] = useState<IntegrationStatus[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runProbe(isRefresh: boolean) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      const r = await api.probeIntegrations();
+      setData(r.integrations);
+      setLastCheckedAt(r.checkedAt);
+      if (!r.ok) {
+        setError("Some probes failed — see card details below.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Probe call threw");
+      // Even on a hard error, render placeholder rows so the operator sees
+      // SOMETHING and can hit Refresh.
+      const now = new Date().toISOString();
+      setData([
+        { name: "Twilio", desc: "SMS notifications + driver/mechanic Communications", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
+        { name: "Geotab", desc: "GPS + telematics + timesheet cross-reference", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
+        { name: "QuickBooks Online", desc: "Invoice + payroll sync", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
+        { name: "Fleetio", desc: "One-time vehicle data migration", configured: false, reachable: null, rawProbeMsg: "Couldn't reach probe endpoint", lastError: null, checkedAt: now },
+      ]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    void runProbe(false);
+    // Re-probe every 5 minutes while the tab is open — the badge shouldn't
+    // go stale if an admin leaves the tab on for an hour.
+    const id = window.setInterval(() => void runProbe(true), 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
-    <div className="space-y-3 max-w-3xl">
-      {integrations.map((i) => (
-        <div
-          key={i.name}
-          className="bg-card border border-border rounded-lg p-4 flex items-center gap-4"
+    <div className="space-y-3 max-w-3xl" data-testid="integrations-tab">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Live probes — credentials are checked against each integration's
+          real API. Last refreshed{" "}
+          {lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : "—"}.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void runProbe(true)}
+          disabled={loading || refreshing}
+          data-testid="integrations-refresh"
         >
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h4 className="font-semibold">{i.name}</h4>
-              {i.status === "connected" ? (
-                <span className="inline-flex items-center gap-1 text-success text-xs">
-                  <CheckCircle2 className="w-3 h-3" /> Connected
+          {refreshing ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <RefreshCw className="w-3 h-3" />
+          )}
+          <span className="ml-1">Refresh</span>
+        </Button>
+      </div>
+
+      {error && (
+        <div className="bg-amber-brand/10 border border-amber-brand/30 rounded-md p-3 text-xs flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-brand mt-0.5 shrink-0" />
+          <span className="text-amber-brand">{error}</span>
+        </div>
+      )}
+
+      {loading && !data && (
+        <div className="bg-card border border-border rounded-lg p-6 flex items-center justify-center text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin mr-2" /> Running probes…
+        </div>
+      )}
+
+      {data?.map((i) => {
+        const isUp = i.reachable === true;
+        const isDown = i.reachable === false;
+        // null = unknown/unconfigured — gray, not red. Critical UX choice:
+        // an unconfigured integration is not a failure, just a "not set up
+        // yet" state. Red would alarm operators for nothing.
+        const badge = isUp
+          ? { label: "Connected", icon: CheckCircle2, color: "text-success" }
+          : isDown
+            ? { label: "Probe failed", icon: XCircle, color: "text-danger" }
+            : { label: i.configured ? "Awaiting setup" : "Not configured", icon: HelpCircle, color: "text-muted-foreground" };
+        const BadgeIcon = badge.icon;
+        return (
+          <div
+            key={i.name}
+            className="bg-card border border-border rounded-lg p-4 flex items-center gap-4"
+            data-testid={`integration-${i.name.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h4 className="font-semibold">{i.name}</h4>
+                <span
+                  className={cn("inline-flex items-center gap-1 text-xs", badge.color)}
+                  data-testid={`integration-status-${i.name.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  <BadgeIcon className="w-3 h-3" /> {badge.label}
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                  <XCircle className="w-3 h-3" /> Disconnected
-                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{i.desc}</p>
+              <p className="text-[11px] font-mono text-muted-foreground mt-1 truncate">
+                {i.rawProbeMsg}
+              </p>
+              {i.lastError && (
+                <p className="text-[11px] font-mono text-danger mt-1 truncate">
+                  Last error: {i.lastError}
+                </p>
               )}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">{i.desc}</p>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mt-1">
-              Last sync: {i.lastSync}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                try {
-                  if (i.status === "connected") {
-                    toast.success(`${i.name} connection test passed (mock)`);
-                  } else {
-                    toast.success(`${i.name} connect flow opened (mock)`);
-                  }
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  toast.error(
-                    `${i.status === "connected" ? "Test" : "Connect"} failed: ${msg}`,
-                  );
-                }
-              }}
-            >
-              {i.status === "connected" ? "Test" : "Connect"}
-            </Button>
-            {i.status === "connected" && (
+            <div className="flex gap-2 shrink-0">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="text-danger"
-                onClick={() => {
-                  try {
-                    toast.success(`${i.name} disconnected (mock)`);
-                  } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    toast.error(`Disconnect failed: ${msg}`);
-                  }
-                }}
+                onClick={() => void runProbe(true)}
+                disabled={refreshing}
+                data-testid={`integration-test-${i.name.toLowerCase().replace(/\s+/g, "-")}`}
               >
-                Disconnect
+                {isUp ? "Re-test" : "Test"}
               </Button>
-            )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
+
+      <p className="text-[11px] text-muted-foreground italic mt-4">
+        Integration credentials are set via{" "}
+        <code className="font-mono">supabase secrets set</code> on the CLI —
+        the dashboard cannot edit them. After updating a secret, click
+        Refresh above to re-probe.
+      </p>
     </div>
   );
 }
