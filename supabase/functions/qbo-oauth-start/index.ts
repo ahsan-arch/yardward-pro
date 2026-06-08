@@ -130,12 +130,20 @@ serve(async (req) => {
   const state = randomState();
   // Scopes:
   //   com.intuit.quickbooks.accounting — invoice + customer (qbo-push-invoice)
-  //   com.intuit.quickbooks.payroll    — timesheets (qbo-push-time)
+  //
+  // Payroll scope (com.intuit.quickbooks.payroll, used by qbo-push-time) is
+  // intentionally NOT requested here: Intuit gates payroll behind an explicit
+  // app-review process. Unapproved apps that request it get the consent flow
+  // rejected with `access_denied` BEFORE the user even sees the authorize
+  // page. Once the customer applies for and gets payroll approval, we can
+  // add the scope back. Until then, timesheet sync needs a separate flow
+  // (or a manual export). Invoice sync — the main feature — works fine
+  // without it.
+  //
   // openid + profile + email are required for the OpenID-Connect flavor of
   // the authorize endpoint Intuit uses, and they don't add risk.
   const scope = [
     "com.intuit.quickbooks.accounting",
-    "com.intuit.quickbooks.payroll",
     "openid",
     "profile",
     "email",
