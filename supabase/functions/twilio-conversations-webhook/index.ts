@@ -472,8 +472,16 @@ Deno.serve(async (req) => {
       const TWILIO_API_KEY_SID = Deno.env.get("TWILIO_API_KEY_SID") ?? "";
       const TWILIO_API_KEY_SECRET = Deno.env.get("TWILIO_API_KEY_SECRET") ?? "";
       const persistedMediaPaths: string[] = [];
+      // Track per-step outcomes so we can log a single CRITICAL when an
+      // entire MMS batch fails (e.g. rotated API key, expired Twilio token).
+      // Per-URL warnings are still emitted; the CRITICAL is the alert path.
+      let mmsTotal = 0;
+      let mmsDownloadFailed = 0;
+      let mmsUploadFailed = 0;
+      let mmsOwnerPatchFailed = 0;
       if (mediaUrls.length > 0 && TWILIO_API_KEY_SID && TWILIO_API_KEY_SECRET) {
         const basicAuth = btoa(`${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}`);
+        mmsTotal = mediaUrls.length;
         for (let i = 0; i < mediaUrls.length; i++) {
           const url = mediaUrls[i];
           try {
@@ -483,6 +491,7 @@ Deno.serve(async (req) => {
               redirect: "follow",
             });
             if (!dlResp.ok) {
+              mmsDownloadFailed++;
               await logIssue("TWILIO_MMS_DOWNLOAD_FAILED", "Couldn't fetch MMS from Twilio", {
                 url: url.slice(0, 200),
                 status: dlResp.status,
@@ -521,6 +530,7 @@ Deno.serve(async (req) => {
             );
             if (!upResp.ok) {
               const raw = await upResp.text();
+              mmsUploadFailed++;
               await logIssue("TWILIO_MMS_UPLOAD_FAILED", "Couldn't upload to Storage", {
                 path,
                 status: upResp.status,
@@ -531,28 +541,76 @@ Deno.serve(async (req) => {
             persistedMediaPaths.push(path);
             // Set owner so the sender's RLS SELECT lets them read it back.
             // (Admin already has all-access via message_attachments_admin_all.)
-            // storage.objects.owner is a uuid; we patch it via direct PATCH
-            // against storage.objects (service-role bypasses RLS there).
-            await fetch(
-              `${SUPABASE_URL}/rest/v1/objects?bucket_id=eq.message-attachments&name=eq.${encodeURIComponent(path)}`,
-              {
-                method: "PATCH",
-                headers: {
-                  apikey: SUPABASE_SERVICE_ROLE_KEY,
-                  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                  "Content-Type": "application/json",
-                  "Content-Profile": "storage",
+            // Without this PATCH the sender's signed-URL request would 403
+            // against the message_attachments_owner_select policy. We retry
+            // once on transient failure and log loudly if both attempts fail —
+            // operator needs to either set the owner manually or relax the
+            // policy.
+            const ownerPatchOnce = () =>
+              fetch(
+                `${SUPABASE_URL}/rest/v1/objects?bucket_id=eq.message-attachments&name=eq.${encodeURIComponent(path)}`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    apikey: SUPABASE_SERVICE_ROLE_KEY,
+                    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    "Content-Type": "application/json",
+                    "Content-Profile": "storage",
+                  },
+                  body: JSON.stringify({ owner: senderProfileId }),
                 },
-                body: JSON.stringify({ owner: senderProfileId }),
-              },
-            );
+              );
+            let ownerResp = await ownerPatchOnce();
+            if (!ownerResp.ok) {
+              // One retry — transient blip is the most common case.
+              ownerResp = await ownerPatchOnce();
+            }
+            if (!ownerResp.ok) {
+              const raw = await ownerResp.text();
+              mmsOwnerPatchFailed++;
+              await logIssue(
+                "TWILIO_MMS_OWNER_PATCH_FAILED",
+                "Couldn't set owner on uploaded attachment — sender's signed-URL read will 403 until manually fixed",
+                {
+                  path,
+                  senderProfileId,
+                  status: ownerResp.status,
+                  body: raw.slice(0, 200),
+                },
+              );
+            }
           } catch (err) {
+            mmsDownloadFailed++;
             await logIssue(
               "TWILIO_MMS_FETCH_THREW",
               err instanceof Error ? err.message : String(err),
               { url: url.slice(0, 200) },
             );
           }
+        }
+
+        // CRITICAL alert when the whole batch failed — points at a systemic
+        // problem (rotated API key, Twilio outage, Storage quota exhausted)
+        // rather than per-URL noise the operator might filter out.
+        if (mmsTotal > 0 && persistedMediaPaths.length === 0) {
+          await fetch(`${SUPABASE_URL}/rest/v1/error_log`, {
+            method: "POST",
+            headers: sbHeaders,
+            body: JSON.stringify({
+              id: genId("ERR"),
+              severity: "critical",
+              error_code: "TWILIO_MMS_BATCH_ALL_FAILED",
+              message: `All ${mmsTotal} MMS attachment(s) on message ${localMsgId} failed to persist — likely a rotated TWILIO_API_KEY_* or a Storage outage. Inbound media for this conversation is broken until resolved.`,
+              context: {
+                convId: localConvId,
+                twilioMsgSid: messageSidRaw,
+                mmsTotal,
+                mmsDownloadFailed,
+                mmsUploadFailed,
+                mmsOwnerPatchFailed,
+              },
+            }),
+          }).catch(() => { /* swallow — last-resort log */ });
         }
       }
       const insResp = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {

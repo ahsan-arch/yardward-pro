@@ -63,6 +63,7 @@ function Page() {
     name: string;
     email: string;
     tempPassword: string;
+    warning?: string;
   } | null>(null);
 
   function openAddDriver() {
@@ -114,8 +115,17 @@ function Page() {
         return;
       }
       toast.success(`${name} created`);
-      setCreatedInfo({ name, email, tempPassword: r.tempPassword });
-      if (r.warning) toast.warning(r.warning);
+      setCreatedInfo({
+        name,
+        email,
+        tempPassword: r.tempPassword,
+        ...(r.warning ? { warning: r.warning } : {}),
+      });
+      if (r.warning) {
+        // Loud toast that doesn't auto-dismiss; the warning also renders
+        // inline in the credentials panel so the admin can't miss it.
+        toast.warning(r.warning, { duration: 15_000 });
+      }
       // Don't close the dialog yet — show the temp password panel.
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
@@ -235,6 +245,18 @@ function Page() {
                 {createdInfo.name} has been created. Send these credentials to them
                 and ask them to rotate the password via the Forgot? link on first sign in.
               </p>
+              {createdInfo.warning && (
+                <div
+                  className="bg-danger/10 border-2 border-danger/40 rounded-md p-3 flex items-start gap-2 text-sm"
+                  data-testid="create-user-warning"
+                >
+                  <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-danger">Action required</p>
+                    <p className="text-xs text-danger mt-1">{createdInfo.warning}</p>
+                  </div>
+                </div>
+              )}
               <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
                 <div>
                   <span className="text-muted-foreground">Email:</span> {createdInfo.email}

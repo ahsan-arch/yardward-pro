@@ -453,6 +453,7 @@ function UsersTab() {
     name: string;
     email: string;
     tempPassword: string;
+    warning?: string;
   } | null>(null);
 
   function openInvite() {
@@ -499,8 +500,15 @@ function UsersTab() {
         return;
       }
       toast.success(`${name} created`);
-      setCreatedInfo({ name, email, tempPassword: r.tempPassword });
-      if (r.warning) toast.warning(r.warning);
+      setCreatedInfo({
+        name,
+        email,
+        tempPassword: r.tempPassword,
+        ...(r.warning ? { warning: r.warning } : {}),
+      });
+      if (r.warning) {
+        toast.warning(r.warning, { duration: 15_000 });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
     } finally {
@@ -539,6 +547,18 @@ function UsersTab() {
                 them and ask them to rotate the password via the Forgot? link on
                 first sign in.
               </p>
+              {createdInfo.warning && (
+                <div
+                  className="bg-danger/10 border-2 border-danger/40 rounded-md p-3 flex items-start gap-2 text-sm"
+                  data-testid="invite-user-warning"
+                >
+                  <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-danger">Action required</p>
+                    <p className="text-xs text-danger mt-1">{createdInfo.warning}</p>
+                  </div>
+                </div>
+              )}
               <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
                 <div>
                   <span className="text-muted-foreground">Email:</span> {createdInfo.email}

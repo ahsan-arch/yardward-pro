@@ -215,8 +215,36 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Helper for rolling back the auth user when a subsequent step fails.
+  // The drivers row is essential — without it the driver cannot function
+  // (no license_number, no initials, no vehicle assignment lookup). If we
+  // can't insert it cleanly, we delete the auth.users row to maintain
+  // atomicity. Phone failures are softer: the driver is usable without
+  // a phone (just no SMS); we keep the user and surface a loud warning.
+  async function deleteAuthUser(userId: string): Promise<boolean> {
+    try {
+      const r = await fetch(
+        `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        },
+      );
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
   // ---- The trigger created profiles(id, email, name, role). It does NOT
-  // set phone — patch that ourselves.
+  // set phone — patch that ourselves. Failure here is non-fatal: the user
+  // exists and can sign in; admin can set the phone via /admin/drivers
+  // pencil after the fact. We surface a `warning` field and the SPA
+  // toasts it as a warning (not success) so the admin can't miss it.
+  let phoneWarning: string | null = null;
   if (phone) {
     const patchResp = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(newUserId)}`,
@@ -232,22 +260,18 @@ Deno.serve(async (req) => {
       },
     );
     if (!patchResp.ok) {
-      // Don't roll back the auth user — partial success is recoverable from
-      // the admin UI (set phone via /admin/drivers pencil). Surface a warning.
       const raw = await patchResp.text();
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          userId: newUserId,
-          tempPassword,
-          warning: `User created but phone patch failed: ${raw.slice(0, 200)}. Set via /admin/drivers.`,
-        }),
-        { status: 200, headers: corsHeaders },
-      );
+      phoneWarning = `Phone (${phone}) was NOT saved: HTTP ${patchResp.status} — ${raw.slice(0, 150)}. Set it manually via /admin/drivers → pencil. SMS will not deliver until you do.`;
     }
   }
 
   // ---- Role-specific side rows
+  // For drivers: the drivers side table is required for the driver to
+  // function (license_number is NOT NULL; initials shown everywhere).
+  // If the INSERT fails we ROLL BACK the auth user — the admin can retry
+  // with the same email cleanly. A half-created driver in the DB is far
+  // worse than no driver at all: the auth user exists, can sign in, but
+  // /driver/* routes crash trying to look up their drivers row.
   if (role === "driver") {
     const driverInsResp = await fetch(`${SUPABASE_URL}/rest/v1/drivers`, {
       method: "POST",
@@ -266,14 +290,18 @@ Deno.serve(async (req) => {
     });
     if (!driverInsResp.ok) {
       const raw = await driverInsResp.text();
+      // Roll back the auth user so the admin can retry with the same email.
+      const rolledBack = await deleteAuthUser(newUserId);
       return new Response(
         JSON.stringify({
-          ok: true,
-          userId: newUserId,
-          tempPassword,
-          warning: `User created but drivers row failed: ${raw.slice(0, 200)}. Admin needs to repair the drivers table manually.`,
+          ok: false,
+          error: `Drivers row insert failed: HTTP ${driverInsResp.status} — ${raw.slice(0, 200)}. ${
+            rolledBack
+              ? "Auth user was rolled back; you can retry with the same email."
+              : `WARNING: rollback of auth user ${newUserId} also failed. Manually delete via Supabase dashboard before retrying.`
+          }`,
         }),
-        { status: 200, headers: corsHeaders },
+        { status: 500, headers: corsHeaders },
       );
     }
   }
@@ -283,6 +311,7 @@ Deno.serve(async (req) => {
       ok: true,
       userId: newUserId,
       tempPassword,
+      ...(phoneWarning ? { warning: phoneWarning } : {}),
       hint: "Send the temp password to the user. They should change it on first login via the Forgot? link.",
     }),
     { status: 200, headers: corsHeaders },
