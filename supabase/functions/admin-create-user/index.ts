@@ -32,15 +32,9 @@ function eqConstTime(a: string, b: string): boolean {
 }
 
 // Generate a random password — 16 chars from a URL-safe alphabet. The auth
-// admin API enforces its own min-length (6 by default) so 16 is comfortably
-// above that.
-function genTempPassword(): string {
-  const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%";
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) out += alpha[bytes[i] % alpha.length];
-  return out;
-}
+// admin API enforces its own min-length (8 after the policy reconciliation)
+// so 16 is comfortably above that.
+import { generatePassword } from "../_shared/password.ts";
 
 function initialsFromName(name: string): string {
   return name
@@ -181,7 +175,7 @@ Deno.serve(async (req) => {
   // ---- Create the auth user. raw_app_meta_data.role drives the
   // handle_new_auth_user trigger; raw_user_meta_data.name shows in the
   // dashboard + flows through to profiles.name via the same trigger.
-  const tempPassword = genTempPassword();
+  const tempPassword = generatePassword(16);
   const adminUserResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
     method: "POST",
     headers: {

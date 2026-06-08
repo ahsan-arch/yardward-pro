@@ -23,13 +23,7 @@ function eqConstTime(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
-function genPassword(len = 24): string {
-  const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) out += alpha[bytes[i] % alpha.length];
-  return out;
-}
+import { generatePassword } from "../_shared/password.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = {
@@ -155,7 +149,7 @@ Deno.serve(async (req) => {
     targetUserId = found.id;
   }
 
-  const newPassword = (body.newPassword ?? "").trim() || genPassword();
+  const newPassword = (body.newPassword ?? "").trim() || generatePassword(24);
   if (newPassword.length < 8) {
     return new Response(JSON.stringify({ error: "newPassword must be ≥8 chars" }), {
       status: 400,

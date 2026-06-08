@@ -400,7 +400,23 @@ Deno.serve(async (req) => {
           });
           return ackAndReturn({ ack: true, skipped: "unmatched non-sms" });
         }
-        // Auto-create. Race-safe: try insert, on 409 re-resolve and use the winner.
+        // Auto-create. Race-safe: try insert, on 409 re-resolve and use the
+        // winner.
+        //
+        // Subject derivation: prefer a body preview ("Need pickup at site 4 —
+        // backhoe broke down…") because that's what admin actually wants to
+        // see when triaging /admin/communications. Truncated to 60 chars
+        // with an ellipsis; the full body is in messages.body anyway. Fall
+        // back to "SMS from <last 4 of phone>" when the inbound has no body
+        // (MMS-only, or empty SMS — rare but possible).
+        const inboundBody = (formParams.get("Body") ?? "").trim();
+        const phoneTail = author.slice(-4); // last 4 digits of E.164
+        const autoSubject =
+          inboundBody.length > 0
+            ? inboundBody.length > 60
+              ? `${inboundBody.slice(0, 60)}…`
+              : inboundBody
+            : `SMS from …${phoneTail}`;
         const newId = genId("CV");
         const createResp = await fetch(`${SUPABASE_URL}/rest/v1/conversations`, {
           method: "POST",
@@ -409,7 +425,7 @@ Deno.serve(async (req) => {
             id: newId,
             twilio_conversation_sid: convSidRaw,
             topic: "general",
-            subject: "SMS thread",
+            subject: autoSubject,
             created_by: senderProfileId,
           }),
         });
@@ -685,29 +701,51 @@ Deno.serve(async (req) => {
           const roleRows = (await roleR.json()) as Array<{ id: string; role: string }>;
           for (const r of roleRows) roleById.set(r.id, r.role);
         }
-        // Per-row INSERT loop: one bad user_id (e.g. user deleted mid-flight)
-        // doesn't drop the whole batch.
-        for (const uid of recipients) {
-          const notif = {
-            id: genId("NT"),
-            user_id: uid,
-            type: "system" as const,
-            body: "New message in conversation",
-            link: linkForRecipient(roleById.get(uid), localConvId),
-            created_at: new Date().toISOString(),
-          };
-          const nResp = await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
-            method: "POST",
-            headers: { ...sbHeaders, Prefer: "return=minimal" },
-            body: JSON.stringify(notif),
-          });
-          if (!nResp.ok) {
-            const raw = await nResp.text();
-            await logIssue(
-              "TWILIO_NOTIF_INSERT_FAILED",
-              `Per-row notification insert failed`,
-              { uid, msgId: localMsgId, status: nResp.status, body: raw.slice(0, 200) },
-            );
+        // Happy path: one bulk INSERT for the whole fanout. PostgREST
+        // accepts an array body and returns 201 on success. For a thread
+        // with N participants this collapses N sequential round-trips
+        // into one, which matters once N reaches 10+ (admin tagged
+        // dispatch group, multi-driver coordination, etc.).
+        const now = new Date().toISOString();
+        const notifRows = recipients.map((uid) => ({
+          id: genId("NT"),
+          user_id: uid,
+          type: "system" as const,
+          body: "New message in conversation",
+          link: linkForRecipient(roleById.get(uid), localConvId),
+          created_at: now,
+        }));
+        const bulkResp = await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
+          method: "POST",
+          headers: { ...sbHeaders, Prefer: "return=minimal" },
+          body: JSON.stringify(notifRows),
+        });
+        if (!bulkResp.ok) {
+          // Bulk failed — typically because ONE row has a stale user_id
+          // (user deleted mid-flight, FK violation). Fall back to per-row
+          // INSERTs so one bad uid doesn't drop the whole fanout. This
+          // is the slow path but it's resilient and only hits when the
+          // bulk insert already told us something's wrong.
+          const bulkRaw = await bulkResp.text();
+          await logIssue(
+            "TWILIO_NOTIF_BULK_FAILED",
+            `Bulk notification insert failed (status ${bulkResp.status}); falling back to per-row`,
+            { msgId: localMsgId, count: recipients.length, body: bulkRaw.slice(0, 200) },
+          );
+          for (const notif of notifRows) {
+            const nResp = await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
+              method: "POST",
+              headers: { ...sbHeaders, Prefer: "return=minimal" },
+              body: JSON.stringify(notif),
+            });
+            if (!nResp.ok) {
+              const raw = await nResp.text();
+              await logIssue(
+                "TWILIO_NOTIF_INSERT_FAILED",
+                `Per-row notification insert failed`,
+                { uid: notif.user_id, msgId: localMsgId, status: nResp.status, body: raw.slice(0, 200) },
+              );
+            }
           }
         }
       }
