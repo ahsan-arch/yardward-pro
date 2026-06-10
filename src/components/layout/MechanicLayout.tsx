@@ -1,8 +1,18 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Home, ClipboardCheck, ShoppingCart, Wrench, Package, Menu, X, MessagesSquare } from "lucide-react";
+import {
+  Home,
+  ClipboardCheck,
+  ShoppingCart,
+  Wrench,
+  Package,
+  Menu,
+  X,
+  MessagesSquare,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
+import { BrandMark } from "@/components/crm/BrandMark";
 
 const navItems = [
   { to: "/mechanic", label: "Dashboard", icon: Home, exact: true },
@@ -26,9 +36,7 @@ export function MechanicShell({ children, title }: { children?: ReactNode; title
         )}
       >
         <div className="h-16 px-5 flex items-center gap-2 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-md bg-amber-brand grid place-items-center">
-            <Wrench className="w-4 h-4 text-amber-brand-foreground" />
-          </div>
+          <BrandMark />
           <div>
             <div className="font-bold text-sm tracking-tight">Yardward Pro</div>
             <div className="text-[10px] font-mono text-sidebar-foreground/50">Workshop</div>

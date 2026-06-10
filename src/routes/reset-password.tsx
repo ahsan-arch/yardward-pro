@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Truck, Loader2, Lock, CheckCircle2 } from "lucide-react";
+import { Loader2, Lock, CheckCircle2 } from "lucide-react";
+import { BrandMark } from "@/components/crm/BrandMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase, USE_SUPABASE } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -85,9 +86,7 @@ function ResetPasswordPage() {
     <div className="min-h-screen grid place-items-center bg-background p-6">
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-md bg-amber-brand grid place-items-center">
-            <Truck className="w-5 h-5 text-amber-brand-foreground" />
-          </div>
+          <BrandMark size="lg" />
           <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
         </div>
 
@@ -103,9 +102,7 @@ function ResetPasswordPage() {
             <CheckCircle2 className="w-10 h-10 text-success" />
             <div className="text-center">
               <h1 className="text-lg font-semibold">Password updated</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Redirecting to sign in…
-              </p>
+              <p className="text-sm text-muted-foreground mt-1">Redirecting to sign in…</p>
             </div>
           </div>
         )}
@@ -156,9 +153,7 @@ function ResetPasswordPage() {
                     data-testid="confirm-password"
                   />
                 </div>
-                {err.confirm && (
-                  <p className="text-xs text-danger mt-1">{err.confirm}</p>
-                )}
+                {err.confirm && <p className="text-xs text-danger mt-1">{err.confirm}</p>}
               </div>
               {err.form && (
                 <p className="text-xs text-danger" data-testid="reset-password-error">

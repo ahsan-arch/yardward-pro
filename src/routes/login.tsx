@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Truck, Shield, Wrench, Loader2, Moon, Sun } from "lucide-react";
+import { Truck, Shield, Wrench, Loader2, Moon, Sun, type LucideIcon } from "lucide-react";
+import { BrandMark } from "@/components/crm/BrandMark";
 import { useApp, type Role } from "@/contexts/AppContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,7 +140,7 @@ function LoginPage() {
     setForgotEmail("");
   }
 
-  const opts: { value: Role; label: string; icon: any; desc: string }[] = [
+  const opts: { value: Role; label: string; icon: LucideIcon; desc: string }[] = [
     { value: "admin", label: "Admin", icon: Shield, desc: "Management" },
     { value: "driver", label: "Driver", icon: Truck, desc: "On-site" },
     { value: "mechanic", label: "Mechanic", icon: Wrench, desc: "Workshop" },
@@ -157,9 +158,7 @@ function LoginPage() {
           }}
         />
         <div className="relative flex items-center gap-2">
-          <div className="w-9 h-9 rounded-md bg-amber-brand grid place-items-center">
-            <Truck className="w-5 h-5 text-amber-brand-foreground" />
-          </div>
+          <BrandMark size="lg" />
           <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
         </div>
         <div className="relative space-y-4 max-w-md">
@@ -187,18 +186,14 @@ function LoginPage() {
             </div>
           </div>
         </div>
-        <div className="relative text-xs text-navy-foreground/50 font-mono">
-          © 2025 Yardward
-        </div>
+        <div className="relative text-xs text-navy-foreground/50 font-mono">© 2025 Yardward</div>
       </div>
 
       {/* Right: form */}
       <div className="flex flex-col p-6 sm:p-10">
         <div className="flex justify-between items-center">
           <div className="lg:hidden flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-amber-brand grid place-items-center">
-              <Truck className="w-4 h-4 text-amber-brand-foreground" />
-            </div>
+            <BrandMark />
             <div className="font-bold">Yardward Pro</div>
           </div>
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="ml-auto">
@@ -326,11 +321,7 @@ function LoginPage() {
                       data-testid="forgot-password-submit"
                       className="h-9 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-medium"
                     >
-                      {forgotSending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        "Send link"
-                      )}
+                      {forgotSending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send link"}
                     </Button>
                   </div>
                 </div>
