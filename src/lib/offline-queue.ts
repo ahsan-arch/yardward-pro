@@ -74,6 +74,13 @@ export type QueueItem = (
       payload: Parameters<typeof api.submitJobLog>[0];
     }
   | {
+      // Native hauling record (dump / load form). Same replay semantics as
+      // jobLog: the payload carries an idempotency key so a flush that races
+      // an online retry can't double-insert the record.
+      kind: "dumpLog";
+      payload: Parameters<typeof api.submitDumpLog>[0];
+    }
+  | {
       kind: "ticketPhoto";
       payload: Parameters<typeof api.uploadTicketPhoto>[0];
     }
@@ -268,6 +275,9 @@ async function flushOne(item: QueueItem): Promise<{ outcome: FlushOutcome; item:
         break;
       case "jobLog":
         await api.submitJobLog(item.payload);
+        break;
+      case "dumpLog":
+        await api.submitDumpLog(item.payload);
         break;
       case "ticketPhoto":
         await api.uploadTicketPhoto(item.payload);

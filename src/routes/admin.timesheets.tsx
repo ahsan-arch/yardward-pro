@@ -17,8 +17,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
+import { toCsv, downloadCsv } from "@/lib/csv";
 import { Check, Flag, MapPin, ShieldCheck, Send } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type {
   TimeEntry,
@@ -172,9 +173,7 @@ function QboPayrollPushDialog({
       const r = await api.pushPayrollToQbo(periodStart, periodEnd, dryRun);
       setResult({ ...r, dryRun });
       const verb = dryRun ? "Dry run complete" : "Payroll pushed";
-      toast.success(
-        `${verb}: ${r.pushed} pushed · ${r.failed} failed · ${r.skipped} skipped`,
-      );
+      toast.success(`${verb}: ${r.pushed} pushed · ${r.failed} failed · ${r.skipped} skipped`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "QBO push failed");
     } finally {
@@ -199,8 +198,8 @@ function QboPayrollPushDialog({
         <DialogHeader>
           <DialogTitle>Export timesheets to QuickBooks</DialogTitle>
           <DialogDescription>
-            Pushes completed time entries in the window below to QuickBooks Online
-            as TimeActivity rows. Use dry run first to preview what would sync.
+            Pushes completed time entries in the window below to QuickBooks Online as TimeActivity
+            rows. Use dry run first to preview what would sync.
           </DialogDescription>
         </DialogHeader>
 
@@ -230,8 +229,8 @@ function QboPayrollPushDialog({
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Window is half-open: clock_in in [start, end). Default is the last
-            completed Sunday-to-Sunday week.
+            Window is half-open: clock_in in [start, end). Default is the last completed
+            Sunday-to-Sunday week.
           </p>
           <div className="flex items-center justify-between border-t border-border pt-3">
             <div>
@@ -239,8 +238,8 @@ function QboPayrollPushDialog({
                 Dry run
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                Preview only — does not call QuickBooks. Writes preview rows
-                tagged "dryRun" to the audit log.
+                Preview only — does not call QuickBooks. Writes preview rows tagged "dryRun" to the
+                audit log.
               </p>
             </div>
             <Switch
@@ -316,6 +315,99 @@ function QboPayrollPushDialog({
   );
 }
 
+// Per-driver hourly-rate editor. Rates drive the gross-pay column in the
+// payroll CSV; stored on drivers.hourly_rate. Loaded fresh each open so it
+// reflects the DB (DataContext's driver objects predate the rate column).
+function PayRatesDialog({
+  open,
+  onOpenChange,
+  drivers,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  drivers: Array<{ id: string; name: string }>;
+}) {
+  const [rates, setRates] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    void api
+      .fetchDriverRates()
+      .then((m) => {
+        const next: Record<string, string> = {};
+        for (const d of drivers) next[d.id] = (m.get(d.id) ?? 0).toString();
+        setRates(next);
+      })
+      .finally(() => setLoading(false));
+  }, [open, drivers]);
+
+  async function save(driverId: string) {
+    setSavingId(driverId);
+    try {
+      const r = await api.updateDriverRate(driverId, Number(rates[driverId]) || 0);
+      if (r.ok) toast.success("Rate saved");
+      else toast.error(r.reason);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Driver pay rates</DialogTitle>
+          <DialogDescription>
+            Hourly rate per driver — used for the gross-pay column in the payroll CSV (overtime
+            billed at 1.5× above {appSettingsOtLabel()}).
+          </DialogDescription>
+        </DialogHeader>
+        {loading ? (
+          <div className="py-6 text-center text-muted-foreground">Loading…</div>
+        ) : (
+          <div className="space-y-2">
+            {drivers.map((d) => (
+              <div key={d.id} className="flex items-center gap-2">
+                <span className="flex-1 text-sm truncate">{d.name}</span>
+                <span className="text-xs text-muted-foreground">$/h</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.25"
+                  value={rates[d.id] ?? ""}
+                  onChange={(e) => setRates((x) => ({ ...x, [d.id]: e.target.value }))}
+                  className="w-24 h-9"
+                  data-testid={`pay-rate-${d.id}`}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void save(d.id)}
+                  disabled={savingId === d.id}
+                >
+                  Save
+                </Button>
+              </div>
+            ))}
+            {drivers.length === 0 && (
+              <p className="text-sm text-muted-foreground">No drivers yet.</p>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Tiny helper so the dialog can name the OT threshold without prop-drilling
+// appSettings; reads the same default the export uses.
+function appSettingsOtLabel(): string {
+  return "the weekly overtime threshold";
+}
+
 function Page() {
   const { timeEntries, drivers, vehicles, appSettings, toolChecklistSubmissions } = useData();
   const search = useSearch({ from: "/admin/timesheets" });
@@ -323,11 +415,10 @@ function Page() {
     () => (search.driverIds ? search.driverIds.split(",").filter(Boolean) : null),
     [search.driverIds],
   );
-  const [tab, setTab] = useState<"all" | "flagged" | "active">(
-    filterDriverIds ? "all" : "all",
-  );
+  const [tab, setTab] = useState<"all" | "flagged" | "active">(filterDriverIds ? "all" : "all");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [qboOpen, setQboOpen] = useState(false);
+  const [ratesOpen, setRatesOpen] = useState(false);
 
   // Map driverId -> vehicle (current assignment) so we can compare clock-out
   // time to the vehicle's last GPS movement timestamp.
@@ -360,6 +451,96 @@ function Page() {
 
   const flaggedCount = enriched.filter((t) => t._flagged).length;
   const activeCount = enriched.filter((t) => !t.clockOut).length;
+
+  // Payroll CSV: per-driver weekly hours with regular/overtime split, plus a
+  // per-entry detail section. Hand this file to whoever runs payroll —
+  // covers the QuickBooks Workforce/Time use case without the subscription.
+  async function exportPayrollCsv() {
+    const closed = enriched.filter((t) => t.clockOut);
+    if (closed.length === 0) {
+      toast.error("No completed shifts to export");
+      return;
+    }
+    // Per-driver hourly rates (drivers.hourly_rate) turn hours into gross
+    // pay — OT at 1.5×. Rate 0 leaves the pay cells blank so the accountant
+    // can spot unconfigured drivers instead of seeing a false $0.
+    const rates = await api.fetchDriverRates();
+    const hours = (t: (typeof closed)[number]) =>
+      (new Date(t.clockOut as string).getTime() - new Date(t.clockIn).getTime()) / 3_600_000;
+    // ISO week key (yyyy-Www) for the weekly OT split.
+    const weekKey = (iso: string) => {
+      const d = new Date(iso);
+      const day = (d.getUTCDay() + 6) % 7;
+      d.setUTCDate(d.getUTCDate() - day + 3);
+      const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+      const week = 1 + Math.round(((d.getTime() - firstThu.getTime()) / 86_400_000 - 3) / 7);
+      return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+    };
+    const otThreshold = appSettings.overtimeAlertHours || 44;
+    const byDriverWeek = new Map<
+      string,
+      {
+        driverId: string;
+        driver: string;
+        week: string;
+        total: number;
+        entries: number;
+        flagged: number;
+      }
+    >();
+    for (const t of closed) {
+      const k = `${t.driverId}|${weekKey(t.clockIn)}`;
+      const name = drivers.find((d) => d.id === t.driverId)?.name ?? t.driverId;
+      const cur = byDriverWeek.get(k) ?? {
+        driverId: t.driverId,
+        driver: name,
+        week: weekKey(t.clockIn),
+        total: 0,
+        entries: 0,
+        flagged: 0,
+      };
+      cur.total += hours(t);
+      cur.entries += 1;
+      if (t._flagged) cur.flagged += 1;
+      byDriverWeek.set(k, cur);
+    }
+    const summary = Array.from(byDriverWeek.values()).sort(
+      (a, b) => a.week.localeCompare(b.week) || a.driver.localeCompare(b.driver),
+    );
+    const lines: string[][] = summary.map((s) => {
+      const reg = Math.min(s.total, otThreshold);
+      const ot = Math.max(0, s.total - otThreshold);
+      const rate = rates.get(s.driverId) ?? 0;
+      const gross = rate > 0 ? reg * rate + ot * rate * 1.5 : null;
+      return [
+        s.week,
+        s.driver,
+        s.total.toFixed(2),
+        reg.toFixed(2),
+        ot.toFixed(2),
+        rate > 0 ? rate.toFixed(2) : "",
+        gross != null ? gross.toFixed(2) : "",
+        String(s.entries),
+        String(s.flagged),
+      ];
+    });
+    const csv = toCsv(
+      [
+        "Week",
+        "Driver",
+        "Total hours",
+        `Regular (≤${otThreshold}h/wk)`,
+        "Overtime",
+        "Hourly rate",
+        "Gross pay (OT 1.5x)",
+        "Shifts",
+        "Flagged shifts",
+      ],
+      lines,
+    );
+    downloadCsv(`payroll-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    toast.success(`Payroll export: ${summary.length} driver-weeks`);
+  }
 
   async function clearFlag(entryId: string) {
     setPendingId(entryId);
@@ -410,16 +591,35 @@ function Page() {
             <TabsTrigger value="flagged">Flagged ({flaggedCount})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setQboOpen(true)}
-          data-testid="export-to-qbo-btn"
-        >
-          <Send className="w-3.5 h-3.5" /> Export to QuickBooks
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setRatesOpen(true)}
+            data-testid="pay-rates-btn"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" /> Pay rates
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void exportPayrollCsv()}
+            data-testid="export-payroll-csv-btn"
+          >
+            <Send className="w-3.5 h-3.5" /> Payroll CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setQboOpen(true)}
+            data-testid="export-to-qbo-btn"
+          >
+            <Send className="w-3.5 h-3.5" /> Export to QuickBooks
+          </Button>
+        </div>
       </div>
       <QboPayrollPushDialog open={qboOpen} onOpenChange={setQboOpen} />
+      <PayRatesDialog open={ratesOpen} onOpenChange={setRatesOpen} drivers={drivers} />
 
       <div className="bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">

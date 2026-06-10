@@ -4,9 +4,19 @@ import { useData } from "@/contexts/DataContext";
 import { clientById, jobById } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { ArrowLeft, FileText, CheckCircle2, Loader2, XCircle, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import {
+  ArrowLeft,
+  FileText,
+  CheckCircle2,
+  Loader2,
+  XCircle,
+  ExternalLink,
+  Mail,
+  BadgeCheck,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/admin/invoices/$workOrderId")({
   head: () => ({ meta: [{ title: "Invoice preview — Yardward Pro" }] }),
@@ -191,6 +201,18 @@ function Page() {
             </Button>
           </div>
 
+          {inv && client && (
+            <SendPaymentCard
+              invoiceId={inv.id}
+              workOrderId={wo.id}
+              clientName={client.name}
+              clientEmail={client.email}
+              billingAddress={client.billingAddress}
+              lineItems={lineItems}
+              total={total}
+            />
+          )}
+
           {client && (
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="font-semibold text-sm mb-2">Rate table applied</h3>
@@ -211,5 +233,122 @@ function Page() {
         </div>
       </div>
     </AdminShell>
+  );
+}
+
+// Standalone invoicing: email the branded invoice straight to the client and
+// track sent/paid in the CRM — QuickBooks push remains available but is no
+// longer required to bill a client.
+function SendPaymentCard(props: {
+  invoiceId: string;
+  workOrderId: string;
+  clientName: string;
+  clientEmail: string;
+  billingAddress: string;
+  lineItems: Array<{ description: string; qty: number; rate: number; amount: number }>;
+  total: number;
+}) {
+  const [to, setTo] = useState(props.clientEmail);
+  const [meta, setMeta] = useState<{
+    sentAt: string | null;
+    sentTo: string | null;
+    paidAt: string | null;
+  }>({
+    sentAt: null,
+    sentTo: null,
+    paidAt: null,
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api
+      .fetchInvoiceMeta(props.invoiceId)
+      .then(setMeta)
+      .catch(() => {});
+  }, [props.invoiceId]);
+
+  async function send() {
+    if (!/^\S+@\S+\.\S+$/.test(to.trim())) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.emailInvoice({
+        invoiceId: props.invoiceId,
+        to: to.trim(),
+        clientName: props.clientName,
+        billingAddress: props.billingAddress,
+        workOrderId: props.workOrderId,
+        lineItems: props.lineItems,
+        total: props.total,
+      });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`Invoice emailed to ${to.trim()}`);
+      setMeta((m) => ({ ...m, sentAt: new Date().toISOString(), sentTo: to.trim() }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function togglePaid() {
+    setBusy(true);
+    try {
+      const next = !meta.paidAt;
+      const r = await api.markInvoicePaid(props.invoiceId, next);
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      setMeta((m) => ({ ...m, paidAt: next ? new Date().toISOString() : null }));
+      toast.success(next ? "Marked paid" : "Marked unpaid");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+      <h3 className="font-semibold text-sm">Send & payment</h3>
+      <div className="flex gap-2">
+        <Input
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="client@email.com"
+          className="h-9 text-sm"
+          data-testid="invoice-email-to"
+        />
+        <Button
+          size="sm"
+          onClick={() => void send()}
+          disabled={busy}
+          className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 shrink-0"
+          data-testid="invoice-email-send"
+        >
+          <Mail className="w-4 h-4" /> Email
+        </Button>
+      </div>
+      {meta.sentAt && (
+        <p className="text-xs text-muted-foreground">
+          Sent to {meta.sentTo} · {new Date(meta.sentAt).toLocaleString()}
+        </p>
+      )}
+      <Button
+        size="sm"
+        variant={meta.paidAt ? "outline" : "default"}
+        onClick={() => void togglePaid()}
+        disabled={busy}
+        className={meta.paidAt ? "w-full" : "w-full bg-success text-white hover:bg-success/90"}
+        data-testid="invoice-mark-paid"
+      >
+        <BadgeCheck className="w-4 h-4" />
+        {meta.paidAt
+          ? `Paid ${new Date(meta.paidAt).toLocaleDateString()} — mark unpaid`
+          : "Mark paid"}
+      </Button>
+    </div>
   );
 }

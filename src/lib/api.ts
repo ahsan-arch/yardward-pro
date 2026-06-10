@@ -1,6 +1,7 @@
 import type {
   Job,
   JobLog,
+  DumpLog,
   WorkOrder,
   PurchaseRequest,
   ToolChecklistSubmission,
@@ -58,6 +59,108 @@ export class MaintenanceWorkOrderError extends Error {
     super(message);
     this.name = "MaintenanceWorkOrderError";
     this.code = code;
+  }
+}
+
+// One imported Formstack submission (hauling record). `data` is the
+// standardized field array straight from the Formstack v2025 API.
+export interface FormstackSubmissionRow {
+  id: string;
+  submissionId: number;
+  formId: number;
+  formName: string;
+  submittedAt: string | null;
+  summary: string;
+  data: Array<{
+    field?: string;
+    label?: string | null;
+    type?: string | null;
+    displayValue?: string | null;
+    parsedValue?: unknown;
+  }>;
+  importedAt: string;
+}
+
+// ---- Form template engine (Phase 4 — self-serve forms) --------------------
+// A template is a list of field definitions rendered by one generic driver
+// page. John edits these in /admin/form-templates — no code changes needed
+// for new JSAs / site-visit variants / one-off forms.
+export interface FormTemplateField {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "photos";
+  required: boolean;
+  options?: string[];
+}
+
+export interface FormTemplate {
+  id: string;
+  name: string;
+  kind: "jsa" | "site-visit" | "custom";
+  clientId: string | null;
+  fields: FormTemplateField[];
+  active: boolean;
+  sort: number;
+}
+
+export interface CustomFormSubmission {
+  id: string;
+  templateId: string | null;
+  templateName: string;
+  templateKind: string;
+  clientId: string | null;
+  submittedBy: string | null;
+  submittedName: string;
+  data: Record<string, unknown>;
+  photos: string[];
+  gpsLat: number | null;
+  gpsLng: number | null;
+  loggedAt: string;
+}
+
+// Extract the actual error body from a supabase functions.invoke() error.
+//
+// supabase-js wraps every non-2xx response from an Edge Function in a
+// FunctionsHttpError whose .message is the useless string "Edge Function
+// returned a non-2xx status code". The real structured error JSON lives
+// on .context (a Response object). This helper clones that response,
+// parses the JSON body (if any), and formats a human-readable reason
+// pulling from the conventional fields our edge functions emit:
+//   { error, step?, hint?, intuitError?, intuitStatus? }
+//
+// Returns null if the error isn't a FunctionsHttpError-shape or the body
+// can't be read — caller falls back to err.message.
+async function extractFunctionErrorBody(err: unknown): Promise<string | null> {
+  if (!err || typeof err !== "object") return null;
+  const ctx = (err as { context?: unknown }).context;
+  if (!ctx || typeof ctx !== "object") return null;
+  if (typeof (ctx as Response).clone !== "function") return null;
+  let clone: Response;
+  try {
+    clone = (ctx as Response).clone();
+  } catch {
+    return null;
+  }
+  try {
+    const json = (await clone.json()) as Record<string, unknown> | null;
+    if (!json || typeof json !== "object") return null;
+    const error = typeof json.error === "string" ? json.error : "";
+    const hint = typeof json.hint === "string" ? json.hint : "";
+    const intuitError = typeof json.intuitError === "string" ? json.intuitError : "";
+    const step = typeof json.step === "string" ? json.step : "";
+    const intuitStatus =
+      typeof json.intuitStatus === "number" ? `Intuit HTTP ${json.intuitStatus}` : "";
+    const parts = [error, step ? `(step: ${step})` : "", intuitStatus, intuitError, hint].filter(
+      Boolean,
+    );
+    return parts.length > 0 ? parts.join(" — ") : null;
+  } catch {
+    try {
+      const text = await (ctx as Response).clone().text();
+      return text.slice(0, 500) || null;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -136,18 +239,23 @@ async function insertWithIdempotency<T extends { idempotency_key?: string | null
     | "vehicle_inspections"
     | "tool_checklist_submissions"
     | "job_logs"
+    | "dump_logs"
     | "purchase_requests"
     | "ticket_photos"
     | "maintenance_work_orders",
   row: T,
 ): Promise<T> {
   if (!supabase) throw new Error(`insertWithIdempotency: supabase client unavailable`);
+  // Untyped client: dump_logs postdates the generated Database types
+  // snapshot, and this helper only ever round-trips rows the caller built —
+  // the generic T pins the shape. Re-run `supabase gen types` to retire this.
+  const client = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
   // `.insert(row).select().single()` round-trips the inserted row so we have
   // the persisted values (including server-side defaults like `created_at`)
   // to hand back to the caller. We need the .single() shape either way to
   // get a structured 23505 PostgrestError on a partial-unique-index collision
   // instead of a silently-empty `data` array.
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from(table)
     .insert(row as never)
     .select()
@@ -157,7 +265,7 @@ async function insertWithIdempotency<T extends { idempotency_key?: string | null
   // path — any other unique-constraint hit (e.g. pk collision on `id`) is
   // a real bug and must propagate.
   if (error.code === "23505" && row.idempotency_key) {
-    const { data: existing, error: selErr } = await supabase
+    const { data: existing, error: selErr } = await client
       .from(table)
       .select()
       .eq("idempotency_key", row.idempotency_key)
@@ -326,6 +434,213 @@ export const api = {
     }
     getStore().submitJobLog(log);
     return log;
+  },
+
+  // Dump logs (native hauling records — replaces Formstack for new entries)
+  // Mirrors submitJobLog: client-side id, offline-queue fallback, idempotent
+  // insert keyed on idempotencyKey so a flush replay never double-inserts.
+  submitDumpLog: async (
+    input: Omit<
+      DumpLog,
+      | "id"
+      | "createdAt"
+      | "clientId"
+      | "submissionCode"
+      | "source"
+      | "submittedName"
+      | "truckNumber"
+      | "status"
+      | "approvedBy"
+      | "approvedAt"
+    > & { idempotencyKey?: string },
+  ) => {
+    // Portal-only fields default here: driver-app records carry the auth
+    // driver instead of a typed-in name, and the DB defaults mirror these.
+    const log: DumpLog = {
+      ...input,
+      clientId: null,
+      submissionCode: null,
+      source: "driver-app",
+      submittedName: "",
+      truckNumber: "",
+      status: "submitted",
+      approvedBy: null,
+      approvedAt: null,
+      id: uid("DL"),
+      createdAt: new Date().toISOString(),
+    };
+    const online = typeof navigator === "undefined" ? true : navigator.onLine;
+    if (!online) {
+      const { offlineQueue } = await import("./offline-queue");
+      await offlineQueue.enqueue({ kind: "dumpLog", payload: input });
+      return log;
+    }
+    if (USE_SUPABASE && supabase) {
+      try {
+        await insertWithIdempotency("dump_logs", {
+          id: log.id,
+          driver_id: log.driverId,
+          job_id: log.jobId,
+          vehicle_id: log.vehicleId,
+          load_type: log.loadType,
+          quantity: log.quantity,
+          weight: log.weight,
+          location: log.location,
+          receiving_site: log.receivingSite,
+          notes: log.notes,
+          gps_lat: log.gpsLat,
+          gps_lng: log.gpsLng,
+          logged_at: log.loggedAt,
+          idempotency_key: input.idempotencyKey,
+        });
+      } catch (err) {
+        const e = err as {
+          message: string;
+          details?: string | null;
+          hint?: string | null;
+          code?: string | null;
+        };
+        throw new Error(
+          `submitDumpLog: ${reportApiError("SUBMIT_DUMP_LOG", e, { dumpLogId: log.id, jobId: log.jobId })}`,
+        );
+      }
+    } else {
+      await wait();
+    }
+    return log;
+  },
+
+  // Admin read for /admin/hauling-records "App" tab. RLS scopes drivers to
+  // their own rows, admins to everything.
+  fetchDumpLogs: async (input: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ rows: DumpLog[]; total: number }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { rows: [], total: 0 };
+    }
+    const limit = Math.min(input.limit ?? 50, 200);
+    const offset = input.offset ?? 0;
+    // dump_logs postdates the generated Database types snapshot — untyped
+    // client until `supabase gen types` is re-run (same caveat as the
+    // formstack_submissions reads).
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error, count } = await untyped
+      .from("dump_logs")
+      .select(
+        "id,driver_id,job_id,vehicle_id,client_id,submission_code,source,submitted_name,truck_number,status,approved_by,approved_at,load_type,quantity,weight,location,receiving_site,notes,gps_lat,gps_lng,logged_at,created_at",
+        { count: "exact" },
+      )
+      .order("logged_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) {
+      throw new Error(`fetchDumpLogs: ${reportApiError("FETCH_DUMP_LOGS", error, input)}`);
+    }
+    return {
+      rows: (data ?? []).map((r) => ({
+        id: r.id as string,
+        driverId: (r.driver_id as string | null) ?? null,
+        jobId: (r.job_id as string | null) ?? null,
+        vehicleId: (r.vehicle_id as string | null) ?? null,
+        clientId: (r.client_id as string | null) ?? null,
+        submissionCode: (r.submission_code as string | null) ?? null,
+        source: ((r.source as string) === "client-portal" ? "client-portal" : "driver-app") as
+          | "driver-app"
+          | "client-portal",
+        submittedName: (r.submitted_name as string) ?? "",
+        truckNumber: (r.truck_number as string) ?? "",
+        status: (r.status as string) ?? "submitted",
+        approvedBy: (r.approved_by as string | null) ?? null,
+        approvedAt: (r.approved_at as string | null) ?? null,
+        loadType: (r.load_type as string) ?? "",
+        quantity: (r.quantity as string) ?? "",
+        weight: (r.weight as string) ?? "",
+        location: (r.location as string) ?? "",
+        receivingSite: (r.receiving_site as string) ?? "",
+        notes: (r.notes as string) ?? "",
+        gpsLat: (r.gps_lat as number | null) ?? null,
+        gpsLng: (r.gps_lng as number | null) ?? null,
+        loggedAt: (r.logged_at as string) ?? "",
+        createdAt: (r.created_at as string) ?? "",
+      })),
+      total: count ?? 0,
+    };
+  },
+
+  // Yard sign-off (Phase 2 regulatory approval): the yard guy approves the
+  // disposal when the truck arrives. Status-guarded so a double-click or a
+  // second admin can't overwrite the original signer.
+  approveDumpLog: async (input: {
+    id: string;
+    approverName: string;
+  }): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("dump_logs")
+      .update({
+        status: "approved",
+        approved_by: input.approverName,
+        approved_at: new Date().toISOString(),
+      })
+      .eq("id", input.id)
+      .eq("status", "submitted")
+      .select("id");
+    if (error) {
+      return { ok: false, reason: reportApiError("APPROVE_DUMP_LOG", error, { id: input.id }) };
+    }
+    if (!data || data.length === 0) {
+      return { ok: false, reason: "Already approved by someone else (refresh to see who)" };
+    }
+    return { ok: true };
+  },
+
+  // Internal (staff) notification recipients for portal submissions — stored
+  // on the app_settings singleton; per-client recipients live on clients.
+  fetchPortalNotifySettings: async (): Promise<{ sms: string[]; emails: string[] }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { sms: [], emails: [] };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("app_settings")
+      .select("portal_notify_sms, portal_notify_emails")
+      .eq("id", "default")
+      .maybeSingle();
+    if (error) {
+      throw new Error(`fetchPortalNotifySettings: ${reportApiError("FETCH_PORTAL_NOTIFY", error)}`);
+    }
+    return {
+      sms: (data?.portal_notify_sms as string[]) ?? [],
+      emails: (data?.portal_notify_emails as string[]) ?? [],
+    };
+  },
+
+  updatePortalNotifySettings: async (input: {
+    sms: string[];
+    emails: string[];
+  }): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped
+      .from("app_settings")
+      .update({
+        portal_notify_sms: input.sms.map((s) => s.trim()).filter(Boolean),
+        portal_notify_emails: input.emails.map((s) => s.trim()).filter(Boolean),
+      })
+      .eq("id", "default");
+    if (error) {
+      return { ok: false, reason: reportApiError("UPDATE_PORTAL_NOTIFY", error) };
+    }
+    return { ok: true };
   },
 
   // Work orders
@@ -585,6 +900,17 @@ export const api = {
         throw new Error(
           `submitStartOfDay: ${reportApiError("SUBMIT_START_OF_DAY", error, { driverId: p.driverId, entryId: entry.id, idempotencyKey: p.idempotencyKey ?? null })}`,
         );
+      // The morning odometer entry doubles as the vehicle's odometer feed —
+      // this is what preventive-maintenance-check reads, so manual entry
+      // replaces the Geotab odometer when hardware tracking is dropped.
+      // Best-effort (monotonic guard lives in the RPC); never fails the shift.
+      if (p.odometer > 0) {
+        // RPC postdates the generated types snapshot — untyped client cast.
+        const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+        void untyped
+          .rpc("record_vehicle_odometer", { p_odometer: Math.round(p.odometer) })
+          .then(() => {});
+      }
     } else {
       await wait();
     }
@@ -1755,6 +2081,600 @@ export const api = {
     };
   },
 
+  // ---- Formstack (hauling records / dump forms) ---------------------------
+  // Pulls submissions from the Formstack v2025 API into formstack_submissions
+  // via the formstack-import edge function. Incremental per form (high-water
+  // mark on submitted_at) unless fullResync is set.
+  importFromFormstack: async (input: {
+    formIds?: number[];
+    dryRun?: boolean;
+    fullResync?: boolean;
+  }): Promise<
+    | {
+        ok: true;
+        dryRun: boolean;
+        totalFetched: number;
+        totalUpserted: number;
+        forms: Array<{
+          formId: number;
+          formName: string;
+          fetched: number;
+          upserted: number;
+          capped?: boolean;
+          error?: string;
+        }>;
+        // True when the edge function ran out of its time budget before
+        // covering every form. Call again with formIds=remainingFormIds to
+        // continue — the per-form high-water marks make this idempotent.
+        partial: boolean;
+        remainingFormIds?: number[];
+        durationMs: number;
+      }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return {
+        ok: true,
+        dryRun: input.dryRun ?? false,
+        totalFetched: 0,
+        totalUpserted: 0,
+        forms: [],
+        partial: false,
+        durationMs: 0,
+      };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      dryRun: boolean;
+      totalFetched: number;
+      totalUpserted: number;
+      forms: Array<{
+        formId: number;
+        formName: string;
+        fetched: number;
+        upserted: number;
+        capped?: boolean;
+        error?: string;
+      }>;
+      partial?: boolean;
+      remainingFormIds?: number[];
+      error?: string;
+      durationMs: number;
+    }>("formstack-import", { body: input });
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return {
+        ok: false,
+        reason: reportApiError(
+          "IMPORT_FROM_FORMSTACK",
+          { message: body ?? error.message },
+          { formIds: input.formIds ?? null, dryRun: input.dryRun ?? false },
+        ),
+      };
+    }
+    if (!data) return { ok: false, reason: "formstack-import returned no data" };
+    if (!data.ok) {
+      // Partial failure still carries per-form results — surface the error
+      // but keep the successful counts visible to the caller.
+      return {
+        ok: false,
+        reason: data.error ?? "formstack-import reported failure with no error message",
+      };
+    }
+    return {
+      ok: true,
+      dryRun: data.dryRun,
+      totalFetched: data.totalFetched ?? 0,
+      totalUpserted: data.totalUpserted ?? 0,
+      forms: data.forms ?? [],
+      partial: data.partial === true,
+      ...(data.remainingFormIds?.length ? { remainingFormIds: data.remainingFormIds } : {}),
+      durationMs: data.durationMs ?? 0,
+    };
+  },
+
+  // Paginated reads for /admin/hauling-records. RLS limits these to admins.
+  fetchFormstackSubmissions: async (input: {
+    formId?: number;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ rows: FormstackSubmissionRow[]; total: number }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { rows: [], total: 0 };
+    }
+    const limit = Math.min(input.limit ?? 50, 200);
+    const offset = input.offset ?? 0;
+    // formstack_submissions isn't in the generated Database types yet — the
+    // types snapshot predates the migration. Drop to the untyped client for
+    // this table; the explicit casts below pin the row shape. Remove once
+    // `supabase gen types` is re-run after the migration applies.
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    let q = untyped
+      .from("formstack_submissions")
+      .select("id,submission_id,form_id,form_name,submitted_at,summary,data,imported_at", {
+        count: "exact",
+      })
+      .order("submitted_at", { ascending: false, nullsFirst: false })
+      .range(offset, offset + limit - 1);
+    if (input.formId) q = q.eq("form_id", input.formId);
+    if (input.search?.trim()) {
+      // Escape PostgREST ilike wildcards in user input.
+      const term = input.search.trim().replace(/[%_]/g, "\\$&");
+      q = q.or(`summary.ilike.%${term}%,form_name.ilike.%${term}%`);
+    }
+    const { data, error, count } = await q;
+    if (error) {
+      throw new Error(
+        `fetchFormstackSubmissions: ${reportApiError("FETCH_FORMSTACK_SUBMISSIONS", error, input)}`,
+      );
+    }
+    return {
+      rows: (data ?? []).map((r) => ({
+        id: r.id as string,
+        submissionId: r.submission_id as number,
+        formId: r.form_id as number,
+        formName: (r.form_name as string) ?? "",
+        submittedAt: (r.submitted_at as string | null) ?? null,
+        summary: (r.summary as string) ?? "",
+        data: (r.data as FormstackSubmissionRow["data"]) ?? [],
+        importedAt: (r.imported_at as string) ?? "",
+      })),
+      total: count ?? 0,
+    };
+  },
+
+  // ---- Client dump-form portal (Formstack replacement, Phase 1) -----------
+  // Public side: the /portal/$code page exchanges the access code for the
+  // client's form context, then submits through the same edge function. No
+  // user session involved — supabase-js falls back to the anon key and the
+  // edge function gates on the code.
+  portalContext: async (
+    code: string,
+  ): Promise<
+    | { ok: true; clientName: string; driverNames: string[]; truckNumbers: string[] }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return {
+        ok: true,
+        clientName: "Mock Client Co.",
+        driverNames: ["Mock Driver"],
+        truckNumbers: ["TRUCK-1"],
+      };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      clientName?: string;
+      driverNames?: string[];
+      truckNumbers?: string[];
+      error?: string;
+    }>("client-portal", { body: { action: "context", code } });
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
+    if (!data?.ok) return { ok: false, reason: data?.error ?? "Could not load form" };
+    return {
+      ok: true,
+      clientName: data.clientName ?? "",
+      driverNames: data.driverNames ?? [],
+      truckNumbers: data.truckNumbers ?? [],
+    };
+  },
+
+  portalSubmitDump: async (
+    code: string,
+    submission: {
+      driverName: string;
+      truckNumber: string;
+      loadType: string;
+      quantity: string;
+      weight: string;
+      location: string;
+      receivingSite: string;
+      notes: string;
+      gpsLat: number | null;
+      gpsLng: number | null;
+    },
+  ): Promise<
+    { ok: true; submissionCode: string; ticketsRemaining?: number } | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, submissionCode: `MOCK-${Date.now()}` };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      submissionCode?: string;
+      ticketsRemaining?: number;
+      warnings?: string[];
+      error?: string;
+    }>("client-portal", { body: { action: "submit", code, submission } });
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
+    if (!data?.ok || !data.submissionCode) {
+      return { ok: false, reason: data?.error ?? "Submission failed" };
+    }
+    return {
+      ok: true,
+      submissionCode: data.submissionCode,
+      ...(typeof data.ticketsRemaining === "number"
+        ? { ticketsRemaining: data.ticketsRemaining }
+        : {}),
+    };
+  },
+
+  // Admin side: issue/revoke per-employee access codes and manage the
+  // per-client dropdown lists. RLS restricts these tables to admins.
+  fetchClientPortalTokens: async (
+    clientId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      code: string;
+      label: string;
+      createdAt: string;
+      revokedAt: string | null;
+      lastUsedAt: string | null;
+      useCount: number;
+    }>
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return [];
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("client_portal_tokens")
+      .select("id, code, label, created_at, revoked_at, last_used_at, use_count")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      throw new Error(
+        `fetchClientPortalTokens: ${reportApiError("FETCH_PORTAL_TOKENS", error, { clientId })}`,
+      );
+    }
+    return (data ?? []).map((r) => ({
+      id: r.id as string,
+      code: r.code as string,
+      label: (r.label as string) ?? "",
+      createdAt: (r.created_at as string) ?? "",
+      revokedAt: (r.revoked_at as string | null) ?? null,
+      lastUsedAt: (r.last_used_at as string | null) ?? null,
+      useCount: (r.use_count as number) ?? 0,
+    }));
+  },
+
+  createClientPortalToken: async (input: {
+    clientId: string;
+    clientName: string;
+    label: string;
+  }): Promise<{ ok: true; code: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, code: "MOCKCODE-1234" };
+    }
+    // Code shape: <clientslug>-<6 unambiguous chars>. Generated client-side
+    // (admin context) — uniqueness enforced by the DB unique constraint,
+    // retried once on the unlikely collision.
+    const slug =
+      input.clientName
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .slice(0, 12)
+        .toUpperCase() || "CLIENT";
+    const alphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+    const gen = () => {
+      const buf = new Uint8Array(6);
+      crypto.getRandomValues(buf);
+      return `${slug}-${Array.from(buf, (b) => alphabet[b % alphabet.length]).join("")}`;
+    };
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const code = gen();
+      const { error } = await untyped.from("client_portal_tokens").insert({
+        client_id: input.clientId,
+        code,
+        label: input.label.trim(),
+      });
+      if (!error) return { ok: true, code };
+      if (error.code === "23505") continue;
+      return {
+        ok: false,
+        reason: reportApiError("CREATE_PORTAL_TOKEN", error, { clientId: input.clientId }),
+      };
+    }
+    return { ok: false, reason: "Code collision twice — try again" };
+  },
+
+  revokeClientPortalToken: async (
+    tokenId: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped
+      .from("client_portal_tokens")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("id", tokenId);
+    if (error) {
+      return { ok: false, reason: reportApiError("REVOKE_PORTAL_TOKEN", error, { tokenId }) };
+    }
+    return { ok: true };
+  },
+
+  fetchClientPortalLists: async (
+    clientId: string,
+  ): Promise<{
+    driverNames: string[];
+    truckNumbers: string[];
+    notifySms: string[];
+    notifyEmails: string[];
+  }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { driverNames: [], truckNumbers: [], notifySms: [], notifyEmails: [] };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("clients")
+      .select("portal_driver_names, portal_truck_numbers, portal_notify_sms, portal_notify_emails")
+      .eq("id", clientId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(
+        `fetchClientPortalLists: ${reportApiError("FETCH_PORTAL_LISTS", error, { clientId })}`,
+      );
+    }
+    return {
+      driverNames: (data?.portal_driver_names as string[]) ?? [],
+      truckNumbers: (data?.portal_truck_numbers as string[]) ?? [],
+      notifySms: (data?.portal_notify_sms as string[]) ?? [],
+      notifyEmails: (data?.portal_notify_emails as string[]) ?? [],
+    };
+  },
+
+  updateClientPortalLists: async (input: {
+    clientId: string;
+    driverNames: string[];
+    truckNumbers: string[];
+    notifySms: string[];
+    notifyEmails: string[];
+  }): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const clean = (a: string[]) => a.map((s) => s.trim()).filter(Boolean);
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped
+      .from("clients")
+      .update({
+        portal_driver_names: clean(input.driverNames),
+        portal_truck_numbers: clean(input.truckNumbers),
+        portal_notify_sms: clean(input.notifySms),
+        portal_notify_emails: clean(input.notifyEmails),
+      })
+      .eq("id", input.clientId);
+    if (error) {
+      return {
+        ok: false,
+        reason: reportApiError("UPDATE_PORTAL_LISTS", error, { clientId: input.clientId }),
+      };
+    }
+    return { ok: true };
+  },
+
+  // ---- Form templates (Phase 4) -------------------------------------------
+  fetchFormTemplates: async (opts?: { includeInactive?: boolean }): Promise<FormTemplate[]> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return [];
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    let q = untyped
+      .from("form_templates")
+      .select("id, name, kind, client_id, fields, active, sort")
+      .order("sort", { ascending: true })
+      .order("name", { ascending: true });
+    if (!opts?.includeInactive) q = q.eq("active", true);
+    const { data, error } = await q;
+    if (error) {
+      throw new Error(`fetchFormTemplates: ${reportApiError("FETCH_FORM_TEMPLATES", error)}`);
+    }
+    return (data ?? []).map((r) => ({
+      id: r.id as string,
+      name: (r.name as string) ?? "",
+      kind: ((r.kind as string) ?? "custom") as FormTemplate["kind"],
+      clientId: (r.client_id as string | null) ?? null,
+      fields: ((r.fields as FormTemplateField[]) ?? []).filter((f) => f && f.key),
+      active: (r.active as boolean) ?? true,
+      sort: (r.sort as number) ?? 0,
+    }));
+  },
+
+  saveFormTemplate: async (
+    t: Omit<FormTemplate, "id"> & { id?: string },
+  ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, id: t.id ?? "FT-MOCK" };
+    }
+    const id = t.id ?? `FT-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped.from("form_templates").upsert(
+      {
+        id,
+        name: t.name.trim(),
+        kind: t.kind,
+        client_id: t.clientId,
+        fields: t.fields,
+        active: t.active,
+        sort: t.sort,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      return { ok: false, reason: reportApiError("SAVE_FORM_TEMPLATE", error, { id }) };
+    }
+    return { ok: true, id };
+  },
+
+  // Photo upload for template forms — path is scoped to the uploader so the
+  // storage RLS owner checks line up.
+  uploadFormPhoto: async (
+    file: File,
+  ): Promise<{ ok: true; path: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, path: `mock/${file.name}` };
+    }
+    const { data: u } = await supabase.auth.getUser();
+    const uid = u?.user?.id ?? "anon";
+    const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-60);
+    const path = `${uid}/${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from("form-photos").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+    if (error) {
+      return { ok: false, reason: reportApiError("UPLOAD_FORM_PHOTO", { message: error.message }) };
+    }
+    return { ok: true, path };
+  },
+
+  getFormPhotoUrl: async (path: string): Promise<string | null> => {
+    if (!USE_SUPABASE || !supabase) return null;
+    const { data, error } = await supabase.storage.from("form-photos").createSignedUrl(path, 3600);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  },
+
+  submitCustomForm: async (input: {
+    template: FormTemplate;
+    data: Record<string, unknown>;
+    photos: string[];
+    submittedBy: string;
+    submittedName: string;
+    gpsLat: number | null;
+    gpsLng: number | null;
+  }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, id: "FSUB-MOCK" };
+    }
+    const id = `FSUB-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped.from("form_submissions").insert({
+      id,
+      template_id: input.template.id,
+      template_name: input.template.name,
+      template_kind: input.template.kind,
+      client_id: input.template.clientId,
+      submitted_by: input.submittedBy,
+      submitted_name: input.submittedName,
+      data: input.data,
+      photos: input.photos,
+      gps_lat: input.gpsLat,
+      gps_lng: input.gpsLng,
+      logged_at: new Date().toISOString(),
+    });
+    if (error) {
+      return { ok: false, reason: reportApiError("SUBMIT_CUSTOM_FORM", error, { id }) };
+    }
+    return { ok: true, id };
+  },
+
+  fetchCustomFormSubmissions: async (input: {
+    templateId?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ rows: CustomFormSubmission[]; total: number }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { rows: [], total: 0 };
+    }
+    const limit = Math.min(input.limit ?? 50, 200);
+    const offset = input.offset ?? 0;
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    let q = untyped
+      .from("form_submissions")
+      .select(
+        "id, template_id, template_name, template_kind, client_id, submitted_by, submitted_name, data, photos, gps_lat, gps_lng, logged_at",
+        { count: "exact" },
+      )
+      .order("logged_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (input.templateId) q = q.eq("template_id", input.templateId);
+    if (input.search?.trim()) {
+      const term = input.search.trim().replace(/[%_]/g, "\\$&");
+      q = q.or(`template_name.ilike.%${term}%,submitted_name.ilike.%${term}%`);
+    }
+    const { data, error, count } = await q;
+    if (error) {
+      throw new Error(
+        `fetchCustomFormSubmissions: ${reportApiError("FETCH_CUSTOM_FORMS", error, input)}`,
+      );
+    }
+    return {
+      rows: (data ?? []).map((r) => ({
+        id: r.id as string,
+        templateId: (r.template_id as string | null) ?? null,
+        templateName: (r.template_name as string) ?? "",
+        templateKind: (r.template_kind as string) ?? "custom",
+        clientId: (r.client_id as string | null) ?? null,
+        submittedBy: (r.submitted_by as string | null) ?? null,
+        submittedName: (r.submitted_name as string) ?? "",
+        data: (r.data as Record<string, unknown>) ?? {},
+        photos: (r.photos as string[]) ?? [],
+        gpsLat: (r.gps_lat as number | null) ?? null,
+        gpsLng: (r.gps_lng as number | null) ?? null,
+        loggedAt: (r.logged_at as string) ?? "",
+      })),
+      total: count ?? 0,
+    };
+  },
+
+  fetchFormstackFormFacets: async (): Promise<
+    Array<{
+      formId: number;
+      formName: string;
+      submissionCount: number;
+      latestSubmittedAt: string | null;
+    }>
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return [];
+    }
+    // Same generated-types caveat as fetchFormstackSubmissions above.
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("formstack_form_facets")
+      .select("form_id,form_name,submission_count,latest_submitted_at")
+      .order("submission_count", { ascending: false });
+    if (error) {
+      throw new Error(
+        `fetchFormstackFormFacets: ${reportApiError("FETCH_FORMSTACK_FACETS", error)}`,
+      );
+    }
+    return (data ?? []).map((r) => ({
+      formId: r.form_id as number,
+      formName: (r.form_name as string) ?? "",
+      submissionCount: (r.submission_count as number) ?? 0,
+      latestSubmittedAt: (r.latest_submitted_at as string | null) ?? null,
+    }));
+  },
+
   // Tokens
   generateDriverToken: async (driverId: string, scope: TokenScope, expiresInHours?: number) => {
     const hours = expiresInHours ?? 12;
@@ -2061,6 +2981,257 @@ export const api = {
     return { ok: true, ticketId };
   },
 
+  // ---- Email (Resend via send-email edge function) -----------------------
+  // Generic transactional email send. Currently used by the invite-user flow
+  // (admin-create-user fans this out when sendInviteEmail=true) and intended
+  // as the single send-path for any future server-initiated email (critical
+  // notification alerts, scheduled reports, etc.).
+  //
+  // The actual delivery happens server-side so the Resend API key never
+  // touches the browser. Failures return a structured reason so toasts can
+  // surface "domain not verified" / "API key missing" without exposing the
+  // raw Resend error to non-admin users.
+  sendEmail: async (input: {
+    to: string | string[];
+    subject: string;
+    html?: string;
+    text?: string;
+    from?: string;
+    replyTo?: string;
+    cc?: string | string[];
+    bcc?: string | string[];
+  }): Promise<{ ok: true; id: string | null } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, id: `MOCK-${Math.random().toString(36).slice(2, 10)}` };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok?: boolean;
+      id?: string | null;
+      error?: string;
+      provider?: string;
+      status?: number;
+      errorName?: string | null;
+    }>("send-email", { body: input });
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
+    if (!data) return { ok: false, reason: "send-email returned no data" };
+    if (data.ok !== true) {
+      return {
+        ok: false,
+        reason: data.error ?? "send-email returned ok=false with no error",
+      };
+    }
+    return { ok: true, id: data.id ?? null };
+  },
+
+  // ---- Standalone invoicing (QuickBooks-optional operation) ---------------
+  // Email the invoice straight to the client from the CRM and track
+  // sent/paid state locally — QuickBooks push stays available but optional.
+  fetchInvoiceMeta: async (
+    invoiceId: string,
+  ): Promise<{ sentAt: string | null; sentTo: string | null; paidAt: string | null }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { sentAt: null, sentTo: null, paidAt: null };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("invoice_data")
+      .select("sent_at, sent_to, paid_at")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`fetchInvoiceMeta: ${reportApiError("FETCH_INVOICE_META", error)}`);
+    }
+    return {
+      sentAt: (data?.sent_at as string | null) ?? null,
+      sentTo: (data?.sent_to as string | null) ?? null,
+      paidAt: (data?.paid_at as string | null) ?? null,
+    };
+  },
+
+  emailInvoice: async (input: {
+    invoiceId: string;
+    to: string;
+    clientName: string;
+    billingAddress: string;
+    workOrderId: string;
+    lineItems: Array<{ description: string; qty: number; rate: number; amount: number }>;
+    total: number;
+  }): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    const esc = (s: string) =>
+      s
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    const rows = input.lineItems
+      .map(
+        (li) =>
+          `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${esc(li.description)}</td>` +
+          `<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${li.qty}</td>` +
+          `<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">$${li.rate.toFixed(2)}</td>` +
+          `<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${li.amount.toFixed(2)}</td></tr>`,
+      )
+      .join("");
+    const html = `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px;">
+<h1 style="font-size:20px;margin:0 0 4px 0;border-bottom:2px solid #D7261E;padding-bottom:8px;">Invoice — Engage Hydrovac Services</h1>
+<p style="margin:8px 0 16px 0;color:#666;font-size:13px;">Work order ${esc(input.workOrderId)} · ${new Date().toLocaleDateString()}</p>
+<p style="margin:0 0 16px 0;"><strong>Bill to:</strong> ${esc(input.clientName)}<br/>${esc(input.billingAddress)}</p>
+<table style="border-collapse:collapse;width:100%;font-size:14px;">
+<tr style="text-align:left;color:#666;font-size:12px;"><th style="padding:6px 8px;">Description</th><th style="padding:6px 8px;text-align:right;">Qty</th><th style="padding:6px 8px;text-align:right;">Rate</th><th style="padding:6px 8px;text-align:right;">Amount</th></tr>
+${rows}
+<tr><td colspan="3" style="padding:10px 8px;text-align:right;font-weight:700;">Total</td><td style="padding:10px 8px;text-align:right;font-weight:700;">$${input.total.toFixed(2)}</td></tr>
+</table>
+<p style="margin:24px 0 0 0;font-size:12px;color:#888;">Questions? Reply to this email. — Engage Hydrovac Services</p>
+</body></html>`;
+    const text =
+      `Invoice — Engage Hydrovac Services\nWork order ${input.workOrderId}\nBill to: ${input.clientName}\n\n` +
+      input.lineItems
+        .map(
+          (li) =>
+            `${li.description} | ${li.qty} x $${li.rate.toFixed(2)} = $${li.amount.toFixed(2)}`,
+        )
+        .join("\n") +
+      `\n\nTotal: $${input.total.toFixed(2)}`;
+    const sent = await api.sendEmail({
+      to: input.to,
+      subject: `Invoice from Engage Hydrovac Services — ${input.workOrderId} ($${input.total.toFixed(2)})`,
+      html,
+      text,
+    });
+    if (!sent.ok) return { ok: false, reason: sent.reason };
+    if (USE_SUPABASE && supabase) {
+      const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+      await untyped
+        .from("invoice_data")
+        .update({ sent_at: new Date().toISOString(), sent_to: input.to })
+        .eq("id", input.invoiceId);
+    }
+    return { ok: true };
+  },
+
+  markInvoicePaid: async (
+    invoiceId: string,
+    paid: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped
+      .from("invoice_data")
+      .update({ paid_at: paid ? new Date().toISOString() : null })
+      .eq("id", invoiceId);
+    if (error) {
+      return { ok: false, reason: reportApiError("MARK_INVOICE_PAID", error, { invoiceId }) };
+    }
+    return { ok: true };
+  },
+
+  // ---- Payroll rates + receivables ledger (QuickBooks-optional ops) -------
+  fetchDriverRates: async (): Promise<Map<string, number>> => {
+    const m = new Map<string, number>();
+    if (!USE_SUPABASE || !supabase) return m;
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped.from("drivers").select("id, hourly_rate");
+    if (error) {
+      reportApiError("FETCH_DRIVER_RATES", error);
+      return m;
+    }
+    for (const r of data ?? []) m.set(r.id as string, Number(r.hourly_rate) || 0);
+    return m;
+  },
+
+  updateDriverRate: async (
+    driverId: string,
+    hourlyRate: number,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { error } = await untyped
+      .from("drivers")
+      .update({ hourly_rate: Math.max(0, hourlyRate) })
+      .eq("id", driverId);
+    if (error) {
+      return { ok: false, reason: reportApiError("UPDATE_DRIVER_RATE", error, { driverId }) };
+    }
+    return { ok: true };
+  },
+
+  // Receivables ledger: every invoice with its sent/paid state, straight
+  // from invoice_data (DataContext predates the sent/paid columns).
+  fetchInvoiceLedger: async (): Promise<
+    Array<{
+      id: string;
+      workOrderId: string;
+      clientId: string;
+      kind: string;
+      total: number;
+      sentAt: string | null;
+      sentTo: string | null;
+      paidAt: string | null;
+      qboSyncStatus: string;
+    }>
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return [];
+    }
+    const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const { data, error } = await untyped
+      .from("invoice_data")
+      .select(
+        "id, work_order_id, client_id, kind, total, sent_at, sent_to, paid_at, qbo_sync_status",
+      )
+      .order("id", { ascending: false })
+      .limit(2000);
+    if (error) {
+      throw new Error(`fetchInvoiceLedger: ${reportApiError("FETCH_INVOICE_LEDGER", error)}`);
+    }
+    return (data ?? []).map((r) => ({
+      id: r.id as string,
+      workOrderId: (r.work_order_id as string) ?? "",
+      clientId: (r.client_id as string) ?? "",
+      kind: (r.kind as string) ?? "work-order",
+      total: Number(r.total) || 0,
+      sentAt: (r.sent_at as string | null) ?? null,
+      sentTo: (r.sent_to as string | null) ?? null,
+      paidAt: (r.paid_at as string | null) ?? null,
+      qboSyncStatus: (r.qbo_sync_status as string) ?? "not-synced",
+    }));
+  },
+
+  // ---- Phone-based vehicle tracking (GeoTab replacement) ------------------
+  // Driver app pings while a shift is open; the SECURITY DEFINER RPC updates
+  // the driver's assigned vehicle so the Live map keeps working without
+  // Geotab hardware. Silently no-ops when off-shift or unassigned.
+  recordDriverLocation: async (coords: {
+    lat: number;
+    lng: number;
+    speedKmh?: number | null;
+  }): Promise<void> => {
+    if (!USE_SUPABASE || !supabase) return;
+    try {
+      // RPC postdates the generated types snapshot — untyped client cast.
+      const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+      await untyped.rpc("record_driver_location", {
+        p_lat: coords.lat,
+        p_lng: coords.lng,
+        p_speed_kmh: coords.speedKmh ?? null,
+      });
+    } catch {
+      /* tracking is best-effort — never surface errors to the driver */
+    }
+  },
+
   // ---- User onboarding ---------------------------------------------------
   // Admin-only path for creating a new user (driver/mechanic/admin). Routes
   // through the admin-create-user edge function which uses the service-role
@@ -2077,41 +3248,76 @@ export const api = {
     role: "admin" | "driver" | "mechanic";
     licenseNumber?: string;
     licenseExpiry?: string;
+    // When true, the edge function generates a Supabase recovery link and
+    // emails it via Resend. The response carries inviteSent=true and OMITS
+    // tempPassword. When false (default), the existing temp-password flow
+    // returns the password for the admin to relay manually.
+    sendInviteEmail?: boolean;
+    // Optional redirect after the recovery link completes. Defaults to
+    // SITE_URL/reset-password on the edge function side.
+    redirectTo?: string;
   }): Promise<
-    | { ok: true; userId: string; tempPassword: string; warning?: string }
+    | { ok: true; userId: string; tempPassword: string; inviteSent: false; warning?: string }
+    | { ok: true; userId: string; inviteSent: true; warning?: string }
     | { ok: false; reason: string }
   > => {
     if (!USE_SUPABASE || !supabase) {
       await wait();
+      if (input.sendInviteEmail) {
+        return {
+          ok: true,
+          userId: `MOCK-${Math.random().toString(36).slice(2, 10)}`,
+          inviteSent: true,
+        };
+      }
       return {
         ok: true,
         userId: `MOCK-${Math.random().toString(36).slice(2, 10)}`,
         tempPassword: "mock-pw-12345",
+        inviteSent: false,
       };
     }
     const { data, error } = await supabase.functions.invoke<{
       ok: boolean;
       userId?: string;
       tempPassword?: string;
+      inviteSent?: boolean;
       warning?: string;
       error?: string;
     }>("admin-create-user", { body: input });
     if (error) {
+      // Non-2xx responses carry the real diagnostic in the response body
+      // (e.g. "admin role required", "Drivers row insert failed … auth user
+      // was rolled back"), not in error.message. Pull it out so the toast
+      // is actionable, and report whichever message we ended up with.
+      const body = await extractFunctionErrorBody(error);
       return {
         ok: false,
-        reason: reportApiError("ADMIN_CREATE_USER", error, {
+        reason: reportApiError("ADMIN_CREATE_USER", body ? { message: body } : error, {
           email: input.email,
           role: input.role,
         }),
       };
     }
-    if (!data || !data.ok || !data.userId || !data.tempPassword) {
+    if (!data || !data.ok || !data.userId) {
       return { ok: false, reason: data?.error ?? "createUser: empty response" };
+    }
+    if (data.inviteSent === true) {
+      return {
+        ok: true,
+        userId: data.userId,
+        inviteSent: true,
+        ...(data.warning ? { warning: data.warning } : {}),
+      };
+    }
+    if (!data.tempPassword) {
+      return { ok: false, reason: data.error ?? "createUser: no tempPassword and no invite" };
     }
     return {
       ok: true,
       userId: data.userId,
       tempPassword: data.tempPassword,
+      inviteSent: false,
       ...(data.warning ? { warning: data.warning } : {}),
     };
   },
@@ -2283,7 +3489,10 @@ export const api = {
       redirectUri?: string;
       error?: string;
     }>("qbo-oauth-start", { body: {} });
-    if (error) return { ok: false, reason: error.message };
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
     if (!data) return { ok: false, reason: "Empty response from qbo-oauth-start" };
     if (data.error) return { ok: false, reason: data.error };
     if (!data.authorizeUrl || !data.state || !data.redirectUri) {
@@ -2326,7 +3535,10 @@ export const api = {
       intuitStatus?: number;
       hint?: string;
     }>("qbo-oauth-callback", { body: input });
-    if (error) return { ok: false, reason: error.message };
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
     if (!data) return { ok: false, reason: "Empty response from qbo-oauth-callback" };
     if (data.ok !== true) {
       const parts = [

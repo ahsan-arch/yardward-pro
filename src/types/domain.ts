@@ -26,7 +26,7 @@ export interface Mechanic extends User {
 
 // Plain admin profile — no side-table fields. Used by the Users tab to list
 // real admins instead of the previous hardcoded placeholder.
-export interface Admin extends User {}
+export type Admin = User;
 
 export type TicketReportFrequency = "off" | "daily" | "weekly" | "monthly";
 
@@ -210,6 +210,38 @@ export interface JobLog {
   driverId: string;
   vehicleId: string | null;
   body: string;
+  gpsLat: number | null;
+  gpsLng: number | null;
+  loggedAt: string;
+  createdAt: string;
+}
+
+// Native hauling record (dump / load form) captured in the driver app.
+// Replaces Formstack for new submissions; distinct from WorkOrder, which is
+// the billing-side capture with foreman signature + approval flow. Persisted
+// to public.dump_logs with the same RLS shape as job_logs.
+export interface DumpLog {
+  id: string;
+  // Null for client-portal submissions (external drivers are not auth users;
+  // their name + truck arrive as text in submittedName / truckNumber).
+  driverId: string | null;
+  jobId: string | null;
+  vehicleId: string | null;
+  // Portal fields (Phase 1 of the Formstack replacement).
+  clientId: string | null;
+  submissionCode: string | null;
+  source: "driver-app" | "client-portal";
+  submittedName: string;
+  truckNumber: string;
+  status: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  loadType: string;
+  quantity: string;
+  weight: string;
+  location: string;
+  receivingSite: string;
+  notes: string;
   gpsLat: number | null;
   gpsLng: number | null;
   loggedAt: string;
@@ -592,12 +624,7 @@ export type ConversationTopic = "general" | "job" | "vehicle" | "maintenance";
 export type ConversationStatus = "active" | "archived" | "closed";
 export type ParticipantRole = "originator" | "admin" | "mechanic" | "driver";
 export type MessageSenderKind = "in_app" | "sms" | "system";
-export type MessageDeliveryStatus =
-  | "queued"
-  | "sent"
-  | "delivered"
-  | "failed"
-  | "received";
+export type MessageDeliveryStatus = "queued" | "sent" | "delivered" | "failed" | "received";
 
 export interface Conversation {
   id: string;

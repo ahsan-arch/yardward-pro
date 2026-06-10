@@ -1,7 +1,19 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Home, Briefcase, FileText, User, Menu, Clock, Loader2, Lock, Wrench, Ticket, MessagesSquare } from "lucide-react";
+import {
+  Home,
+  Briefcase,
+  FileText,
+  User,
+  Menu,
+  Clock,
+  Loader2,
+  Lock,
+  Wrench,
+  Ticket,
+  MessagesSquare,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +54,37 @@ export function DriverShell({ children }: { children?: ReactNode }) {
   const [odo, setOdo] = useState("");
   const [busy, setBusy] = useState(false);
   const gps = useGpsCapture(fallback, open);
+
+  // Phone-based vehicle tracking (GeoTab replacement): while a shift is
+  // open, ping the driver's phone position every 5 minutes (plus once on
+  // mount). The SECURITY DEFINER RPC updates the assigned vehicle's live
+  // position so the admin Live map keeps working without truck hardware.
+  // Best-effort: denied geolocation or no assignment is silently ignored.
+  const onShift = !!openShift;
+  useEffect(() => {
+    if (!onShift || typeof navigator === "undefined" || !navigator.geolocation) return;
+    let cancelled = false;
+    const ping = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          void api.recordDriverLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            speedKmh: pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : null,
+          });
+        },
+        () => {},
+        { enableHighAccuracy: false, maximumAge: 60_000, timeout: 15_000 },
+      );
+    };
+    ping();
+    const t = window.setInterval(ping, 5 * 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [onShift]);
 
   // Twice-daily checklist gate. Clock-out requires an end-of-shift checklist
   // submitted after this open shift's clock_in. Clock-in requires a

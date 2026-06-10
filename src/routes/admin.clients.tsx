@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Plus, Trash2, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RateLineItem } from "@/types/domain";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -157,6 +157,7 @@ function Page() {
                   </Section>
                 )}
                 <RateTableEditor clientId={current.id} initial={currentRate?.lineItems ?? []} />
+                <PortalAccessEditor clientId={current.id} clientName={current.name} />
               </div>
             </>
           )}
@@ -321,6 +322,257 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <span className={mono ? "font-mono text-xs" : "font-medium"}>{v}</span>
     </div>
   );
+}
+
+// Dump-form portal management: per-employee revocable access codes plus the
+// per-client driver/truck dropdown lists shown on /portal/<code>. This is
+// the Formstack replacement's admin surface — "client calls, set them up
+// within the hour" lives here.
+function PortalAccessEditor({ clientId, clientName }: { clientId: string; clientName: string }) {
+  type TokenRow = {
+    id: string;
+    code: string;
+    label: string;
+    createdAt: string;
+    revokedAt: string | null;
+    lastUsedAt: string | null;
+    useCount: number;
+  };
+  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [driversText, setDriversText] = useState("");
+  const [trucksText, setTrucksText] = useState("");
+  const [notifySmsText, setNotifySmsText] = useState("");
+  const [notifyEmailsText, setNotifyEmailsText] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load on mount / when the sheet switches client.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [toks, lists] = await Promise.all([
+          api.fetchClientPortalTokens(clientId),
+          api.fetchClientPortalLists(clientId),
+        ]);
+        if (cancelled) return;
+        setTokens(toks);
+        setDriversText(lists.driverNames.join("\n"));
+        setTrucksText(lists.truckNumbers.join("\n"));
+        setNotifySmsText(lists.notifySms.join("\n"));
+        setNotifyEmailsText(lists.notifyEmails.join("\n"));
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(e instanceof Error ? e.message : "Failed to load portal settings");
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  async function saveLists() {
+    setBusy(true);
+    try {
+      const r = await api.updateClientPortalLists({
+        clientId,
+        driverNames: driversText.split("\n"),
+        truckNumbers: trucksText.split("\n"),
+        notifySms: notifySmsText.split("\n"),
+        notifyEmails: notifyEmailsText.split("\n"),
+      });
+      if (r.ok) toast.success("Portal settings saved");
+      else toast.error(r.reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createCode() {
+    if (!newLabel.trim()) {
+      toast.error("Give the code a label (employee name)");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.createClientPortalToken({ clientId, clientName, label: newLabel.trim() });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`Code created: ${r.code}`);
+      setNewLabel("");
+      setTokens(await api.fetchClientPortalTokens(clientId));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string, label: string) {
+    setBusy(true);
+    try {
+      const r = await api.revokeClientPortalToken(id);
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`Access revoked for ${label || "code"}`);
+      setTokens(await api.fetchClientPortalTokens(clientId));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function copyLink(code: string) {
+    void navigator.clipboard?.writeText(`${window.location.origin}/portal/${code}`);
+    toast.success("Portal link copied");
+  }
+
+  return (
+    <Section title="Dump-form portal">
+      {!loaded ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Driver names (one per line)</Label>
+              <Textarea
+                value={driversText}
+                onChange={(e) => setDriversText(e.target.value)}
+                rows={5}
+                className="mt-1 font-mono text-xs"
+                placeholder={"John Smith\nMike Jones"}
+                data-testid="portal-drivers-list"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Truck numbers (one per line)</Label>
+              <Textarea
+                value={trucksText}
+                onChange={(e) => setTrucksText(e.target.value)}
+                rows={5}
+                className="mt-1 font-mono text-xs"
+                placeholder={"TRK-101\nTRK-102"}
+                data-testid="portal-trucks-list"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Notify SMS on submit (E.164, one per line)</Label>
+              <Textarea
+                value={notifySmsText}
+                onChange={(e) => setNotifySmsText(e.target.value)}
+                rows={3}
+                className="mt-1 font-mono text-xs"
+                placeholder={"+14165550100"}
+                data-testid="portal-notify-sms"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Notify emails on submit (one per line)</Label>
+              <Textarea
+                value={notifyEmailsText}
+                onChange={(e) => setNotifyEmailsText(e.target.value)}
+                rows={3}
+                className="mt-1 font-mono text-xs"
+                placeholder={"gate@client.com"}
+                data-testid="portal-notify-emails"
+              />
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void saveLists()}
+            disabled={busy}
+            data-testid="portal-save-lists"
+          >
+            Save portal settings
+          </Button>
+
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Employee name for new access code"
+                className="h-9 text-sm"
+                data-testid="portal-new-code-label"
+              />
+              <Button
+                size="sm"
+                onClick={() => void createCode()}
+                disabled={busy}
+                className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 shrink-0"
+                data-testid="portal-create-code"
+              >
+                <Plus className="w-4 h-4" /> Code
+              </Button>
+            </div>
+            {tokens.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                No access codes yet — create one per client employee. Drivers open
+                /portal/&lt;code&gt; to submit dump forms.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {tokens.map((t) => (
+                  <div
+                    key={t.id}
+                    className={cnPortal(
+                      "flex items-center gap-2 text-xs border border-border rounded-md px-2 py-1.5",
+                      t.revokedAt ? "opacity-50" : "",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => copyLink(t.code)}
+                      className="font-mono text-amber-brand hover:underline"
+                      title="Copy portal link"
+                    >
+                      {t.code}
+                    </button>
+                    <span className="text-muted-foreground truncate flex-1">
+                      {t.label}
+                      {t.revokedAt
+                        ? " · revoked"
+                        : t.lastUsedAt
+                          ? ` · used ${new Date(t.lastUsedAt).toLocaleDateString()} (${t.useCount}×)`
+                          : " · never used"}
+                    </span>
+                    {!t.revokedAt && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-danger hover:text-danger"
+                        onClick={() => void revoke(t.id, t.label)}
+                        disabled={busy}
+                        data-testid={`portal-revoke-${t.code}`}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// Local tiny class joiner to avoid importing cn just for this component's
+// conditional opacity (admin.clients.tsx doesn't import cn today).
+function cnPortal(...parts: string[]): string {
+  return parts.filter(Boolean).join(" ");
 }
 
 function RateTableEditor({ clientId, initial }: { clientId: string; initial: RateLineItem[] }) {

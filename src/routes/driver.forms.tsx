@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { api, type FormTemplate } from "@/lib/api";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Sun,
@@ -10,6 +12,7 @@ import {
   ClipboardCheck,
   Truck,
   Moon,
+  Droplets,
   ChevronRight,
 } from "lucide-react";
 
@@ -44,9 +47,15 @@ const tiles = [
     icon: ClipboardList,
   },
   {
+    to: "/driver/dump-log",
+    label: "Hauling record",
+    desc: "Dump / load record with GPS + time",
+    icon: Droplets,
+  },
+  {
     to: "/driver/work-order",
-    label: "Dump / load",
-    desc: "Submit work order on site",
+    label: "Work order",
+    desc: "Billable work order with foreman sign-off",
     icon: Truck,
   },
   {
@@ -60,6 +69,15 @@ const tiles = [
 function Page() {
   const { toolChecklistSubmissions, workOrders, timeEntries } = useData();
   const { user } = useAuth();
+  // Admin-built templates (JSAs, site visits, custom) — rendered by the
+  // generic /driver/custom-form page. Active templates only.
+  const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  useEffect(() => {
+    void api
+      .fetchFormTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, []);
   const recent = [
     ...toolChecklistSubmissions
       .filter((s) => s.driverId === user.id)
@@ -104,6 +122,32 @@ function Page() {
             </Link>
           ))}
         </div>
+
+        {templates.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold mb-2">Site & safety forms</h2>
+            <div className="grid grid-cols-1 gap-2.5">
+              {templates.map((t) => (
+                <Link
+                  key={t.id}
+                  to="/driver/custom-form/$templateId"
+                  params={{ templateId: t.id }}
+                  className="flex items-center gap-3 bg-card border border-border rounded-xl p-4 hover:border-amber-brand transition-colors active:scale-[0.99]"
+                  data-testid={`form-tile-${t.id}`}
+                >
+                  <div className="w-11 h-11 rounded-lg bg-amber-brand/10 text-amber-brand grid place-items-center">
+                    <ClipboardCheck className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{t.name}</div>
+                    <div className="text-xs text-muted-foreground uppercase">{t.kind}</div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6">
           <h2 className="text-sm font-semibold mb-2">Recent submissions</h2>

@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Building2,
   FileText,
+  FileSpreadsheet,
   BarChart2,
   Settings,
   Menu,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/crm/BrandMark";
 import { useApp } from "@/contexts/AppContext";
 import { NotificationsBell } from "@/components/crm/NotificationsBell";
 
@@ -39,7 +41,10 @@ const navItems = [
   { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart },
   { to: "/admin/prepaid-tickets", label: "Prepaid tickets", icon: Ticket },
   { to: "/admin/clients", label: "Clients", icon: Building2 },
+  { to: "/admin/receivables", label: "Receivables", icon: BarChart2 },
   { to: "/admin/forms", label: "Forms & Submissions", icon: FileText },
+  { to: "/admin/hauling-records", label: "Hauling records", icon: FileSpreadsheet },
+  { to: "/admin/form-templates", label: "Form templates", icon: ClipboardCheck },
   { to: "/admin/errors", label: "Error log", icon: Bug },
   { to: "/admin/reports", label: "Reports", icon: BarChart2 },
   { to: "/admin/settings", label: "Settings", icon: Settings },
@@ -60,9 +65,7 @@ export function AdminShell({ children, title }: { children?: ReactNode; title?: 
         )}
       >
         <div className="h-16 px-5 flex items-center gap-2 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-md bg-amber-brand grid place-items-center">
-            <Truck className="w-4 h-4 text-amber-brand-foreground" />
-          </div>
+          <BrandMark />
           <div>
             <div className="font-bold text-sm tracking-tight">Yardward Pro</div>
             <div className="text-[10px] font-mono text-sidebar-foreground/50">v1.0</div>

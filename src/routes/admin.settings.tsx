@@ -450,6 +450,10 @@ const EMPTY_INVITE_FORM = {
   // form. Ignored when role !== 'driver'.
   licenseNumber: "",
   licenseExpiry: "",
+  // Default ON: the modern path is email-invite. When Resend isn't yet
+  // configured the server will reply with an error + the admin can flip
+  // this off to fall back to the temp-password path.
+  sendInviteEmail: true,
 };
 
 function UsersTab() {
@@ -459,12 +463,22 @@ function UsersTab() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [creating, setCreating] = useState(false);
-  const [createdInfo, setCreatedInfo] = useState<{
-    name: string;
-    email: string;
-    tempPassword: string;
-    warning?: string;
-  } | null>(null);
+  const [createdInfo, setCreatedInfo] = useState<
+    | {
+        kind: "tempPassword";
+        name: string;
+        email: string;
+        tempPassword: string;
+        warning?: string;
+      }
+    | {
+        kind: "inviteSent";
+        name: string;
+        email: string;
+        warning?: string;
+      }
+    | null
+  >(null);
 
   function openInvite() {
     setInviteOpen(true);
@@ -504,18 +518,29 @@ function UsersTab() {
         role: inviteForm.role,
         licenseNumber: inviteForm.role === "driver" ? inviteForm.licenseNumber.trim() : undefined,
         licenseExpiry: inviteForm.role === "driver" ? inviteForm.licenseExpiry.trim() : undefined,
+        sendInviteEmail: inviteForm.sendInviteEmail,
       });
       if (!r.ok) {
         toast.error(r.reason);
         return;
       }
       toast.success(`${name} created`);
-      setCreatedInfo({
-        name,
-        email,
-        tempPassword: r.tempPassword,
-        ...(r.warning ? { warning: r.warning } : {}),
-      });
+      if (r.inviteSent) {
+        setCreatedInfo({
+          kind: "inviteSent",
+          name,
+          email,
+          ...(r.warning ? { warning: r.warning } : {}),
+        });
+      } else {
+        setCreatedInfo({
+          kind: "tempPassword",
+          name,
+          email,
+          tempPassword: r.tempPassword,
+          ...(r.warning ? { warning: r.warning } : {}),
+        });
+      }
       if (r.warning) {
         toast.warning(r.warning, { duration: 15_000 });
       }
@@ -553,8 +578,9 @@ function UsersTab() {
           {createdInfo ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                {createdInfo.name} has been created. Send these credentials to them and ask them to
-                rotate the password via the Forgot? link on first sign in.
+                {createdInfo.kind === "inviteSent"
+                  ? `${createdInfo.name} has been created and an invite email was sent to ${createdInfo.email}. They click the link to set their own password.`
+                  : `${createdInfo.name} has been created. Send these credentials to them and ask them to rotate the password via the Forgot? link on first sign in.`}
               </p>
               {createdInfo.warning && (
                 <div
@@ -568,26 +594,43 @@ function UsersTab() {
                   </div>
                 </div>
               )}
-              <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
-                <div>
-                  <span className="text-muted-foreground">Email:</span> {createdInfo.email}
+              {createdInfo.kind === "tempPassword" ? (
+                <>
+                  <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2 font-mono text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Email:</span> {createdInfo.email}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Temp password:</span>{" "}
+                      <span data-testid="invite-temp-password">{createdInfo.tempPassword}</span>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(
+                        `Email: ${createdInfo.email}\nTemp password: ${createdInfo.tempPassword}`,
+                      );
+                      toast.success("Credentials copied to clipboard");
+                    }}
+                    className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                  >
+                    Copy credentials
+                  </Button>
+                </>
+              ) : (
+                <div
+                  className="bg-success/10 border border-success/30 rounded-md p-3 flex items-start gap-2 text-sm"
+                  data-testid="invite-sent-confirmation"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-success">Invite email sent</p>
+                    <p className="text-xs text-success mt-1">
+                      Delivered to {createdInfo.email}. The link in the email expires in ~24h.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Temp password:</span>{" "}
-                  <span data-testid="invite-temp-password">{createdInfo.tempPassword}</span>
-                </div>
-              </div>
-              <Button
-                onClick={() => {
-                  void navigator.clipboard?.writeText(
-                    `Email: ${createdInfo.email}\nTemp password: ${createdInfo.tempPassword}`,
-                  );
-                  toast.success("Credentials copied to clipboard");
-                }}
-                className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-              >
-                Copy credentials
-              </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {
@@ -675,13 +718,36 @@ function UsersTab() {
                   </div>
                 </div>
               )}
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex-1">
+                  <Label htmlFor="invite-send-email" className="text-sm font-medium cursor-pointer">
+                    Send invite email
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {inviteForm.sendInviteEmail
+                      ? "User receives an email with a link to set their own password."
+                      : "Returns a temp password for you to share manually (legacy)."}
+                  </p>
+                </div>
+                <Switch
+                  id="invite-send-email"
+                  checked={inviteForm.sendInviteEmail}
+                  onCheckedChange={(v) => setInviteForm((f) => ({ ...f, sendInviteEmail: v }))}
+                  data-testid="invite-send-email-toggle"
+                />
+              </div>
               <Button
                 onClick={() => void sendInvite()}
                 disabled={creating}
                 data-testid="submit-invite-user"
                 className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
               >
-                <Send className="w-4 h-4" /> {creating ? "Creating…" : "Create user"}
+                <Send className="w-4 h-4" />{" "}
+                {creating
+                  ? "Creating…"
+                  : inviteForm.sendInviteEmail
+                    ? "Create user & send invite"
+                    : "Create user"}
               </Button>
             </div>
           )}

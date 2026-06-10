@@ -19,6 +19,7 @@ import { Route as MechanicIndexRouteImport } from './routes/mechanic.index'
 import { Route as DriverIndexRouteImport } from './routes/driver.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as TTokenRouteImport } from './routes/t.$token'
+import { Route as PortalCodeRouteImport } from './routes/portal.$code'
 import { Route as MechanicWorkOrdersRouteImport } from './routes/mechanic.work-orders'
 import { Route as MechanicPurchaseRequestsRouteImport } from './routes/mechanic.purchase-requests'
 import { Route as MechanicMessagesRouteImport } from './routes/mechanic.messages'
@@ -35,6 +36,7 @@ import { Route as DriverJobLogRouteImport } from './routes/driver.job-log'
 import { Route as DriverInspectionRouteImport } from './routes/driver.inspection'
 import { Route as DriverFormsRouteImport } from './routes/driver.forms'
 import { Route as DriverEndOfDayRouteImport } from './routes/driver.end-of-day'
+import { Route as DriverDumpLogRouteImport } from './routes/driver.dump-log'
 import { Route as DebugErrorBoundaryTriggerRouteImport } from './routes/debug.error-boundary-trigger'
 import { Route as AdminWorkOrdersRouteImport } from './routes/admin.work-orders'
 import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
@@ -44,17 +46,21 @@ import { Route as AdminSmsLogRouteImport } from './routes/admin.sms-log'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminScheduleRouteImport } from './routes/admin.schedule'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
+import { Route as AdminReceivablesRouteImport } from './routes/admin.receivables'
 import { Route as AdminQboCallbackRouteImport } from './routes/admin.qbo-callback'
 import { Route as AdminPurchaseRequestsRouteImport } from './routes/admin.purchase-requests'
 import { Route as AdminPrepaidTicketsRouteImport } from './routes/admin.prepaid-tickets'
 import { Route as AdminMapRouteImport } from './routes/admin.map'
 import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
+import { Route as AdminHaulingRecordsRouteImport } from './routes/admin.hauling-records'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
+import { Route as AdminFormTemplatesRouteImport } from './routes/admin.form-templates'
 import { Route as AdminErrorsRouteImport } from './routes/admin.errors'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
 import { Route as AdminCommunicationsRouteImport } from './routes/admin.communications'
 import { Route as AdminClientsRouteImport } from './routes/admin.clients'
 import { Route as AdminVehiclesIndexRouteImport } from './routes/admin.vehicles.index'
+import { Route as DriverCustomFormTemplateIdRouteImport } from './routes/driver.custom-form.$templateId'
 import { Route as AdminVehiclesIdRouteImport } from './routes/admin.vehicles.$id'
 import { Route as AdminInvoicesWorkOrderIdRouteImport } from './routes/admin.invoices.$workOrderId'
 
@@ -106,6 +112,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const TTokenRoute = TTokenRouteImport.update({
   id: '/t/$token',
   path: '/t/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalCodeRoute = PortalCodeRouteImport.update({
+  id: '/portal/$code',
+  path: '/portal/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MechanicWorkOrdersRoute = MechanicWorkOrdersRouteImport.update({
@@ -189,6 +200,11 @@ const DriverEndOfDayRoute = DriverEndOfDayRouteImport.update({
   path: '/end-of-day',
   getParentRoute: () => DriverRoute,
 } as any)
+const DriverDumpLogRoute = DriverDumpLogRouteImport.update({
+  id: '/dump-log',
+  path: '/dump-log',
+  getParentRoute: () => DriverRoute,
+} as any)
 const DebugErrorBoundaryTriggerRoute =
   DebugErrorBoundaryTriggerRouteImport.update({
     id: '/debug/error-boundary-trigger',
@@ -235,6 +251,11 @@ const AdminReportsRoute = AdminReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminReceivablesRoute = AdminReceivablesRouteImport.update({
+  id: '/receivables',
+  path: '/receivables',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminQboCallbackRoute = AdminQboCallbackRouteImport.update({
   id: '/qbo-callback',
   path: '/qbo-callback',
@@ -260,9 +281,19 @@ const AdminJobsRoute = AdminJobsRouteImport.update({
   path: '/jobs',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminHaulingRecordsRoute = AdminHaulingRecordsRouteImport.update({
+  id: '/hauling-records',
+  path: '/hauling-records',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFormsRoute = AdminFormsRouteImport.update({
   id: '/forms',
   path: '/forms',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFormTemplatesRoute = AdminFormTemplatesRouteImport.update({
+  id: '/form-templates',
+  path: '/form-templates',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminErrorsRoute = AdminErrorsRouteImport.update({
@@ -290,6 +321,12 @@ const AdminVehiclesIndexRoute = AdminVehiclesIndexRouteImport.update({
   path: '/vehicles/',
   getParentRoute: () => AdminRoute,
 } as any)
+const DriverCustomFormTemplateIdRoute =
+  DriverCustomFormTemplateIdRouteImport.update({
+    id: '/custom-form/$templateId',
+    path: '/custom-form/$templateId',
+    getParentRoute: () => DriverRoute,
+  } as any)
 const AdminVehiclesIdRoute = AdminVehiclesIdRouteImport.update({
   id: '/vehicles/$id',
   path: '/vehicles/$id',
@@ -313,12 +350,15 @@ export interface FileRoutesByFullPath {
   '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
+  '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
+  '/admin/hauling-records': typeof AdminHaulingRecordsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/qbo-callback': typeof AdminQboCallbackRoute
+  '/admin/receivables': typeof AdminReceivablesRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -328,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
+  '/driver/dump-log': typeof DriverDumpLogRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -344,12 +385,14 @@ export interface FileRoutesByFullPath {
   '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/portal/$code': typeof PortalCodeRoute
   '/t/$token': typeof TTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/driver/custom-form/$templateId': typeof DriverCustomFormTemplateIdRoute
   '/admin/vehicles/': typeof AdminVehiclesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -360,12 +403,15 @@ export interface FileRoutesByTo {
   '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
+  '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
+  '/admin/hauling-records': typeof AdminHaulingRecordsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/qbo-callback': typeof AdminQboCallbackRoute
+  '/admin/receivables': typeof AdminReceivablesRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -375,6 +421,7 @@ export interface FileRoutesByTo {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
+  '/driver/dump-log': typeof DriverDumpLogRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -391,12 +438,14 @@ export interface FileRoutesByTo {
   '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/portal/$code': typeof PortalCodeRoute
   '/t/$token': typeof TTokenRoute
   '/admin': typeof AdminIndexRoute
   '/driver': typeof DriverIndexRoute
   '/mechanic': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/driver/custom-form/$templateId': typeof DriverCustomFormTemplateIdRoute
   '/admin/vehicles': typeof AdminVehiclesIndexRoute
 }
 export interface FileRoutesById {
@@ -411,12 +460,15 @@ export interface FileRoutesById {
   '/admin/communications': typeof AdminCommunicationsRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/errors': typeof AdminErrorsRoute
+  '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
+  '/admin/hauling-records': typeof AdminHaulingRecordsRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
   '/admin/prepaid-tickets': typeof AdminPrepaidTicketsRoute
   '/admin/purchase-requests': typeof AdminPurchaseRequestsRoute
   '/admin/qbo-callback': typeof AdminQboCallbackRoute
+  '/admin/receivables': typeof AdminReceivablesRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -426,6 +478,7 @@ export interface FileRoutesById {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/work-orders': typeof AdminWorkOrdersRoute
   '/debug/error-boundary-trigger': typeof DebugErrorBoundaryTriggerRoute
+  '/driver/dump-log': typeof DriverDumpLogRoute
   '/driver/end-of-day': typeof DriverEndOfDayRoute
   '/driver/forms': typeof DriverFormsRoute
   '/driver/inspection': typeof DriverInspectionRoute
@@ -442,12 +495,14 @@ export interface FileRoutesById {
   '/mechanic/messages': typeof MechanicMessagesRoute
   '/mechanic/purchase-requests': typeof MechanicPurchaseRequestsRoute
   '/mechanic/work-orders': typeof MechanicWorkOrdersRoute
+  '/portal/$code': typeof PortalCodeRoute
   '/t/$token': typeof TTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/driver/': typeof DriverIndexRoute
   '/mechanic/': typeof MechanicIndexRoute
   '/admin/invoices/$workOrderId': typeof AdminInvoicesWorkOrderIdRoute
   '/admin/vehicles/$id': typeof AdminVehiclesIdRoute
+  '/driver/custom-form/$templateId': typeof DriverCustomFormTemplateIdRoute
   '/admin/vehicles/': typeof AdminVehiclesIndexRoute
 }
 export interface FileRouteTypes {
@@ -463,12 +518,15 @@ export interface FileRouteTypes {
     | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
+    | '/admin/form-templates'
     | '/admin/forms'
+    | '/admin/hauling-records'
     | '/admin/jobs'
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/qbo-callback'
+    | '/admin/receivables'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -478,6 +536,7 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/work-orders'
     | '/debug/error-boundary-trigger'
+    | '/driver/dump-log'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -494,12 +553,14 @@ export interface FileRouteTypes {
     | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/portal/$code'
     | '/t/$token'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/driver/custom-form/$templateId'
     | '/admin/vehicles/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -510,12 +571,15 @@ export interface FileRouteTypes {
     | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
+    | '/admin/form-templates'
     | '/admin/forms'
+    | '/admin/hauling-records'
     | '/admin/jobs'
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/qbo-callback'
+    | '/admin/receivables'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -525,6 +589,7 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/work-orders'
     | '/debug/error-boundary-trigger'
+    | '/driver/dump-log'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -541,12 +606,14 @@ export interface FileRouteTypes {
     | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/portal/$code'
     | '/t/$token'
     | '/admin'
     | '/driver'
     | '/mechanic'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/driver/custom-form/$templateId'
     | '/admin/vehicles'
   id:
     | '__root__'
@@ -560,12 +627,15 @@ export interface FileRouteTypes {
     | '/admin/communications'
     | '/admin/drivers'
     | '/admin/errors'
+    | '/admin/form-templates'
     | '/admin/forms'
+    | '/admin/hauling-records'
     | '/admin/jobs'
     | '/admin/map'
     | '/admin/prepaid-tickets'
     | '/admin/purchase-requests'
     | '/admin/qbo-callback'
+    | '/admin/receivables'
     | '/admin/reports'
     | '/admin/schedule'
     | '/admin/settings'
@@ -575,6 +645,7 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/work-orders'
     | '/debug/error-boundary-trigger'
+    | '/driver/dump-log'
     | '/driver/end-of-day'
     | '/driver/forms'
     | '/driver/inspection'
@@ -591,12 +662,14 @@ export interface FileRouteTypes {
     | '/mechanic/messages'
     | '/mechanic/purchase-requests'
     | '/mechanic/work-orders'
+    | '/portal/$code'
     | '/t/$token'
     | '/admin/'
     | '/driver/'
     | '/mechanic/'
     | '/admin/invoices/$workOrderId'
     | '/admin/vehicles/$id'
+    | '/driver/custom-form/$templateId'
     | '/admin/vehicles/'
   fileRoutesById: FileRoutesById
 }
@@ -608,6 +681,7 @@ export interface RootRouteChildren {
   MechanicRoute: typeof MechanicRouteWithChildren
   ResetPasswordRoute: typeof ResetPasswordRoute
   DebugErrorBoundaryTriggerRoute: typeof DebugErrorBoundaryTriggerRoute
+  PortalCodeRoute: typeof PortalCodeRoute
   TTokenRoute: typeof TTokenRoute
 }
 
@@ -681,6 +755,13 @@ declare module '@tanstack/react-router' {
       path: '/t/$token'
       fullPath: '/t/$token'
       preLoaderRoute: typeof TTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal/$code': {
+      id: '/portal/$code'
+      path: '/portal/$code'
+      fullPath: '/portal/$code'
+      preLoaderRoute: typeof PortalCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mechanic/work-orders': {
@@ -795,6 +876,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DriverEndOfDayRouteImport
       parentRoute: typeof DriverRoute
     }
+    '/driver/dump-log': {
+      id: '/driver/dump-log'
+      path: '/dump-log'
+      fullPath: '/driver/dump-log'
+      preLoaderRoute: typeof DriverDumpLogRouteImport
+      parentRoute: typeof DriverRoute
+    }
     '/debug/error-boundary-trigger': {
       id: '/debug/error-boundary-trigger'
       path: '/debug/error-boundary-trigger'
@@ -858,6 +946,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReportsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/receivables': {
+      id: '/admin/receivables'
+      path: '/receivables'
+      fullPath: '/admin/receivables'
+      preLoaderRoute: typeof AdminReceivablesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/qbo-callback': {
       id: '/admin/qbo-callback'
       path: '/qbo-callback'
@@ -893,11 +988,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminJobsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/hauling-records': {
+      id: '/admin/hauling-records'
+      path: '/hauling-records'
+      fullPath: '/admin/hauling-records'
+      preLoaderRoute: typeof AdminHaulingRecordsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/forms': {
       id: '/admin/forms'
       path: '/forms'
       fullPath: '/admin/forms'
       preLoaderRoute: typeof AdminFormsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/form-templates': {
+      id: '/admin/form-templates'
+      path: '/form-templates'
+      fullPath: '/admin/form-templates'
+      preLoaderRoute: typeof AdminFormTemplatesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/errors': {
@@ -935,6 +1044,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVehiclesIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/driver/custom-form/$templateId': {
+      id: '/driver/custom-form/$templateId'
+      path: '/custom-form/$templateId'
+      fullPath: '/driver/custom-form/$templateId'
+      preLoaderRoute: typeof DriverCustomFormTemplateIdRouteImport
+      parentRoute: typeof DriverRoute
+    }
     '/admin/vehicles/$id': {
       id: '/admin/vehicles/$id'
       path: '/vehicles/$id'
@@ -957,12 +1073,15 @@ interface AdminRouteChildren {
   AdminCommunicationsRoute: typeof AdminCommunicationsRoute
   AdminDriversRoute: typeof AdminDriversRoute
   AdminErrorsRoute: typeof AdminErrorsRoute
+  AdminFormTemplatesRoute: typeof AdminFormTemplatesRoute
   AdminFormsRoute: typeof AdminFormsRoute
+  AdminHaulingRecordsRoute: typeof AdminHaulingRecordsRoute
   AdminJobsRoute: typeof AdminJobsRoute
   AdminMapRoute: typeof AdminMapRoute
   AdminPrepaidTicketsRoute: typeof AdminPrepaidTicketsRoute
   AdminPurchaseRequestsRoute: typeof AdminPurchaseRequestsRoute
   AdminQboCallbackRoute: typeof AdminQboCallbackRoute
+  AdminReceivablesRoute: typeof AdminReceivablesRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
@@ -982,12 +1101,15 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCommunicationsRoute: AdminCommunicationsRoute,
   AdminDriversRoute: AdminDriversRoute,
   AdminErrorsRoute: AdminErrorsRoute,
+  AdminFormTemplatesRoute: AdminFormTemplatesRoute,
   AdminFormsRoute: AdminFormsRoute,
+  AdminHaulingRecordsRoute: AdminHaulingRecordsRoute,
   AdminJobsRoute: AdminJobsRoute,
   AdminMapRoute: AdminMapRoute,
   AdminPrepaidTicketsRoute: AdminPrepaidTicketsRoute,
   AdminPurchaseRequestsRoute: AdminPurchaseRequestsRoute,
   AdminQboCallbackRoute: AdminQboCallbackRoute,
+  AdminReceivablesRoute: AdminReceivablesRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
   AdminSettingsRoute: AdminSettingsRoute,
@@ -1005,6 +1127,7 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface DriverRouteChildren {
+  DriverDumpLogRoute: typeof DriverDumpLogRoute
   DriverEndOfDayRoute: typeof DriverEndOfDayRoute
   DriverFormsRoute: typeof DriverFormsRoute
   DriverInspectionRoute: typeof DriverInspectionRoute
@@ -1017,9 +1140,11 @@ interface DriverRouteChildren {
   DriverToolChecklistRoute: typeof DriverToolChecklistRoute
   DriverWorkOrderRoute: typeof DriverWorkOrderRoute
   DriverIndexRoute: typeof DriverIndexRoute
+  DriverCustomFormTemplateIdRoute: typeof DriverCustomFormTemplateIdRoute
 }
 
 const DriverRouteChildren: DriverRouteChildren = {
+  DriverDumpLogRoute: DriverDumpLogRoute,
   DriverEndOfDayRoute: DriverEndOfDayRoute,
   DriverFormsRoute: DriverFormsRoute,
   DriverInspectionRoute: DriverInspectionRoute,
@@ -1032,6 +1157,7 @@ const DriverRouteChildren: DriverRouteChildren = {
   DriverToolChecklistRoute: DriverToolChecklistRoute,
   DriverWorkOrderRoute: DriverWorkOrderRoute,
   DriverIndexRoute: DriverIndexRoute,
+  DriverCustomFormTemplateIdRoute: DriverCustomFormTemplateIdRoute,
 }
 
 const DriverRouteWithChildren =
@@ -1067,6 +1193,7 @@ const rootRouteChildren: RootRouteChildren = {
   MechanicRoute: MechanicRouteWithChildren,
   ResetPasswordRoute: ResetPasswordRoute,
   DebugErrorBoundaryTriggerRoute: DebugErrorBoundaryTriggerRoute,
+  PortalCodeRoute: PortalCodeRoute,
   TTokenRoute: TTokenRoute,
 }
 export const routeTree = rootRouteImport

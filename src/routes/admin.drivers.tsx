@@ -5,18 +5,8 @@ import { Phone, Award, Pencil, AlertCircle, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -44,10 +34,7 @@ function isValidE164(phone: string): boolean {
 function isProbablyPlaceholder(phone: string): boolean {
   const stripped = phone.replace(/[^\d+]/g, "");
   return (
-    !stripped ||
-    stripped.startsWith("+1555") ||
-    stripped.startsWith("+1000") ||
-    !isValidE164(phone)
+    !stripped || stripped.startsWith("+1555") || stripped.startsWith("+1000") || !isValidE164(phone)
   );
 }
 
@@ -115,12 +102,25 @@ function Page() {
         return;
       }
       toast.success(`${name} created`);
-      setCreatedInfo({
-        name,
-        email,
-        tempPassword: r.tempPassword,
-        ...(r.warning ? { warning: r.warning } : {}),
-      });
+      // This entry point doesn't (yet) offer the email-invite toggle, so
+      // the response is always the tempPassword branch. Narrowing is
+      // defensive — if we add the toggle here later, the else branch
+      // already shows a sensible inline confirmation.
+      if (r.inviteSent) {
+        setCreatedInfo({
+          name,
+          email,
+          tempPassword: "(sent via email)",
+          ...(r.warning ? { warning: r.warning } : {}),
+        });
+      } else {
+        setCreatedInfo({
+          name,
+          email,
+          tempPassword: r.tempPassword,
+          ...(r.warning ? { warning: r.warning } : {}),
+        });
+      }
       if (r.warning) {
         // Loud toast that doesn't auto-dismiss; the warning also renders
         // inline in the credentials panel so the admin can't miss it.
@@ -139,7 +139,14 @@ function Page() {
   const rosterById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; name: string; phone: string; kind: "driver" | "mechanic"; initials: string; subtitle: string }
+      {
+        id: string;
+        name: string;
+        phone: string;
+        kind: "driver" | "mechanic";
+        initials: string;
+        subtitle: string;
+      }
     >();
     for (const d of drivers) {
       m.set(d.id, {
@@ -169,7 +176,7 @@ function Page() {
     return m;
   }, [drivers, mechanics]);
 
-  const editingTarget = editingId ? rosterById.get(editingId) ?? null : null;
+  const editingTarget = editingId ? (rosterById.get(editingId) ?? null) : null;
 
   const visibleDrivers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -192,8 +199,9 @@ function Page() {
     );
   }, [mechanics, search]);
 
-  const placeholderCount =
-    [...drivers, ...mechanics].filter((u) => isProbablyPlaceholder(u.phone)).length;
+  const placeholderCount = [...drivers, ...mechanics].filter((u) =>
+    isProbablyPlaceholder(u.phone),
+  ).length;
 
   return (
     <AdminShell title="Drivers & mechanics">
@@ -210,8 +218,8 @@ function Page() {
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               Twilio outbound SMS (job assignments, Communications replies) won't deliver to
-              placeholder numbers. Click the pencil on a card to set a real E.164 number
-              (e.g. +14165550100).
+              placeholder numbers. Click the pencil on a card to set a real E.164 number (e.g.
+              +14165550100).
             </p>
           </div>
         </div>
@@ -248,8 +256,8 @@ function Page() {
           {createdInfo ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                {createdInfo.name} has been created. Send these credentials to them
-                and ask them to rotate the password via the Forgot? link on first sign in.
+                {createdInfo.name} has been created. Send these credentials to them and ask them to
+                rotate the password via the Forgot? link on first sign in.
               </p>
               {createdInfo.warning && (
                 <div
@@ -342,9 +350,7 @@ function Page() {
                   <Label>License number</Label>
                   <Input
                     value={form.licenseNumber}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, licenseNumber: e.target.value }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, licenseNumber: e.target.value }))}
                     className="font-mono"
                     data-testid="add-driver-license"
                   />
@@ -354,9 +360,7 @@ function Page() {
                   <Input
                     type="date"
                     value={form.licenseExpiry}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, licenseExpiry: e.target.value }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, licenseExpiry: e.target.value }))}
                     className="font-mono"
                     data-testid="add-driver-license-expiry"
                   />
@@ -405,12 +409,14 @@ function Page() {
                 key={m.id}
                 id={m.id}
                 name={m.name}
-                initials={(m.name
-                  .split(" ")
-                  .map((p) => p[0])
-                  .join("")
-                  .slice(0, 2)
-                  .toUpperCase()) || m.id.slice(0, 2)}
+                initials={
+                  m.name
+                    .split(" ")
+                    .map((p) => p[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase() || m.id.slice(0, 2)
+                }
                 phone={m.phone}
                 status={m.status}
                 kind="mechanic"
@@ -422,15 +428,10 @@ function Page() {
         </>
       )}
 
-      <Sheet
-        open={!!editingId}
-        onOpenChange={(o) => !o && setEditingId(null)}
-      >
+      <Sheet open={!!editingId} onOpenChange={(o) => !o && setEditingId(null)}>
         <SheetContent side="right" className="w-full sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>
-              Edit phone — {editingTarget?.name ?? ""}
-            </SheetTitle>
+            <SheetTitle>Edit phone — {editingTarget?.name ?? ""}</SheetTitle>
           </SheetHeader>
           {editingTarget && (
             <EditPhoneForm
@@ -507,10 +508,7 @@ function StaffCard({
             )}
           />
           <span
-            className={cn(
-              "font-mono text-xs flex-1 truncate",
-              placeholder && "text-amber-brand",
-            )}
+            className={cn("font-mono text-xs flex-1 truncate", placeholder && "text-amber-brand")}
             data-testid="staff-phone"
           >
             {phone || "(not set)"}
@@ -575,8 +573,8 @@ function EditPhoneForm({
   return (
     <div className="mt-6 space-y-3">
       <p className="text-sm text-muted-foreground">
-        Phone number must be in E.164 format (country code + number, no spaces or dashes).
-        Twilio uses this to deliver job-assignment SMS and Communications messages.
+        Phone number must be in E.164 format (country code + number, no spaces or dashes). Twilio
+        uses this to deliver job-assignment SMS and Communications messages.
       </p>
       <div>
         <Label htmlFor="staff-phone-input">Phone</Label>
