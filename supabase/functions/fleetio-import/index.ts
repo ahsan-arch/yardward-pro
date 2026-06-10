@@ -12,8 +12,9 @@
 //   service_role JWT (cron) OR a logged-in profiles.role='admin' user.
 //
 // Secrets:
-//   FLEETIO_BEARER_TOKEN  - "Token token=<...>" Authorization value
-//   FLEETIO_ACCOUNT_TOKEN - X-Api-Key / Account-Token header
+//   FLEETIO_BEARER_TOKEN  - bare API key (we build the "Token token=<...>"
+//                           Authorization header from it)
+//   FLEETIO_ACCOUNT_TOKEN - Account-Token header value
 //
 // dryRun=true mirrors the qbo-push-time pattern: we fetch from Fleetio and run
 // the full diff so the caller gets identical counts, but skip every upsert.
@@ -35,7 +36,10 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const FLEETIO_BASE = 'https://secure.fleetio.com/api/v2'
+// v1 is the live API surface — /api/v2 returns 404 {"status":404,"error":
+// "not found"} (verified against a real account 2026-06). v1 responds with
+// cursor-paginated envelopes: { start_cursor, next_cursor, records: [...] }.
+const FLEETIO_BASE = 'https://secure.fleetio.com/api/v1'
 const PAGE_SIZE = 100
 const MAX_RETRIES = 3
 const FETCH_TIMEOUT_MS = 15_000
@@ -293,6 +297,10 @@ interface FleetioServiceEntry {
   started_at?: string | null
   completed_at?: string | null
   service_date?: string | null
+  // bare-array (classic) service_entries shape uses `date` and
+  // `general_notes` (verified against the live v1 API)
+  date?: string | null
+  general_notes?: string | null
   meter_entry?: { value?: number | string | null } | null
   meter_value?: number | string | null
   total_amount_cents?: number | string | null
@@ -395,6 +403,7 @@ function mapMaintenanceRow(s: FleetioServiceEntry): {
 } | null {
   const date =
     toYmd(s.service_date) ??
+    toYmd(s.date) ??
     toYmd(s.completed_at) ??
     toYmd(s.started_at) ??
     null
@@ -423,7 +432,7 @@ function mapMaintenanceRow(s: FleetioServiceEntry): {
     date,
     mileage,
     cost,
-    notes: (s.description ?? s.comments ?? '').toString(),
+    notes: (s.description ?? s.comments ?? s.general_notes ?? '').toString(),
   }
 }
 
@@ -465,10 +474,20 @@ function mapFuelRow(f: FleetioFuelEntry): {
 }
 
 // ---------------------------------------------------------------------------
-// Pagination — Fleetio uses page-based pagination with X-Pagination headers
-// and returns an array body on the v2 endpoints. Stop when we get a short
-// page (< per_page) so we don't make a redundant trailing request.
+// Pagination — Fleetio v1 mixes TWO styles per endpoint (verified live):
+//   - vehicles / fuel_entries: cursor envelope { start_cursor, next_cursor,
+//     records: [...] }; next page via ?start_cursor=<next_cursor> (base64,
+//     URL-encoded); next_cursor=null means last page.
+//   - service_entries: BARE ARRAY body with classic ?page=N pagination;
+//     stop on a short page.
+// We detect the style from the first response and stick with it.
 // ---------------------------------------------------------------------------
+
+interface FleetioPageEnvelope<T> {
+  start_cursor?: string | null
+  next_cursor?: string | null
+  records?: T[]
+}
 
 async function fetchAllPages<T>(
   endpoint: 'vehicles' | 'service_entries' | 'fuel_entries',
@@ -476,17 +495,30 @@ async function fetchAllPages<T>(
   accountToken: string,
 ): Promise<T[]> {
   const out: T[] = []
+  let cursor: string | null = null
+  let classic = false
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const path = `/${endpoint}?per_page=${PAGE_SIZE}&page=${page}`
-    const batch = await fleetioGet<T[]>(path, bearer, accountToken)
-    if (!Array.isArray(batch)) {
+    const path = `/${endpoint}?per_page=${PAGE_SIZE}${
+      classic ? `&page=${page}` : cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ''
+    }`
+    const body = await fleetioGet<FleetioPageEnvelope<T> | T[]>(path, bearer, accountToken)
+    if (Array.isArray(body)) {
+      classic = true
+      out.push(...body)
+      if (body.length < PAGE_SIZE) break
+      continue
+    }
+    const records = body?.records
+    if (!Array.isArray(records)) {
       throw new FleetioError(
-        `Fleetio ${endpoint} page ${page}: expected array, got ${typeof batch}`,
+        `Fleetio ${endpoint} page ${page}: expected records array, got ${typeof records}`,
         { status: 200 },
       )
     }
-    out.push(...batch)
-    if (batch.length < PAGE_SIZE) break
+    out.push(...records)
+    const next = body?.next_cursor ?? null
+    if (!next || next === cursor) break
+    cursor = next
   }
   return out
 }

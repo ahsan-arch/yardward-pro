@@ -169,9 +169,12 @@ export async function getQboAccessToken(
       }
     }
 
-    // 4. Refresh.
+    // 4. Refresh. The canonical URL per Intuit's OIDC discovery doc is
+    // /oauth2/v1/tokens/bearer (the bare /oauth2/v1/tokens path 404s).
+    // Both refresh_token and authorization_code grants use this same
+    // endpoint.
     const tokenRes = await fetchWithTimeout(
-      'https://oauth.platform.intuit.com/oauth2/v1/tokens',
+      'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
       {
         method: 'POST',
         headers: {

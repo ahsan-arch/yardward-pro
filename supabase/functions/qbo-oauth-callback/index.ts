@@ -90,7 +90,13 @@ async function verifyAdminOrServiceRole(
   return null;
 }
 
-serve(async (req) => {
+// Belt-and-suspenders handler wrapper — ensures EVERY exception path returns
+// a structured JSON error to the caller instead of letting Deno serve a bare
+// 500 (which would leave supabase-js with no body to extract, surfacing as
+// the opaque "Edge Function returned a non-2xx status code" string in the
+// SPA). Also logs to console.error so the same diagnostic shows up in the
+// Supabase Edge Function logs dashboard.
+async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return jsonOk({ error: "POST only" }, 405);
 
@@ -142,42 +148,84 @@ serve(async (req) => {
   }
 
   // ---- Exchange the code with Intuit ---------------------------------------
-  const tokenRes = await fetch("https://oauth.platform.intuit.com/oauth2/v1/tokens", {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + btoa(clientId + ":" + clientSecret),
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirectUri,
-    }),
-  });
+  // Wrap the network call so a transient DNS/TLS/timeout doesn't bubble up as
+  // a bare 500 — supabase-js cannot extract a body from those and the SPA
+  // shows the opaque "non-2xx" string. Capture and structure the error.
+  let tokenRes: Response;
+  // Intuit's OAuth 2.0 token endpoint per the discovery doc at
+  // https://developer.api.intuit.com/.well-known/openid_connect_configuration
+  // is /oauth2/v1/tokens/bearer (NOT /tokens). The /tokens path returns 404.
+  const tokenEndpoint = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+  // VERSION MARKER — if you see this in Supabase function logs, the new
+  // deploy is active. If you see 404 in production logs but DON'T see this
+  // marker, the deploy hasn't propagated.
+  console.log("qbo-oauth-callback v=BEARER-FIX-2 endpoint=", tokenEndpoint);
+  try {
+    tokenRes = await fetch(tokenEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(clientId + ":" + clientSecret),
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("qbo-oauth-callback: token-exchange network error", msg);
+    return jsonOk(
+      {
+        ok: false,
+        step: "code-exchange",
+        error: `Network error reaching Intuit token endpoint: ${msg}`,
+        hint: "Check Supabase function egress + try again. If this persists, the project may be cold-starting; retry after 10s.",
+      },
+      502,
+    );
+  }
+  const tokenBodyText = await tokenRes.text();
   if (!tokenRes.ok) {
-    const detail = await tokenRes.text();
+    console.error(
+      `qbo-oauth-callback: Intuit token exchange failed HTTP ${tokenRes.status}`,
+      tokenBodyText.slice(0, 500),
+    );
     return jsonOk(
       {
         ok: false,
         step: "code-exchange",
         intuitStatus: tokenRes.status,
-        // Surface the raw error envelope (capped) so the admin can see exactly
-        // what Intuit rejected — usually "invalid_grant" if the redirect_uri
-        // doesn't match byte-for-byte what was registered.
-        intuitError: detail.slice(0, 500),
-        hint: "Most common cause: QBO_REDIRECT_URI does not match the Redirect URI registered in the Intuit Developer Portal exactly (scheme + host + path).",
+        intuitError: tokenBodyText.slice(0, 500),
+        hint: "Most common cause: QBO_REDIRECT_URI does not match the Redirect URI registered in the Intuit Developer Portal exactly (scheme + host + path). Second most common: the authorization code was already used (single-use) — restart the Connect flow.",
       },
       400,
     );
   }
-  const tokenJson = (await tokenRes.json()) as {
+  let tokenJson: {
     access_token: string;
     refresh_token: string;
     expires_in: number;
     x_refresh_token_expires_in: number;
     token_type: string;
   };
+  try {
+    tokenJson = JSON.parse(tokenBodyText);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("qbo-oauth-callback: token-exchange JSON parse error", msg, tokenBodyText.slice(0, 300));
+    return jsonOk(
+      {
+        ok: false,
+        step: "code-exchange",
+        error: `Intuit returned 200 OK but body was not JSON: ${msg}`,
+        intuitError: tokenBodyText.slice(0, 300),
+      },
+      502,
+    );
+  }
   if (!tokenJson.refresh_token) {
     return jsonOk(
       { ok: false, step: "code-exchange", error: "Intuit response missing refresh_token" },
@@ -253,4 +301,30 @@ serve(async (req) => {
     refreshedSelfTest: selfTestOk,
     selfTestMsg,
   });
+}
+
+// Outer serve wrapper — catches ANY exception bubbling out of handle() and
+// converts it into a structured JSON response. Without this, an uncaught
+// throw in the handler causes Deno to return a bare 500 with no body, and
+// supabase-js surfaces that to the SPA as "Edge Function returned a non-2xx
+// status code" with no actionable info. Now the SPA always gets {ok:false,
+// error, step:"unhandled"} and console.error makes the same diagnostic show
+// up in the Supabase Function logs dashboard for after-the-fact debugging.
+serve(async (req) => {
+  try {
+    return await handle(req);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack ?? "" : "";
+    console.error("qbo-oauth-callback: UNHANDLED exception", msg, stack);
+    return jsonOk(
+      {
+        ok: false,
+        step: "unhandled",
+        error: `Unhandled exception in qbo-oauth-callback: ${msg}`,
+        stack: stack.slice(0, 1000),
+      },
+      500,
+    );
+  }
 });

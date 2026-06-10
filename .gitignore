@@ -30,6 +30,11 @@ failures-extract.csv
 # Vercel
 .vercel/
 
+# Tool scratch + source artifacts (extracted assets live in public/brand/)
+.understand-anything/
+logo.zip
+logo-extract/
+
 # Playwright
 playwright-report/
 test-results/

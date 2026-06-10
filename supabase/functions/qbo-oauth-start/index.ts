@@ -20,8 +20,7 @@
 //   QBO_CLIENT_ID         — Intuit-issued client id
 //   QBO_REDIRECT_URI      — must exactly match the Redirect URI registered in
 //                           the Intuit Developer Portal (and the one the
-//                           frontend route /admin/settings/qbo-callback will
-//                           handle)
+//                           frontend route /admin/qbo-callback will handle)
 //   QBO_ENVIRONMENT       — "production" or "sandbox" (controls scope only;
 //                           Intuit's authorize host is the same for both)
 
@@ -121,7 +120,7 @@ serve(async (req) => {
     return jsonOk(
       {
         error:
-          "QBO_REDIRECT_URI not set — set it to the URL you registered as Redirect URI in the Intuit Developer Portal (e.g. https://yardward.pro/admin/settings/qbo-callback)",
+          "QBO_REDIRECT_URI not set — set it to the URL you registered as Redirect URI in the Intuit Developer Portal (e.g. https://yardward.pro/admin/qbo-callback)",
       },
       500,
     );
@@ -140,22 +139,53 @@ serve(async (req) => {
   // (or a manual export). Invoice sync — the main feature — works fine
   // without it.
   //
-  // openid + profile + email are required for the OpenID-Connect flavor of
-  // the authorize endpoint Intuit uses, and they don't add risk.
-  const scope = [
-    "com.intuit.quickbooks.accounting",
-    "openid",
-    "profile",
-    "email",
-  ].join(" ");
+  // Pure QBO-accounting scope only.
+  //
+  // We deliberately do NOT include openid/profile/email or
+  // com.intuit.quickbooks.payment. Mixing OIDC scopes with QBO API
+  // scopes makes Intuit treat the request as an OpenID-Connect sign-in
+  // flow where realmId is optional, and (worse) for users with an active
+  // Intuit session it can SKIP the company picker entirely and redirect
+  // back with code+state but NO realmId — breaking the token-exchange
+  // step which needs realmId to be persisted.
+  //
+  // qbo-push-invoice and qbo-push-time both call /v3/company/<realmId>/*
+  // endpoints — no Payments API, no OIDC user profile. Accounting scope
+  // alone is exactly what's needed and forces Intuit's canonical QBO
+  // company-picker + consent flow.
+  //
+  // Payroll (com.intuit.quickbooks.payroll, needed by qbo-push-time's
+  // TimeActivity writes on some tenants) is gated behind Intuit app review —
+  // requesting it unapproved fails the whole consent flow with
+  // access_denied. Once the customer's payroll API application is approved,
+  // activate it with:  supabase secrets set QBO_INCLUDE_PAYROLL_SCOPE=true
+  // then reconnect via Settings → Integrations. No redeploy needed.
+  const includePayroll =
+    (Deno.env.get("QBO_INCLUDE_PAYROLL_SCOPE") ?? "").toLowerCase() === "true";
+  const scope = includePayroll
+    ? "com.intuit.quickbooks.accounting com.intuit.quickbooks.payroll"
+    : "com.intuit.quickbooks.accounting";
 
+  // prompt=select_company is a non-standard hint we send defensively to ask
+  // Intuit to re-show the company picker even if a cached grant on the
+  // user's Intuit account would otherwise trigger a silent re-auth (which
+  // returns code+state but no realmId — the symptom we keep hitting).
+  //
+  // IMPORTANT: Intuit's published OAuth 2.0 docs only list client_id,
+  // redirect_uri, response_type, scope, and state as accepted parameters,
+  // and explicitly say "Any additional parameters are ignored." So this
+  // is a zero-risk hedge, not a guaranteed fix. The actual unblock for the
+  // realmId-missing case lives in admin.qbo-callback.tsx — when the
+  // redirect arrives without realmId we render a manual-entry form
+  // (NeedsRealmForm) so the admin can paste their Company ID by hand.
   const authorizeUrl =
     "https://appcenter.intuit.com/connect/oauth2" +
     `?client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code` +
     `&scope=${encodeURIComponent(scope)}` +
-    `&state=${encodeURIComponent(state)}`;
+    `&state=${encodeURIComponent(state)}` +
+    `&prompt=select_company`;
 
   return jsonOk({ authorizeUrl, state, redirectUri });
 });

@@ -22,6 +22,17 @@ interface CreateInput {
   role?: "admin" | "driver" | "mechanic";
   licenseNumber?: string; // driver-only
   licenseExpiry?: string; // driver-only, YYYY-MM-DD
+  // When true, after creating the user we ALSO generate a Supabase recovery
+  // link and send a branded invite email via Resend. The temp password we
+  // generated is still saved on the auth row (so an admin can fall back to
+  // sharing it manually) but it's NOT returned to the caller — the email
+  // is the canonical delivery path. If Resend isn't configured, we surface
+  // an error and the admin can retry with sendInviteEmail=false.
+  sendInviteEmail?: boolean;
+  // Optional override URL the recovery link should redirect to after the
+  // user sets their password. Defaults to the SITE_URL secret +
+  // /reset-password.
+  redirectTo?: string;
 }
 
 function eqConstTime(a: string, b: string): boolean {
@@ -35,6 +46,7 @@ function eqConstTime(a: string, b: string): boolean {
 // admin API enforces its own min-length (8 after the policy reconciliation)
 // so 16 is comfortably above that.
 import { generatePassword } from "../_shared/password.ts";
+import { sendResendEmail, buildInviteEmail } from "../_shared/email.ts";
 
 function initialsFromName(name: string): string {
   return name
@@ -132,6 +144,8 @@ Deno.serve(async (req) => {
   const role = (input.role ?? "").trim() as "admin" | "driver" | "mechanic" | "";
   const licenseNumber = (input.licenseNumber ?? "").trim();
   const licenseExpiry = (input.licenseExpiry ?? "").trim();
+  const sendInviteEmail = input.sendInviteEmail === true;
+  const redirectToOverride = (input.redirectTo ?? "").trim();
 
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     return new Response(JSON.stringify({ error: "invalid email" }), {
@@ -300,12 +314,111 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ---- Optional invite-email path
+  // If the caller asked us to send an invite email, generate a recovery
+  // link via the Supabase Auth Admin generate_link endpoint (type=recovery
+  // because the user already has the email_confirm flag and a password
+  // we generated — what they need is a one-time link to set their own).
+  // Then fan out the email via Resend.
+  //
+  // We do NOT roll back the auth user on email failure — the user IS
+  // created and can sign in with the temp password. We just surface a
+  // warning so the admin can fall back to manual delivery.
+  let inviteEmailSent = false;
+  let inviteEmailError: string | null = null;
+  // try/catch the whole block: at this point the auth user EXISTS, so any
+  // uncaught throw (generate_link network error, non-JSON body, …) must
+  // degrade to the warning path below — a bare 500 would make the admin
+  // retry and hit "email already registered".
+  if (sendInviteEmail) {
+    try {
+      const siteUrl = (Deno.env.get("SITE_URL") ?? "").replace(/\/$/, "");
+      const redirectTo = redirectToOverride || (siteUrl ? `${siteUrl}/reset-password` : "");
+
+      const linkBody: Record<string, unknown> = {
+        type: "recovery",
+        email,
+      };
+      if (redirectTo) linkBody.redirect_to = redirectTo;
+      const linkResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(linkBody),
+      });
+      if (!linkResp.ok) {
+        const raw = await linkResp.text();
+        inviteEmailError = `generate_link HTTP ${linkResp.status} — ${raw.slice(0, 200)}`;
+      } else {
+        const linkJson = (await linkResp.json()) as {
+          action_link?: string;
+          properties?: { action_link?: string };
+        };
+        const actionLink =
+          linkJson.action_link ?? linkJson.properties?.action_link ?? "";
+        if (!actionLink) {
+          inviteEmailError = "generate_link returned no action_link";
+        } else {
+          const { subject, html, text } = buildInviteEmail({
+            recipientName: name,
+            recipientEmail: email,
+            actionLink,
+            orgName: Deno.env.get("ORG_NAME") ?? "Yardward Pro",
+          });
+          const sendResult = await sendResendEmail(Deno.env, {
+            to: email,
+            subject,
+            html,
+            text,
+          });
+          if (!sendResult.ok) {
+            inviteEmailError = sendResult.error;
+          } else {
+            inviteEmailSent = true;
+          }
+        }
+      }
+    } catch (err) {
+      inviteEmailError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // Final response shape:
+  //   - sendInviteEmail=false (or omitted): existing behavior, returns
+  //     tempPassword for the admin to relay manually.
+  //   - sendInviteEmail=true + email sent: returns inviteSent=true and OMITS
+  //     tempPassword so the UI can render "Invite sent to X" instead.
+  //   - sendInviteEmail=true + email failed: returns BOTH tempPassword AND
+  //     a warning so the admin can fall back to manual delivery without
+  //     blocking the flow. The auth user is created either way.
+  const warnings = [phoneWarning, inviteEmailError ? `Invite email failed: ${inviteEmailError}. Fall back to sending the temp password manually.` : null].filter(
+    (w): w is string => Boolean(w),
+  );
+  const warning = warnings.length > 0 ? warnings.join(" ") : undefined;
+
+  if (sendInviteEmail && inviteEmailSent) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        userId: newUserId,
+        inviteSent: true,
+        ...(warning ? { warning } : {}),
+        hint: `Invite email sent to ${email}. User clicks the link to set their password.`,
+      }),
+      { status: 200, headers: corsHeaders },
+    );
+  }
+
   return new Response(
     JSON.stringify({
       ok: true,
       userId: newUserId,
       tempPassword,
-      ...(phoneWarning ? { warning: phoneWarning } : {}),
+      inviteSent: false,
+      ...(warning ? { warning } : {}),
       hint: "Send the temp password to the user. They should change it on first login via the Forgot? link.",
     }),
     { status: 200, headers: corsHeaders },

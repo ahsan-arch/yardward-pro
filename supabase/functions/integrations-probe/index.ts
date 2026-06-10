@@ -159,14 +159,16 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
   // completed the OAuth handshake yet. Reachable=null here means "configured
   // for OAuth but no user has connected their QBO company yet".
   //
-  // Schema note: qbo_oauth_tokens stores one row keyed by `id` (typically a
-  // singleton "default" row) with access_token + refresh_token + an expiry
-  // column named access_token_expires_at. No realm_id column — the realm
-  // is encoded inside the OAuth tokens themselves. We surface a generic
-  // "authorized" message when a non-expired token exists.
+  // What "connected" actually means: the REFRESH token (valid ~100 days,
+  // renewed every time it's used). The access token only lives 60 minutes
+  // and is re-minted automatically by getQboAccessToken on every QBO call —
+  // an expired (or deliberately NULLed post-connect) access token is the
+  // NORMAL steady state, not a failure. The probe therefore keys on
+  // refresh_token presence + how long ago it was last used (updated_at),
+  // and only goes red when Intuit's 100-days-idle expiry is in play.
   try {
     const tokResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/qbo_oauth_tokens?select=id,access_token_expires_at&limit=1`,
+      `${SUPABASE_URL}/rest/v1/qbo_oauth_tokens?select=id,refresh_token,access_token_expires_at,updated_at&limit=1`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -185,7 +187,9 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
     }
     const rows = (await tokResp.json()) as Array<{
       id: string;
+      refresh_token: string | null;
       access_token_expires_at: string | null;
+      updated_at: string | null;
     }>;
     if (rows.length === 0) {
       return {
@@ -196,25 +200,39 @@ async function probeQbo(): Promise<Omit<IntegrationStatus, "name" | "desc" | "ch
       };
     }
     const r = rows[0];
-    // access_token_expires_at may be null if a row was inserted without a
-    // token yet (e.g. mid-OAuth). Treat null as "expired/pending" because
-    // we can't prove validity.
-    if (!r.access_token_expires_at) {
+    if (!r.refresh_token) {
       return {
         configured: true,
         reachable: false,
-        rawProbeMsg: `OAuth row exists but no access token recorded — re-authorize`,
-        lastError: "access_token_expires_at is null",
+        rawProbeMsg: "OAuth row exists but holds no refresh token — re-authorize via Connect",
+        lastError: "refresh_token is null",
       };
     }
-    const expired = new Date(r.access_token_expires_at).getTime() < Date.now();
+    // Intuit expires refresh tokens after ~100 days without use. updated_at
+    // moves every time the shared helper rotates the token, so it doubles as
+    // "last successful use". Warn from day 90 to leave headroom.
+    const lastUsedMs = r.updated_at ? new Date(r.updated_at).getTime() : NaN;
+    const daysSinceUse = Number.isFinite(lastUsedMs)
+      ? Math.floor((Date.now() - lastUsedMs) / 86_400_000)
+      : null;
+    if (daysSinceUse !== null && daysSinceUse >= 90) {
+      return {
+        configured: true,
+        reachable: false,
+        rawProbeMsg: `Refresh token last used ${daysSinceUse} days ago — Intuit expires them after ~100 idle days. Reconnect soon.`,
+        lastError: "refresh token near idle expiry",
+      };
+    }
+    const accessValid =
+      !!r.access_token_expires_at &&
+      new Date(r.access_token_expires_at).getTime() > Date.now();
     return {
       configured: true,
-      reachable: !expired,
-      rawProbeMsg: expired
-        ? `Access token expired ${r.access_token_expires_at} — refresh or re-authorize`
-        : `Authorized (${env || "sandbox"}) — token valid until ${r.access_token_expires_at.slice(0, 19)}Z`,
-      lastError: expired ? "Access token expired" : null,
+      reachable: true,
+      rawProbeMsg: accessValid
+        ? `Authorized (${env || "sandbox"}) — access token valid until ${r.access_token_expires_at!.slice(0, 19)}Z`
+        : `Authorized (${env || "sandbox"}) — access token auto-renews on next QBO call`,
+      lastError: null,
     };
   } catch (err) {
     return {
@@ -237,9 +255,11 @@ async function probeFleetio(): Promise<Omit<IntegrationStatus, "name" | "desc" |
       lastError: null,
     };
   }
-  // Probe: lightest read endpoint Fleetio exposes — a meta call.
+  // Probe: lightest read endpoint Fleetio exposes. per_page minimum is 2 —
+  // per_page=1 gets HTTP 400 {"errors":{"per_page":["out of range"]}} and
+  // would show "Auth check failed" even with valid keys.
   try {
-    const resp = await fetch("https://secure.fleetio.com/api/v1/vehicles?per_page=1", {
+    const resp = await fetch("https://secure.fleetio.com/api/v1/vehicles?per_page=2", {
       headers: {
         Authorization: `Token token=${token}`,
         ...(acct ? { "Account-Token": acct } : {}),
@@ -264,6 +284,53 @@ async function probeFleetio(): Promise<Omit<IntegrationStatus, "name" | "desc" |
       configured: true,
       reachable: false,
       rawProbeMsg: "Network error reaching Fleetio",
+      lastError: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function probeFormstack(): Promise<Omit<IntegrationStatus, "name" | "desc" | "checkedAt">> {
+  const token = Deno.env.get("FORMSTACK_ACCESS_TOKEN") ?? "";
+  if (!token) {
+    return {
+      configured: false,
+      reachable: null,
+      rawProbeMsg: "FORMSTACK_ACCESS_TOKEN not set (generate a Personal Access Token in admin.formstack.com)",
+      lastError: null,
+    };
+  }
+  // Probe: list forms via the v2025 API (PATs only work there — the legacy
+  // /api/v2 endpoints 401 them). pageSize minimum is >1 (pageSize=1 gets
+  // HTTP 400, same trap as Fleetio's per_page) — 10 is verified working.
+  try {
+    const resp = await fetch(
+      "https://www.formstack.com/api/v2025/forms?pageNumber=1&pageSize=10",
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+    );
+    if (!resp.ok) {
+      return {
+        configured: true,
+        reachable: false,
+        rawProbeMsg:
+          resp.status === 401
+            ? "Auth check failed (HTTP 401) — PAT expired or revoked; PATs live 30/60/90 days, regenerate in admin.formstack.com"
+            : `Auth check failed (HTTP ${resp.status})`,
+        lastError: null,
+      };
+    }
+    const json = (await resp.json()) as { page?: { totalElements?: number } };
+    const total = json.page?.totalElements;
+    return {
+      configured: true,
+      reachable: true,
+      rawProbeMsg: `Auth OK${typeof total === "number" ? ` — ${total} forms visible` : ""}`,
+      lastError: null,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      reachable: false,
+      rawProbeMsg: "Network error reaching Formstack",
       lastError: err instanceof Error ? err.message : String(err),
     };
   }
@@ -368,7 +435,7 @@ Deno.serve(async (req) => {
   // a single probe throwing doesn't tank the whole response — the operator
   // wants to see which integrations are up even when one is melting down.
   const checkedAt = new Date().toISOString();
-  const [twilio, geotab, qbo, fleetio, alerts] = await Promise.all([
+  const [twilio, geotab, qbo, fleetio, formstack, alerts] = await Promise.all([
     probeTwilio().catch((e) => ({
       configured: false,
       reachable: false,
@@ -388,6 +455,12 @@ Deno.serve(async (req) => {
       lastError: null,
     })),
     probeFleetio().catch((e) => ({
+      configured: false,
+      reachable: false,
+      rawProbeMsg: `probe threw: ${e instanceof Error ? e.message : String(e)}`,
+      lastError: null,
+    })),
+    probeFormstack().catch((e) => ({
       configured: false,
       reachable: false,
       rawProbeMsg: `probe threw: ${e instanceof Error ? e.message : String(e)}`,
@@ -423,6 +496,13 @@ Deno.serve(async (req) => {
       desc: "One-time vehicle data migration",
       ...fleetio,
       lastError: fleetio.lastError ?? alerts["fleetio"] ?? null,
+      checkedAt,
+    },
+    {
+      name: "Formstack",
+      desc: "Hauling record / dump form submissions",
+      ...formstack,
+      lastError: formstack.lastError ?? alerts["formstack"] ?? null,
       checkedAt,
     },
   ];
