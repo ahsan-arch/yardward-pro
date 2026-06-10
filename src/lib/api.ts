@@ -1902,6 +1902,36 @@ export const api = {
 
   // ---- QBO payroll mappings (driver -> QBO employee) -------------------
   // Read-only listing used by the admin "QBO mapping" tab in /admin/settings.
+  // Pull the active employee list from the connected QuickBooks company so
+  // the mapping UI offers a name dropdown instead of hand-typed IDs.
+  // Accounting scope — works with the already-authorized connection.
+  fetchQboEmployees: async (): Promise<
+    { ok: true; employees: Array<{ id: string; name: string }> } | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return {
+        ok: true,
+        employees: [
+          { id: "1", name: "Mock Employee A" },
+          { id: "2", name: "Mock Employee B" },
+        ],
+      };
+    }
+    const { data, error } = await supabase.functions.invoke<{
+      ok: boolean;
+      employees?: Array<{ id: string; name: string }>;
+      error?: string;
+    }>("qbo-list-employees", { body: {} });
+    if (error) {
+      const body = await extractFunctionErrorBody(error);
+      return { ok: false, reason: body ?? error.message };
+    }
+    if (!data?.ok)
+      return { ok: false, reason: data?.error ?? "Could not load QuickBooks employees" };
+    return { ok: true, employees: data.employees ?? [] };
+  },
+
   // Returns a Record keyed by driverId so the UI can render an input next to
   // each driver row pre-filled with whatever mapping already exists.
   getQboEmployeeMappings: async (): Promise<Record<string, string>> => {

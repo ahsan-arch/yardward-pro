@@ -1030,6 +1030,10 @@ function QboMappingTab() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // QBO employee list, loaded on demand so the admin maps by name instead of
+  // hand-copying numeric IDs. Empty until "Load from QuickBooks" is clicked.
+  const [qboEmployees, setQboEmployees] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -1051,6 +1055,25 @@ function QboMappingTab() {
       alive = false;
     };
   }, []);
+
+  async function loadQboEmployees() {
+    setLoadingEmployees(true);
+    try {
+      const r = await api.fetchQboEmployees();
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      setQboEmployees(r.employees);
+      toast.success(
+        r.employees.length > 0
+          ? `Loaded ${r.employees.length} QuickBooks employees`
+          : "QuickBooks returned no active employees",
+      );
+    } finally {
+      setLoadingEmployees(false);
+    }
+  }
 
   const dirtyIds = drivers
     .filter((d) => (draft[d.id] ?? "").trim() !== (original[d.id] ?? "").trim())
@@ -1091,11 +1114,28 @@ function QboMappingTab() {
 
   return (
     <Card title="QuickBooks employee mapping">
-      <p className="text-xs text-muted-foreground mb-4 max-w-2xl">
-        Map each driver to their QuickBooks Online Employee Id so the payroll sync (Timesheets →
-        Export to QuickBooks) can route hours to the right person. Leave the field blank to unmap a
-        driver.
+      <p className="text-xs text-muted-foreground mb-3 max-w-2xl">
+        Map each driver to their QuickBooks Online employee so the payroll sync (Timesheets → Export
+        to QuickBooks) routes hours to the right person. Click{" "}
+        <span className="font-medium">Load from QuickBooks</span> to pick employees by name; the
+        hours post as TimeActivity entries you pull onto paycheques when you run QuickBooks payroll.
       </p>
+      <div className="mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void loadQboEmployees()}
+          disabled={loadingEmployees}
+          data-testid="load-qbo-employees"
+        >
+          {loadingEmployees ? "Loading…" : "Load from QuickBooks"}
+        </Button>
+        {qboEmployees.length > 0 && (
+          <span className="ml-2 text-xs text-muted-foreground">
+            {qboEmployees.length} employees loaded — pick by name below
+          </span>
+        )}
+      </div>
 
       {loading ? (
         <div className="text-sm text-muted-foreground py-6">Loading mappings…</div>
@@ -1121,15 +1161,47 @@ function QboMappingTab() {
                       <td className="px-3 py-2 font-medium">{d.name}</td>
                       <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{d.id}</td>
                       <td className="px-3 py-2">
-                        <Input
-                          value={current}
-                          onChange={(e) =>
-                            setDraft((prev) => ({ ...prev, [d.id]: e.target.value }))
-                          }
-                          placeholder="e.g. 42"
-                          data-testid={`qbo-employee-input-${d.id}`}
-                          className="font-mono"
-                        />
+                        {qboEmployees.length > 0 ? (
+                          <Select
+                            value={current || "__unmapped__"}
+                            onValueChange={(v) =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                [d.id]: v === "__unmapped__" ? "" : v,
+                              }))
+                            }
+                          >
+                            <SelectTrigger
+                              data-testid={`qbo-employee-select-${d.id}`}
+                              className="w-full"
+                            >
+                              <SelectValue placeholder="Choose employee" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__unmapped__">— Not mapped —</SelectItem>
+                              {/* Keep an unknown stored id visible even if it
+                                  isn't in the freshly-loaded list. */}
+                              {current && !qboEmployees.some((e) => e.id === current) && (
+                                <SelectItem value={current}>(current id {current})</SelectItem>
+                              )}
+                              {qboEmployees.map((e) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {e.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={current}
+                            onChange={(e) =>
+                              setDraft((prev) => ({ ...prev, [d.id]: e.target.value }))
+                            }
+                            placeholder="e.g. 42 — or Load from QuickBooks"
+                            data-testid={`qbo-employee-input-${d.id}`}
+                            className="font-mono"
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {changed ? (
