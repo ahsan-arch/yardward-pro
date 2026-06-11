@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PROD_URL = "https://yardward-pro.vercel.app";
+const PROD_URL = "https://engage-hydrovac-crm.vercel.app";
 const LOCAL_URL = "http://localhost:5173";
 
 export default defineConfig({
