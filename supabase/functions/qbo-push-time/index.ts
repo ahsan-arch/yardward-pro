@@ -1,5 +1,5 @@
 // Supabase Edge Function: qbo-push-time
-// Pushes YardwardPro time entries to QuickBooks Online as TimeActivity rows.
+// Pushes Engage Hydrovac CRM time entries to QuickBooks Online as TimeActivity rows.
 //
 // Flow:
 //   1. Verify caller is admin or service_role

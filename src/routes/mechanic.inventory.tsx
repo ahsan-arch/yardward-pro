@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/mechanic/inventory")({
-  head: () => ({ meta: [{ title: "Parts inventory — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Parts inventory — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

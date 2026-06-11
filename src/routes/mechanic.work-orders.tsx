@@ -41,7 +41,7 @@ import type {
 } from "@/types/domain";
 
 export const Route = createFileRoute("/mechanic/work-orders")({
-  head: () => ({ meta: [{ title: "Workshop work orders — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Workshop work orders — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

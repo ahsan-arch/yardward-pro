@@ -5,7 +5,7 @@ import { VehicleMap } from "@/components/crm/VehicleMap";
 import { useState } from "react";
 
 export const Route = createFileRoute("/admin/map")({
-  head: () => ({ meta: [{ title: "Live vehicle map — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Live vehicle map — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

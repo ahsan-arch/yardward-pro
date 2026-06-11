@@ -9,7 +9,7 @@
 //
 // Required env (read by sendResendEmail):
 //   RESEND_API_KEY
-//   RESEND_FROM_DEFAULT  ("Yardward Pro <noreply@yardward.pro>")
+//   RESEND_FROM_DEFAULT  ("Engage Hydrovac CRM <noreply@yardward.pro>")
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

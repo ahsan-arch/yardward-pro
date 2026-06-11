@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/errors")({
-  head: () => ({ meta: [{ title: "Error log — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Error log — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

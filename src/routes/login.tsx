@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Sign in — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Sign in — Engage Hydrovac CRM" }] }),
   component: LoginPage,
 });
 
@@ -84,7 +84,7 @@ function LoginPage() {
           /* storage may be unavailable in some embedded webviews */
         }
         login(demoRole);
-        toast.success("Welcome back to Yardward Pro");
+        toast.success("Welcome back to Engage Hydrovac CRM");
         navigate({
           to: demoRole === "driver" ? "/driver" : demoRole === "mechanic" ? "/mechanic" : "/admin",
         });
@@ -103,7 +103,7 @@ function LoginPage() {
     }
     // Legacy fallback: when no Supabase env is set, hydrate role from the picker.
     if (!import.meta.env.VITE_SUPABASE_URL) login(role);
-    toast.success("Welcome back to Yardward Pro");
+    toast.success("Welcome back to Engage Hydrovac CRM");
     // Prefer the user's actual role from Supabase (written to localStorage
     // by AuthContext.signIn) over the form picker, since the picker is just
     // a UI hint and may not match the real profile.role.
@@ -159,7 +159,7 @@ function LoginPage() {
         />
         <div className="relative flex items-center gap-2">
           <BrandMark size="lg" />
-          <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
+          <div className="font-bold text-lg tracking-tight">Engage Hydrovac CRM</div>
         </div>
         <div className="relative space-y-4 max-w-md">
           <h2 className="text-4xl font-bold leading-tight">
@@ -186,7 +186,7 @@ function LoginPage() {
             </div>
           </div>
         </div>
-        <div className="relative text-xs text-navy-foreground/50 font-mono">© 2025 Yardward</div>
+        <div className="relative text-xs text-navy-foreground/50 font-mono">© 2025 Engage Hydrovac</div>
       </div>
 
       {/* Right: form */}
@@ -194,7 +194,7 @@ function LoginPage() {
         <div className="flex justify-between items-center">
           <div className="lg:hidden flex items-center gap-2">
             <BrandMark />
-            <div className="font-bold">Yardward Pro</div>
+            <div className="font-bold">Engage Hydrovac CRM</div>
           </div>
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="ml-auto">
             {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -343,7 +343,7 @@ function LoginPage() {
                   <Loader2 className="w-4 h-4 animate-spin" /> Signing in…
                 </>
               ) : (
-                "Sign in to Yardward Pro"
+                "Sign in to Engage Hydrovac CRM"
               )}
             </Button>
 

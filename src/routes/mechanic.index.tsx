@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import type { InventoryCheckSnapshot, InventoryItem } from "@/types/domain";
 
 export const Route = createFileRoute("/mechanic/")({
-  head: () => ({ meta: [{ title: "Mechanic — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Mechanic — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

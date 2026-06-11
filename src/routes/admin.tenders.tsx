@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { supabase, USE_SUPABASE } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/tenders")({
-  head: () => ({ meta: [{ title: "Tenders — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Tenders — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

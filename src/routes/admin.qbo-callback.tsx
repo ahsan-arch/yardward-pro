@@ -37,7 +37,7 @@ type SearchParams = {
 };
 
 export const Route = createFileRoute("/admin/qbo-callback")({
-  head: () => ({ meta: [{ title: "Connecting QuickBooks… — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Connecting QuickBooks… — Engage Hydrovac CRM" }] }),
   validateSearch: (search): SearchParams => ({
     code: typeof search.code === "string" ? search.code : undefined,
     state: typeof search.state === "string" ? search.state : undefined,

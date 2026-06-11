@@ -1,6 +1,6 @@
 // Supabase Edge Function: geotab-list-devices
 // Diagnostic-only. Lists every device in the connected Geotab fleet so we can
-// map the user's real device IDs to YardwardPro vehicles. No DB writes.
+// map the user's real device IDs to Engage Hydrovac CRM vehicles. No DB writes.
 //
 // Invocation: supabase.functions.invoke('geotab-list-devices')
 // Returns: { devices: Array<{ id, name, serialNumber, vehicleIdentificationNumber, licensePlate }>, count }

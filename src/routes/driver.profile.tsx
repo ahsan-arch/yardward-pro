@@ -30,7 +30,7 @@ import {
 } from "@/types/domain";
 
 export const Route = createFileRoute("/driver/profile")({
-  head: () => ({ meta: [{ title: "Profile — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Profile — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 
@@ -282,7 +282,7 @@ const FAQ_ITEMS: Array<{ q: string; a: string }> = [
   },
   {
     q: "GPS shows red or 'fallback' on my form.",
-    a: "Make sure location permission is on for Yardward Pro in your phone settings. The form still works in fallback mode — your shift won't be blocked.",
+    a: "Make sure location permission is on for Engage Hydrovac CRM in your phone settings. The form still works in fallback mode — your shift won't be blocked.",
   },
   {
     q: "I submitted a form while offline. Did it save?",

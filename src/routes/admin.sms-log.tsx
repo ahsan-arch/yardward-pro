@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/crm/StatusBadge";
 import { MessageSquare, Radio } from "lucide-react";
 
 export const Route = createFileRoute("/admin/sms-log")({
-  head: () => ({ meta: [{ title: "SMS log — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "SMS log — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

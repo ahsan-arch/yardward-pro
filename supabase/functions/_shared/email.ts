@@ -47,7 +47,7 @@ export async function sendResendEmail(
       ok: false,
       status: 500,
       error:
-        'RESEND_FROM_DEFAULT not set — should be the verified-domain sender like "Yardward Pro <noreply@yardward.pro>"',
+        'RESEND_FROM_DEFAULT not set — should be the verified-domain sender like "Engage Hydrovac CRM <noreply@yardward.pro>"',
     };
   }
 
@@ -310,18 +310,18 @@ export function buildTicketLowBalanceEmail(p: {
 export function buildInviteEmail(
   p: InviteEmailParams,
 ): { subject: string; html: string; text: string } {
-  const org = escapeHtml(p.orgName ?? "Yardward Pro");
+  const org = escapeHtml(p.orgName ?? "Engage Hydrovac CRM");
   const recipient = escapeHtml(p.recipientName);
   const inviter = p.inviterName ? escapeHtml(p.inviterName) : null;
   // The action link carries &-separated query params — must be entity-escaped
   // in both the href attribute and the visible fallback text node.
   const link = escapeHtml(p.actionLink);
-  const subject = `You're invited to ${p.orgName ?? "Yardward Pro"}`;
+  const subject = `You're invited to ${p.orgName ?? "Engage Hydrovac CRM"}`;
   const text =
     `Hi ${p.recipientName},\n\n` +
     (inviter
-      ? `${p.inviterName} has invited you to ${p.orgName ?? "Yardward Pro"}.\n\n`
-      : `You've been invited to ${p.orgName ?? "Yardward Pro"}.\n\n`) +
+      ? `${p.inviterName} has invited you to ${p.orgName ?? "Engage Hydrovac CRM"}.\n\n`
+      : `You've been invited to ${p.orgName ?? "Engage Hydrovac CRM"}.\n\n`) +
     `Click the link below to set your password and sign in:\n${p.actionLink}\n\n` +
     `If you didn't expect this invite, it's safe to ignore — the link will expire soon.`;
   const html = `<!doctype html>

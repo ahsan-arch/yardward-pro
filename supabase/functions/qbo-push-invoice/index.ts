@@ -1,5 +1,5 @@
 // Supabase Edge Function: qbo-push-invoice
-// Pushes a YardwardPro invoice to QuickBooks Online and stores the QBO invoice id.
+// Pushes a Engage Hydrovac CRM invoice to QuickBooks Online and stores the QBO invoice id.
 //
 // Flow:
 //   1. Load invoice_data + invoice_line_items + clients from Supabase

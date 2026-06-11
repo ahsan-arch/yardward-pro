@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/admin/invoices/$workOrderId")({
-  head: () => ({ meta: [{ title: "Invoice preview — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Invoice preview — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

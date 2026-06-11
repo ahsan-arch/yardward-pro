@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { toCsv, downloadCsv } from "@/lib/csv";
 
 export const Route = createFileRoute("/admin/receivables")({
-  head: () => ({ meta: [{ title: "Receivables — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Receivables — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

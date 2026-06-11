@@ -35,7 +35,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/form-templates")({
-  head: () => ({ meta: [{ title: "Form templates — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Form templates — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Set new password — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Set new password — Engage Hydrovac CRM" }] }),
   component: ResetPasswordPage,
 });
 
@@ -87,7 +87,7 @@ function ResetPasswordPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="flex items-center gap-2">
           <BrandMark size="lg" />
-          <div className="font-bold text-lg tracking-tight">Yardward Pro</div>
+          <div className="font-bold text-lg tracking-tight">Engage Hydrovac CRM</div>
         </div>
 
         {phase === "verifying" && (
@@ -112,7 +112,7 @@ function ResetPasswordPage() {
             <div>
               <h1 className="text-2xl font-bold">Set a new password</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Choose a new password for your Yardward Pro account.
+                Choose a new password for your Engage Hydrovac CRM account.
               </p>
             </div>
             <form onSubmit={onSubmit} noValidate className="space-y-4">

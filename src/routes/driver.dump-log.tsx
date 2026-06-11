@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 
 export const Route = createFileRoute("/driver/dump-log")({
-  head: () => ({ meta: [{ title: "Hauling record — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Hauling record — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

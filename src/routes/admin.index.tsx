@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { TimeEntry, Notification } from "@/types/domain";
 
 export const Route = createFileRoute("/admin/")({
-  head: () => ({ meta: [{ title: "Dashboard — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — Engage Hydrovac CRM" }] }),
   component: Dashboard,
 });
 

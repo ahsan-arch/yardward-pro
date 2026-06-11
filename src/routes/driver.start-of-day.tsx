@@ -29,7 +29,7 @@ import { geotabCoordsForVehicle } from "@/data/mockData";
 import { clearDriverTokenSession } from "@/hooks/use-driver-token-scope";
 
 export const Route = createFileRoute("/driver/start-of-day")({
-  head: () => ({ meta: [{ title: "Start of day — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Start of day — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

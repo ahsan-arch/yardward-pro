@@ -33,7 +33,7 @@ const EMPTY_NEW_JOB_FORM = {
 };
 
 export const Route = createFileRoute("/admin/jobs")({
-  head: () => ({ meta: [{ title: "Jobs — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Jobs — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

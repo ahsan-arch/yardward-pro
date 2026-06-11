@@ -366,7 +366,7 @@ Deno.serve(async (req) => {
             recipientName: name,
             recipientEmail: email,
             actionLink,
-            orgName: Deno.env.get("ORG_NAME") ?? "Yardward Pro",
+            orgName: Deno.env.get("ORG_NAME") ?? "Engage Hydrovac CRM",
           });
           const sendResult = await sendResendEmail(Deno.env, {
             to: email,

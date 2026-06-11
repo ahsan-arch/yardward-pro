@@ -52,7 +52,7 @@ export const Route = createFileRoute("/mechanic/messages")({
     const role = localStorage.getItem("fo:role");
     if (role !== "mechanic") throw redirect({ to: homeForRole(role) });
   },
-  head: () => ({ meta: [{ title: "Messages — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Messages — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

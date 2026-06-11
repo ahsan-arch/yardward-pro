@@ -39,7 +39,7 @@ import { toast } from "sonner";
 import { toCsv, downloadCsv, openPrintView, escapeHtml } from "@/lib/csv";
 
 export const Route = createFileRoute("/admin/hauling-records")({
-  head: () => ({ meta: [{ title: "Hauling records — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Hauling records — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

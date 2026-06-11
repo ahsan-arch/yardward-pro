@@ -67,7 +67,7 @@ export function AdminShell({ children, title }: { children?: ReactNode; title?: 
         <div className="h-16 px-5 flex items-center gap-2 border-b border-sidebar-border">
           <BrandMark />
           <div>
-            <div className="font-bold text-sm tracking-tight">Yardward Pro</div>
+            <div className="font-bold text-sm tracking-tight">Engage Hydrovac CRM</div>
             <div className="text-[10px] font-mono text-sidebar-foreground/50">v1.0</div>
           </div>
         </div>

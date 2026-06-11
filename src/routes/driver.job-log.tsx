@@ -21,7 +21,7 @@ import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/driver/job-log")({
-  head: () => ({ meta: [{ title: "Job log — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Job log — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 

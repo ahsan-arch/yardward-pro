@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 import { USE_SUPABASE } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/vehicles/")({
-  head: () => ({ meta: [{ title: "Vehicles — Yardward Pro" }] }),
+  head: () => ({ meta: [{ title: "Vehicles — Engage Hydrovac CRM" }] }),
   component: Page,
 });
 
