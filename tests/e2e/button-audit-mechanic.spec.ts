@@ -396,13 +396,17 @@ test.describe("Mechanic inventory buttons", () => {
     await expect(lowBtn).not.toHaveClass(/danger/);
   });
 
-  test("Adjust (row action) emits adjustment toast", async ({ page }) => {
+  test("Adjust (row action) opens the real save dialog", async ({ page }) => {
+    // Was a mock toast ("adjusted (mock)") that saved nothing — replaced with
+    // a real count dialog that persists via api.updateInventoryItem.
     await gotoAs(page, "/mechanic/inventory");
     const adjust = page.getByRole("button", { name: /^adjust$/i }).first();
     await expect(adjust).toBeVisible();
     await adjust.click();
-    // toast.success("{SKU} adjusted (mock)") — assert the suffix.
-    await expect(page.getByText(/adjusted \(mock\)/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("[data-testid='mech-inv-adjust-qty']")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.locator("[data-testid='mech-inv-adjust-save']")).toBeVisible();
   });
 
   test("Reorder (low-stock row) raises a reorder request toast", async ({ page }) => {
