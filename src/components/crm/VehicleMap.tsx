@@ -99,17 +99,35 @@ export function relativeTime(iso: string) {
   return `${Math.round(diffSec / 86400)} d ago`;
 }
 
+// Run a programmatic map move ONLY if the map is still mounted, and never
+// animated. The "_leaflet_pos undefined" crashes the client kept logging come
+// from animated setView/fitBounds/flyTo whose tween callback fires after a
+// route change has already removed the map's pane elements. Dropping the
+// animation removes the deferred callback entirely; the try/catch + liveness
+// check is belt-and-braces for the unmount-mid-call race.
+function safeMapMove(map: L.Map, fn: (m: L.Map) => void) {
+  try {
+    // _loaded flips false on map.remove(); getContainer() throws once torn
+    // down. Either guard short-circuits before we touch a dead pane.
+    if (!(map as unknown as { _loaded?: boolean })._loaded) return;
+    if (!map.getContainer()?.isConnected) return;
+    fn(map);
+  } catch {
+    /* map was being torn down — safe to ignore */
+  }
+}
+
 /** Re-fit map bounds to the current pin set whenever it changes. */
 function FitToPins({ coords }: { coords: LiveCoord[] }) {
   const map = useMap();
   useEffect(() => {
     if (coords.length === 0) return;
     if (coords.length === 1) {
-      map.setView([coords[0].lat, coords[0].lng], 14, { animate: true });
+      safeMapMove(map, (m) => m.setView([coords[0].lat, coords[0].lng], 14, { animate: false }));
       return;
     }
     const bounds = L.latLngBounds(coords.map((c) => [c.lat, c.lng] as [number, number]));
-    map.fitBounds(bounds, { padding: [40, 40], animate: true });
+    safeMapMove(map, (m) => m.fitBounds(bounds, { padding: [40, 40], animate: false }));
   }, [JSON.stringify(coords.map((c) => [c.lat, c.lng])), map]);
   return null;
 }
@@ -127,7 +145,7 @@ function FocusOnVehicle({
     if (!focusVehicleId) return;
     const c = coords[focusVehicleId];
     if (!c) return;
-    map.flyTo([c.lat, c.lng], 15, { animate: true, duration: 0.6 });
+    safeMapMove(map, (m) => m.setView([c.lat, c.lng], 15, { animate: false }));
   }, [focusVehicleId, coords, map]);
   return null;
 }

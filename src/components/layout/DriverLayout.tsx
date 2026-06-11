@@ -8,6 +8,7 @@ import {
   Clock,
   Loader2,
   Lock,
+  LogOut,
   Wrench,
   Ticket,
   MessagesSquare,
@@ -42,7 +43,8 @@ const tabs = [
 export function DriverShell({ children }: { children?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const { timeEntries, drivers, toolChecklistSubmissions } = useData();
   const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
   const me = drivers.find((d) => d.id === user.id || d.email === user.email);
@@ -153,7 +155,12 @@ export function DriverShell({ children }: { children?: ReactNode }) {
     <div className="min-h-[calc(100vh-44px)] bg-muted/30 flex justify-center">
       <div className="w-full max-w-[480px] bg-background min-h-[calc(100vh-44px)] flex flex-col shadow-xl">
         <header className="h-14 bg-navy text-navy-foreground flex items-center justify-between px-3 sticky top-11 z-20">
-          <button className="p-2 rounded-md hover:bg-sidebar-accent">
+          <button
+            className="p-2 rounded-md hover:bg-sidebar-accent"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+            data-testid="driver-menu-button"
+          >
             <Menu className="w-5 h-5" />
           </button>
           <div className="font-bold tracking-tight inline-flex items-center gap-2">
@@ -265,6 +272,43 @@ export function DriverShell({ children }: { children?: ReactNode }) {
                 "Confirm clock in"
               )}
             </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Account menu — opened by the header hamburger. The bottom tab bar
+          handles navigation, so this surfaces what it can't: who's signed in
+          and a sign-out (a driver previously had no way to log out). */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-72" data-testid="driver-menu-sheet">
+          <SheetHeader>
+            <SheetTitle>Menu</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-1">
+            <div className="px-3 py-2 rounded-md bg-muted/40">
+              <div className="text-sm font-semibold">{user.name}</div>
+              <div className="text-xs text-muted-foreground">{user.email}</div>
+            </div>
+            {tabs.map((t) => (
+              <Link
+                key={t.to}
+                to={t.to}
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm hover:bg-muted/60"
+              >
+                <t.icon className="w-4 h-4 text-muted-foreground" /> {t.label}
+              </Link>
+            ))}
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                void logout().then(() => nav({ to: "/login" }));
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-danger hover:bg-danger/10 mt-2"
+              data-testid="driver-menu-signout"
+            >
+              <LogOut className="w-4 h-4" /> Sign out
+            </button>
           </div>
         </SheetContent>
       </Sheet>

@@ -91,7 +91,23 @@ Deno.serve(async (req) => {
       headers: corsHeaders,
     });
   }
-  const isServiceRole = eqConstTime(bearer, SUPABASE_SERVICE_ROLE_KEY);
+  // Service-role acceptance: byte-equal to the env key OR a gateway-verified
+  // JWT carrying the service_role claim. The byte-compare alone fails under
+  // the project's newer API-key system (the injected env key and the issued
+  // key can differ in representation), so we also decode the already-
+  // signature-verified JWT and trust its role claim. Admin user JWTs fall
+  // through to the profile-role check below.
+  let isServiceRole = eqConstTime(bearer, SUPABASE_SERVICE_ROLE_KEY);
+  if (!isServiceRole) {
+    try {
+      const claims = JSON.parse(
+        atob(bearer.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+      ) as { role?: string };
+      isServiceRole = claims.role === "service_role";
+    } catch {
+      /* not a JWT — leave false, fall through to user-token path */
+    }
+  }
   if (!isServiceRole) {
     const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${bearer}`, apikey: SUPABASE_ANON_KEY },

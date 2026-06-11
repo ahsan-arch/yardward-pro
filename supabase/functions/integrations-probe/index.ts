@@ -391,6 +391,24 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
     }
+    // Service-role short-circuit. Byte-comparing against the env var fails
+    // when the platform injects a different representation of the key than
+    // the caller holds, so ALSO accept any gateway-verified JWT whose role
+    // claim is service_role — the gateway (verify_jwt) has already validated
+    // the signature before this code runs, and only the service key carries
+    // that claim.
+    let srOk = bearer === SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length > 0;
+    if (!srOk) {
+      try {
+        const payload = JSON.parse(
+          atob(bearer.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+        ) as { role?: string };
+        srOk = payload.role === "service_role";
+      } catch {
+        srOk = false;
+      }
+    }
+    if (!srOk) {
     const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${bearer}`, apikey: SUPABASE_ANON_KEY },
     });
@@ -424,6 +442,7 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
     }
+    } // end !srOk user-JWT path
   } catch (err) {
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "auth failed" }),
