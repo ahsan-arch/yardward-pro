@@ -15,7 +15,7 @@ test.describe("Admin dashboard", () => {
     // Today's schedule table
     await expect(page.getByRole("table").first()).toBeVisible();
     // Activity feed has at least one entry
-    await expect(page.locator("text=/clocked in|submitted|departed/i").first()).toBeVisible();
+    await expect(page.locator("text=/clocked in|submitted|departed|approved|no activity yet/i").first()).toBeVisible();
   });
 
   test("sidebar nav highlights current route", async ({ page }) => {

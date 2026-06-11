@@ -125,8 +125,10 @@ const BUTTONS: ButtonSpec[] = [
   { route: "/admin/settings", label: "Save changes (org)", action: "submit-form", selector: "button:has-text('Save changes')" },
   { route: "/admin/settings", label: "Save changes (system thresholds)", action: "submit-form", selector: "[data-testid='save-system-settings']" },
   { route: "/admin/settings", label: "Invite user", action: "modal-open", selector: "button:has-text('Invite user')" },
-  { route: "/admin/settings", label: "Test / Connect integration", action: "mutate-data", selector: "button:has-text('Test'), button:has-text('Connect')" },
-  { route: "/admin/settings", label: "Disconnect integration", action: "mutate-data", selector: "button:has-text('Disconnect')" },
+  // Integrations rework: probing has no toast (state refresh only), and the
+  // old Disconnect button was removed — Test/Re-test is the only safe button
+  // to exercise (Connect would start a real OAuth redirect).
+  { route: "/admin/settings", label: "Test / Connect integration", action: "refresh", selector: "[data-testid^='integration-test-']" },
   { route: "/admin/settings", label: "Save QBO mappings", action: "submit-form", selector: "[data-testid='save-qbo-mappings']" },
   { route: "/admin/settings", label: "Generate token", action: "modal-open", selector: "[data-testid='generate-token-btn']" },
   { route: "/admin/settings", label: "Generate (confirm)", action: "modal-confirm", selector: "[data-testid='token-generate-confirm']" },

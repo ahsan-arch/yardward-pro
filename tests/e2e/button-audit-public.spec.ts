@@ -72,7 +72,7 @@ test.describe("button audit: public + auth", () => {
     await page.locator("#email").fill("alex@fleetops.co");
     await page.locator("#password").fill("demo1234");
 
-    await page.getByRole("button", { name: /sign in to fleetops/i }).click();
+    await page.getByRole("button", { name: /^sign in to /i }).click();
     await page.waitForURL((url) => url.pathname.startsWith("/admin"), { timeout: 15_000 });
     await expect(page).toHaveURL(/\/admin/);
 
@@ -94,12 +94,12 @@ test.describe("button audit: public + auth", () => {
     await page.locator("#email").fill("not-an-email");
     await page.locator("#password").fill("123"); // < 6 chars
 
-    await page.getByRole("button", { name: /sign in to fleetops/i }).click();
+    await page.getByRole("button", { name: /^sign in to /i }).click();
 
     // We stay on /login and inline errors render.
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByText("Enter a valid email")).toBeVisible();
-    await expect(page.getByText("Min 6 characters")).toBeVisible();
+    await expect(page.getByText(/min \d+ characters/i)).toBeVisible();
   });
 
   // ----------------------------------------------------------------

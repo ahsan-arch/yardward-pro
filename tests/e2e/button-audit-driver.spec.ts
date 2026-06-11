@@ -657,7 +657,10 @@ test.describe("Driver button audit", () => {
       { label: /tool checklist/i, route: /\/driver\/tool-checklist/ },
       { label: /vehicle inspection/i, route: /\/driver\/inspection/ },
       { label: /job log/i, route: /\/driver\/job-log/ },
-      { label: /dump \/ load/i, route: /\/driver\/work-order/ },
+      // The old combined "Dump / load" tile split into two: the standalone
+      // hauling record (Formstack replacement) and the billable work order.
+      { label: /hauling record/i, route: /\/driver\/dump-log/ },
+      { label: /work order/i, route: /\/driver\/work-order/ },
       { label: /end of day/i, route: /\/driver\/end-of-day/ },
     ];
 

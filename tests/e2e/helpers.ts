@@ -18,7 +18,9 @@ export async function loginAs(page: Page, role: Role) {
   if (current.length < 6) {
     await pwd.fill("demo1234");
   }
-  await page.getByRole("button", { name: /sign in to fleetops/i }).click();
+  // Match any brand name ("Sign in to Yardward Pro" today, formerly
+  // "...FleetOps") so a rebrand doesn't silently break every login test.
+  await page.getByRole("button", { name: /^sign in to /i }).click();
   await page.waitForURL((url) => url.pathname.startsWith(preset.dashboard), { timeout: 15_000 });
   return preset;
 }
