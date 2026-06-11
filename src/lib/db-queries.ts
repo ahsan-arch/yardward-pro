@@ -65,6 +65,7 @@ import type {
   ConversationParticipant,
   Message,
   Admin,
+  InventoryItem,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -97,6 +98,7 @@ export type HydratedData = {
   conversationParticipants: ConversationParticipant[];
   messages: Message[];
   admins: Admin[];
+  inventoryItems: InventoryItem[];
 };
 
 // Standalone fetch for app_settings — used both during hydration and on demand
@@ -148,6 +150,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     conversationParticipants,
     recentMessages,
     adminProfiles,
+    inventoryRows,
   ] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("vehicles").select("*"),
@@ -172,10 +175,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     // hint (lex order works here because the priority CHECK constraint values
     // happen to sort the wrong direction — see the route-level sort which
     // weights critical>high>medium>low. The fetch order is only a tie-break).
-    supabase
-      .from("maintenance_work_orders")
-      .select("*")
-      .order("created_at", { ascending: false }),
+    supabase.from("maintenance_work_orders").select("*").order("created_at", { ascending: false }),
     supabase.from("app_settings").select("*").eq("id", "default").maybeSingle(),
     supabase.from("rate_tables").select("*"),
     supabase.from("rate_line_items").select("*"),
@@ -197,10 +197,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       .select("id, email, name, phone, role, status, created_at, notification_preferences")
       .eq("role", "driver"),
     supabase.from("tools").select("*"),
-    supabase
-      .from("tenders")
-      .select("*")
-      .order("scraped_at", { ascending: false }),
+    supabase.from("tenders").select("*").order("scraped_at", { ascending: false }),
     // Communications hydration. RLS filters by participant — drivers/mechanics
     // see only their own threads; admins see everything via is_admin().
     supabase
@@ -211,17 +208,18 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     supabase.from("conversation_participants").select("*"),
     // Hydrate only the most-recent N messages per session — older pages get
     // lazy-loaded via api.fetchConversationMessages when a thread opens.
-    supabase
-      .from("messages")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(500),
+    supabase.from("messages").select("*").order("created_at", { ascending: false }).limit(500),
     // Real admin profiles for the Users tab. Same select shape as the
     // mechanic + driver queries.
     supabase
       .from("profiles")
       .select("id, email, name, phone, role, status, created_at, notification_preferences")
       .eq("role", "admin"),
+    // Parts inventory — backs the mechanic Parts page, the admin Inventory
+    // page, and the purchase-request stock check. ~1.5k narrow rows after
+    // the Fleetio parts import; capped well above that so a silently
+    // truncated catalog can't make the stock check lie.
+    supabase.from("inventory_items").select("*").order("sku").limit(10000),
   ]);
 
   type LineItem = NonNullable<typeof invoiceLineItems.data>[number];
@@ -270,12 +268,8 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     ),
     maintenanceLogs: (maintenanceLogs.data ?? []).map(dbMaintenanceLogToDomain),
     fuelLogs: (fuelLogs.data ?? []).map(dbFuelLogToDomain),
-    maintenanceWorkOrders: (maintenanceWorkOrders.data ?? []).map(
-      dbMaintenanceWorkOrderToDomain,
-    ),
-    appSettings: appSettings.data
-      ? dbAppSettingsToDomain(appSettings.data)
-      : DEFAULT_APP_SETTINGS,
+    maintenanceWorkOrders: (maintenanceWorkOrders.data ?? []).map(dbMaintenanceWorkOrderToDomain),
+    appSettings: appSettings.data ? dbAppSettingsToDomain(appSettings.data) : DEFAULT_APP_SETTINGS,
     rateTables: (rateTables.data ?? []).map((rt) =>
       dbRateTableToDomain(rt, rateLineItemsByTable.get(rt.id) ?? []),
     ),
@@ -292,5 +286,15 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     ),
     messages: (recentMessages.data ?? []).map(dbMessageToDomain),
     admins: (adminProfiles.data ?? []).map(dbProfileToAdmin),
+    inventoryItems: (inventoryRows.data ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      sku: r.sku,
+      qtyOnHand: r.qty_on_hand,
+      qtyReserved: r.qty_reserved,
+      reorderPoint: r.reorder_point,
+      supplierId: r.supplier_id ?? "",
+      lastRestocked: r.last_restocked ?? "",
+    })),
   };
 }

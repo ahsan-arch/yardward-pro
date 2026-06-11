@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MechanicShell } from "@/components/layout/MechanicLayout";
 import { useData } from "@/contexts/DataContext";
+import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, AlertTriangle, Package, ShoppingCart } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Search, AlertTriangle, Package, ShoppingCart, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,9 +16,10 @@ export const Route = createFileRoute("/mechanic/inventory")({
 });
 
 function Page() {
-  const { inventoryItems } = useData();
+  const { inventoryItems, applyInventoryItem } = useData();
   const [search, setSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
+  const [adjusting, setAdjusting] = useState<(typeof inventoryItems)[number] | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -105,7 +109,8 @@ function Page() {
                         size="sm"
                         variant="outline"
                         className="h-7"
-                        onClick={() => toast.success(`${i.sku} adjusted (mock)`)}
+                        onClick={() => setAdjusting(i)}
+                        data-testid={`mech-inv-adjust-${i.sku}`}
                       >
                         Adjust
                       </Button>
@@ -133,6 +138,95 @@ function Page() {
           </tbody>
         </table>
       </div>
+
+      <Dialog open={!!adjusting} onOpenChange={(o) => !o && setAdjusting(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-mono text-base">Adjust {adjusting?.sku}</DialogTitle>
+          </DialogHeader>
+          {adjusting && (
+            <AdjustForm
+              item={adjusting}
+              onSaved={(updated) => {
+                applyInventoryItem(updated);
+                setAdjusting(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </MechanicShell>
+  );
+}
+
+// Count adjustment that actually persists (was a mock toast before the
+// Fleetio catalog import made the counts real).
+function AdjustForm({
+  item,
+  onSaved,
+}: {
+  item: {
+    id: string;
+    sku: string;
+    name: string;
+    qtyOnHand: number;
+    qtyReserved: number;
+    reorderPoint: number;
+    supplierId: string;
+    lastRestocked: string;
+  };
+  onSaved: (i: typeof item) => void;
+}) {
+  const [qty, setQty] = useState(String(item.qtyOnHand));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const n = Number(qty);
+    if (isNaN(n) || n < 0) {
+      toast.error("Enter a non-negative count");
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await api.updateInventoryItem(item.id, { qtyOnHand: n });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(`${item.sku} set to ${Math.round(n)} on hand`);
+      onSaved({
+        ...item,
+        qtyOnHand: Math.round(n),
+        lastRestocked: new Date().toISOString().slice(0, 10),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">{item.name}</p>
+      <div>
+        <Label>New count on hand</Label>
+        <Input
+          type="number"
+          min="0"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          className="mt-1 font-mono"
+          autoFocus
+          data-testid="mech-inv-adjust-qty"
+        />
+      </div>
+      <Button
+        onClick={() => void save()}
+        disabled={saving}
+        className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        data-testid="mech-inv-adjust-save"
+      >
+        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save count"}
+      </Button>
+    </div>
   );
 }

@@ -3080,6 +3080,66 @@ export const api = {
     return { ok: true, id: data.id ?? null };
   },
 
+  // ---- Parts inventory (admin Inventory page + mechanic Adjust) -----------
+  // The list itself hydrates through DataContext; these are the write paths.
+  // Callers pass the result to applyInventoryItem() so the context stays in
+  // step without a refetch.
+  updateInventoryItem: async (
+    id: string,
+    patch: { name?: string; qtyOnHand?: number; reorderPoint?: number },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name.trim();
+    if (patch.qtyOnHand !== undefined)
+      dbPatch.qty_on_hand = Math.max(0, Math.round(patch.qtyOnHand));
+    if (patch.reorderPoint !== undefined)
+      dbPatch.reorder_point = Math.max(0, Math.round(patch.reorderPoint));
+    if (patch.qtyOnHand !== undefined)
+      dbPatch.last_restocked = new Date().toISOString().slice(0, 10);
+    const { error } = await supabase
+      .from("inventory_items")
+      .update(dbPatch as never)
+      .eq("id", id);
+    if (error) {
+      return { ok: false, reason: reportApiError("UPDATE_INVENTORY_ITEM", error, { id }) };
+    }
+    return { ok: true };
+  },
+
+  createInventoryItem: async (input: {
+    name: string;
+    sku: string;
+    qtyOnHand: number;
+    reorderPoint: number;
+  }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> => {
+    const id = uid("INV");
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, id };
+    }
+    const { error } = await supabase.from("inventory_items").insert({
+      id,
+      name: input.name.trim(),
+      sku: input.sku.trim(),
+      qty_on_hand: Math.max(0, Math.round(input.qtyOnHand)),
+      qty_reserved: 0,
+      reorder_point: Math.max(0, Math.round(input.reorderPoint)),
+      last_restocked: new Date().toISOString().slice(0, 10),
+    } as never);
+    if (error) {
+      const reason =
+        error.code === "23505"
+          ? `SKU "${input.sku.trim()}" already exists`
+          : reportApiError("CREATE_INVENTORY_ITEM", error, { sku: input.sku });
+      return { ok: false, reason };
+    }
+    return { ok: true, id };
+  },
+
   // ---- Standalone invoicing (QuickBooks-optional operation) ---------------
   // Email the invoice straight to the client from the CRM and track
   // sent/paid state locally — QuickBooks push stays available but optional.

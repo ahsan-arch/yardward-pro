@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as seed from "@/data/mockData";
 import { USE_SUPABASE, supabase, type Row } from "@/lib/supabase";
 import { fetchAllFromSupabase } from "@/lib/db-queries";
@@ -95,6 +88,8 @@ type Ctx = {
    * round-trip refetch.
    */
   adjustInventoryReservation: (inventoryItemId: string, qtyDelta: number) => void;
+  /** Upsert-by-id after an inventory edit lands in the DB (admin page / mechanic Adjust). */
+  applyInventoryItem: (item: (typeof seed.inventoryItems)[number]) => void;
   smsLogs: SmsLog[];
   // ---- Communications ----
   conversations: Conversation[];
@@ -146,11 +141,7 @@ type Ctx = {
    * order. Inventory was already reserved at approval, so we don't touch
    * stock here.
    */
-  markPurchaseRequestOrdered: (
-    id: string,
-    ordererId: string,
-    supplierOrderRef: string,
-  ) => void;
+  markPurchaseRequestOrdered: (id: string, ordererId: string, supplierOrderRef: string) => void;
   clockIn: (entry: TimeEntry) => void;
   clockOut: (entryId: string, patch: Partial<TimeEntry>) => void;
   addSms: (sms: SmsLog) => void;
@@ -324,7 +315,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [toolChecklistSubmissions, setToolSubs] = useState<ToolChecklistSubmission[]>(
     initEmpty ? [] : seed.toolChecklistSubmissions,
   );
-  const [purchaseRequests, setPRs] = useState<PurchaseRequest[]>(initEmpty ? [] : seed.purchaseRequests);
+  const [purchaseRequests, setPRs] = useState<PurchaseRequest[]>(
+    initEmpty ? [] : seed.purchaseRequests,
+  );
   // Inventory is now mutable because the PO approval flow reserves stock by
   // bumping qty_reserved. Seed values back the demo mode; Supabase hydration
   // would replace these once we add inventory_items to fetchAllFromSupabase.
@@ -406,9 +399,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (USE_SUPABASE) return [];
     const stamps = readPersistedPretripStamps();
     if (!Object.keys(stamps).length) return seed.vehicles;
-    return seed.vehicles.map((v) =>
-      stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v,
-    );
+    return seed.vehicles.map((v) => (stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v));
   });
   // App-wide tunables (inspection window, OT thresholds, GPS tolerance).
   // Defaults match the SQL seed; hydrated from public.app_settings below when
@@ -446,9 +437,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // for everything except the lockout state (which we persist locally).
       const stamps = readPersistedPretripStamps();
       setVehicles(
-        data.vehicles.map((v) =>
-          stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v,
-        ),
+        data.vehicles.map((v) => (stamps[v.id] ? { ...v, lastPretripAt: stamps[v.id] } : v)),
       );
       setJobs(data.jobs);
       setJobLogs(data.jobLogs);
@@ -479,6 +468,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setConversations(data.conversations);
       setConversationParticipants(data.conversationParticipants);
       setMessages(data.messages);
+      // Real parts catalog (Fleetio import + manual rows) replaces the demo
+      // seed — this is what the mechanic Parts page, the admin Inventory
+      // page, and the purchase-request stock check all read.
+      setInventoryItems(data.inventoryItems);
     });
     return () => {
       cancelled = true;
@@ -510,32 +503,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const channel = sb
       .channel("yardward-pro:admin-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "jobs" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setJobs((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbJobToDomain(payload.new as Row<"jobs">);
-          setJobs((prev) => upsertById(prev, next));
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "work_orders" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setWorkOrders((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbWorkOrderToDomain(payload.new as Row<"work_orders">);
-          setWorkOrders((prev) => upsertById(prev, next));
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setJobs((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbJobToDomain(payload.new as Row<"jobs">);
+        setJobs((prev) => upsertById(prev, next));
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "work_orders" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setWorkOrders((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbWorkOrderToDomain(payload.new as Row<"work_orders">);
+        setWorkOrders((prev) => upsertById(prev, next));
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
@@ -578,19 +563,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Vehicles: the trg_vehicles_set_last_pretrip trigger stamps
       // last_pretrip_at after every passing inspection. Without this
       // subscription the lockout banner stays stale until manual reload.
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "vehicles" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setVehicles((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbVehicleToDomain(payload.new as Row<"vehicles">);
-          setVehicles((prev) => upsertById(prev, next));
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicles" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setVehicles((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbVehicleToDomain(payload.new as Row<"vehicles">);
+        setVehicles((prev) => upsertById(prev, next));
+      })
       // Mechanic queue: also subscribed on the admin channel so the admin
       // maintenance dashboard reflects fresh claims/completions. Mechanics
       // get the same updates via their own channel below.
@@ -600,8 +581,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (payload) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
-            if (oldRow.id)
-              setMaintenanceWorkOrders((prev) => removeById(prev, oldRow.id!));
+            if (oldRow.id) setMaintenanceWorkOrders((prev) => removeById(prev, oldRow.id!));
             return;
           }
           const next = dbMaintenanceWorkOrderToDomain(
@@ -632,8 +612,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (payload) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
-            if (oldRow.id)
-              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            if (oldRow.id) setConversationParticipants((prev) => removeById(prev, oldRow.id!));
             return;
           }
           const next = dbConversationParticipantToDomain(
@@ -642,19 +621,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setConversationParticipants((prev) => upsertById(prev, next));
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbMessageToDomain(payload.new as Row<"messages">);
-          setMessages((prev) => upsertById(prev, next));
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbMessageToDomain(payload.new as Row<"messages">);
+        setMessages((prev) => upsertById(prev, next));
+      })
       .subscribe();
 
     return () => {
@@ -685,8 +660,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (payload) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
-            if (oldRow.id)
-              setMaintenanceWorkOrders((prev) => removeById(prev, oldRow.id!));
+            if (oldRow.id) setMaintenanceWorkOrders((prev) => removeById(prev, oldRow.id!));
             return;
           }
           const next = dbMaintenanceWorkOrderToDomain(
@@ -716,8 +690,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (payload) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
-            if (oldRow.id)
-              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            if (oldRow.id) setConversationParticipants((prev) => removeById(prev, oldRow.id!));
             return;
           }
           const next = dbConversationParticipantToDomain(
@@ -726,19 +699,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setConversationParticipants((prev) => upsertById(prev, next));
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbMessageToDomain(payload.new as Row<"messages">);
-          setMessages((prev) => upsertById(prev, next));
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbMessageToDomain(payload.new as Row<"messages">);
+        setMessages((prev) => upsertById(prev, next));
+      })
       .subscribe();
     return () => {
       void sb.removeChannel(channel);
@@ -781,8 +750,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (payload) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
-            if (oldRow.id)
-              setConversationParticipants((prev) => removeById(prev, oldRow.id!));
+            if (oldRow.id) setConversationParticipants((prev) => removeById(prev, oldRow.id!));
             return;
           }
           const next = dbConversationParticipantToDomain(
@@ -791,29 +759,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setConversationParticipants((prev) => upsertById(prev, next));
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
-            return;
-          }
-          const next = dbMessageToDomain(payload.new as Row<"messages">);
-          setMessages((prev) => upsertById(prev, next));
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as { id?: string };
+          if (oldRow.id) setMessages((prev) => removeById(prev, oldRow.id!));
+          return;
+        }
+        const next = dbMessageToDomain(payload.new as Row<"messages">);
+        setMessages((prev) => upsertById(prev, next));
+      })
       .subscribe();
     return () => {
       void sb.removeChannel(channel);
     };
   }, [authed, role]);
 
-  const createClient = useCallback(
-    (client: Client) => setClients((arr) => [client, ...arr]),
-    [],
-  );
+  const createClient = useCallback((client: Client) => setClients((arr) => [client, ...arr]), []);
   const createJob = useCallback((job: Job) => setJobs((j) => [job, ...j]), []);
   const updateJob = useCallback(
     (id: string, patch: Partial<Job>) =>
@@ -911,11 +872,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     (inventoryItemId: string, qtyDelta: number) =>
       setInventoryItems((arr) =>
         arr.map((it) =>
-          it.id === inventoryItemId
-            ? { ...it, qtyReserved: it.qtyReserved + qtyDelta }
-            : it,
+          it.id === inventoryItemId ? { ...it, qtyReserved: it.qtyReserved + qtyDelta } : it,
         ),
       ),
+    [],
+  );
+  // Upsert-by-id for inventory edits (admin Inventory page + mechanic
+  // Adjust). The API write happens in api.ts; this keeps the hydrated
+  // context in step without a full re-fetch.
+  const applyInventoryItem = useCallback(
+    (item: (typeof seed.inventoryItems)[number]) =>
+      setInventoryItems((arr) => {
+        const exists = arr.some((x) => x.id === item.id);
+        return exists ? arr.map((x) => (x.id === item.id ? item : x)) : [item, ...arr];
+      }),
     [],
   );
   const clockIn = useCallback((entry: TimeEntry) => setTimeEntries((arr) => [entry, ...arr]), []);
@@ -930,32 +900,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // local updates from api.ts and realtime echoes converge to the same state.
   const upsertConversation = useCallback((c: Conversation) => {
     setConversations((prev) =>
-      prev.some((x) => x.id === c.id)
-        ? prev.map((x) => (x.id === c.id ? c : x))
-        : [c, ...prev],
+      prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [c, ...prev],
     );
   }, []);
   const upsertParticipant = useCallback((p: ConversationParticipant) => {
     setConversationParticipants((prev) =>
-      prev.some((x) => x.id === p.id)
-        ? prev.map((x) => (x.id === p.id ? p : x))
-        : [p, ...prev],
+      prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [p, ...prev],
     );
   }, []);
   const upsertMessage = useCallback((m: Message) => {
     setMessages((prev) =>
-      prev.some((x) => x.id === m.id)
-        ? prev.map((x) => (x.id === m.id ? m : x))
-        : [m, ...prev],
+      prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? m : x)) : [m, ...prev],
     );
   }, []);
   const setUserPhone = useCallback((userId: string, phone: string) => {
-    setDrivers((prev) =>
-      prev.map((d) => (d.id === userId ? { ...d, phone } : d)),
-    );
-    setMechanics((prev) =>
-      prev.map((m) => (m.id === userId ? { ...m, phone } : m)),
-    );
+    setDrivers((prev) => prev.map((d) => (d.id === userId ? { ...d, phone } : d)));
+    setMechanics((prev) => prev.map((m) => (m.id === userId ? { ...m, phone } : m)));
   }, []);
   const generateDriverToken = useCallback((token: DriverToken) => {
     setTokens((arr) => {
@@ -966,9 +926,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
   const markTokenUsed = useCallback((id: string) => {
     setTokens((arr) => {
-      const next = arr.map((x) =>
-        x.id === id ? { ...x, usedAt: new Date().toISOString() } : x,
-      );
+      const next = arr.map((x) => (x.id === id ? { ...x, usedAt: new Date().toISOString() } : x));
       writePersistedTokens(next);
       return next;
     });
@@ -977,15 +935,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     (inspection: VehicleInspection) => setInspections((arr) => [inspection, ...arr]),
     [],
   );
-  const setVehicleLastPretrip = useCallback(
-    (vehicleId: string, at: string) => {
-      // Persist before the React state update so a quick page reload (e.g.
-      // Playwright's page.goto right after a navigate) still sees the stamp.
-      writePersistedPretripStamp(vehicleId, at);
-      setVehicles((arr) => arr.map((v) => (v.id === vehicleId ? { ...v, lastPretripAt: at } : v)));
-    },
-    [],
-  );
+  const setVehicleLastPretrip = useCallback((vehicleId: string, at: string) => {
+    // Persist before the React state update so a quick page reload (e.g.
+    // Playwright's page.goto right after a navigate) still sees the stamp.
+    writePersistedPretripStamp(vehicleId, at);
+    setVehicles((arr) => arr.map((v) => (v.id === vehicleId ? { ...v, lastPretripAt: at } : v)));
+  }, []);
   const updateClientTicketSettings = useCallback(
     (clientId: string, patch: Partial<ClientTicketSettings>) =>
       setClients((arr) =>
@@ -1019,9 +974,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const markAllNotificationsRead = useCallback(
     (userId: string, readAt: string) =>
       setNotifications((arr) =>
-        arr.map((n) =>
-          n.userId === userId && !n.readAt ? { ...n, readAt } : n,
-        ),
+        arr.map((n) => (n.userId === userId && !n.readAt ? { ...n, readAt } : n)),
       ),
     [],
   );
@@ -1036,9 +989,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     (photo: TicketPhoto) =>
       // Idempotent insert — a driver tapping submit twice in flaky cell
       // coverage shouldn't double-queue the same upload on the admin side.
-      setTicketPhotos((arr) =>
-        arr.some((p) => p.id === photo.id) ? arr : [photo, ...arr],
-      ),
+      setTicketPhotos((arr) => (arr.some((p) => p.id === photo.id) ? arr : [photo, ...arr])),
     [],
   );
   const updateTicketPhoto = useCallback(
@@ -1050,25 +1001,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     (log: MaintenanceLog) => setMaintenanceLogs((arr) => [log, ...arr]),
     [],
   );
-  const addFuelLog = useCallback(
-    (log: FuelLog) => setFuelLogs((arr) => [log, ...arr]),
-    [],
-  );
+  const addFuelLog = useCallback((log: FuelLog) => setFuelLogs((arr) => [log, ...arr]), []);
   const upsertMaintenanceWorkOrder = useCallback(
     (wo: MaintenanceWorkOrder) =>
       setMaintenanceWorkOrders((arr) =>
-        arr.some((x) => x.id === wo.id)
-          ? arr.map((x) => (x.id === wo.id ? wo : x))
-          : [wo, ...arr],
+        arr.some((x) => x.id === wo.id) ? arr.map((x) => (x.id === wo.id ? wo : x)) : [wo, ...arr],
       ),
     [],
   );
   const upsertVehicle = useCallback(
     (v: Vehicle) =>
       setVehicles((arr) =>
-        arr.some((x) => x.id === v.id)
-          ? arr.map((x) => (x.id === v.id ? v : x))
-          : [v, ...arr],
+        arr.some((x) => x.id === v.id) ? arr.map((x) => (x.id === v.id ? v : x)) : [v, ...arr],
       ),
     [],
   );
@@ -1085,9 +1029,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         copy[idx] = next;
         return copy;
       });
-      setClients((arr) =>
-        arr.map((c) => (c.id === clientId ? { ...c, rateTableId } : c)),
-      );
+      setClients((arr) => arr.map((c) => (c.id === clientId ? { ...c, rateTableId } : c)));
     },
     [],
   );
@@ -1114,6 +1056,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         purchaseRequests,
         inventoryItems,
         adjustInventoryReservation,
+        applyInventoryItem,
         smsLogs,
         conversations,
         conversationParticipants,
