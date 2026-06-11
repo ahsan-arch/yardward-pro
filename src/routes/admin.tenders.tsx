@@ -103,13 +103,9 @@ function Page() {
         activeOpenCount?: unknown;
       };
       const newThisWeekCount =
-        typeof content.newThisWeekCount === "number"
-          ? content.newThisWeekCount
-          : data.tender_count;
+        typeof content.newThisWeekCount === "number" ? content.newThisWeekCount : data.tender_count;
       const activeOpenCount =
-        typeof content.activeOpenCount === "number"
-          ? content.activeOpenCount
-          : data.tender_count;
+        typeof content.activeOpenCount === "number" ? content.activeOpenCount : data.tender_count;
       const summary =
         typeof content.summary === "string"
           ? content.summary
@@ -160,10 +156,9 @@ function Page() {
     setScraping(true);
     const toastId = toast.loading("Running tender scraper…");
     try {
-      const { data, error } = await supabase.functions.invoke<ScrapeResponse>(
-        "tender-scrape",
-        { body: {} },
-      );
+      const { data, error } = await supabase.functions.invoke<ScrapeResponse>("tender-scrape", {
+        body: {},
+      });
       if (error) {
         toast.error(`Scrape failed: ${error.message}`, { id: toastId });
         return;
@@ -185,7 +180,9 @@ function Page() {
       );
 
       const seconds = data.durationMs ? ` in ${(data.durationMs / 1000).toFixed(1)}s` : "";
-      const errorTail = totals.errored ? `, ${totals.errored} source error${totals.errored === 1 ? "" : "s"}` : "";
+      const errorTail = totals.errored
+        ? `, ${totals.errored} source error${totals.errored === 1 ? "" : "s"}`
+        : "";
       // Prefer the explicit counts; fall back to the legacy tenderCount for
       // both numbers if the response predates the labelled fields.
       const newThisWeek = data.digest.newThisWeekCount ?? data.digest.tenderCount;
@@ -250,10 +247,9 @@ function Page() {
     setSendingTest(true);
     const toastId = toast.loading(`Sending test digest to ${recipient}…`);
     try {
-      const { data, error } = await supabase.functions.invoke<ScrapeResponse>(
-        "tender-scrape",
-        { body: { sendTestTo: recipient } },
-      );
+      const { data, error } = await supabase.functions.invoke<ScrapeResponse>("tender-scrape", {
+        body: { sendTestTo: recipient },
+      });
       if (error) {
         toast.error(`Test send failed: ${error.message}`, { id: toastId });
         return;
@@ -302,8 +298,11 @@ function Page() {
                     <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
                       {t.source}
                     </div>
+                    {/* t.url comes from external scraped HTML; only allow
+                        http(s) so a javascript:/data: URL can't execute when
+                        an admin clicks the tender link. */}
                     <a
-                      href={t.url}
+                      href={/^https?:\/\//i.test(t.url) ? t.url : "#"}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-semibold mt-0.5 inline-flex items-center gap-1.5 hover:text-amber-brand"
@@ -352,17 +351,13 @@ function Page() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">New this run</span>
                 <span className="font-mono">
-                  {lastScrape
-                    ? lastScrape.sources.reduce((n, s) => n + s.added, 0)
-                    : "—"}
+                  {lastScrape ? lastScrape.sources.reduce((n, s) => n + s.added, 0) : "—"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Updated</span>
                 <span className="font-mono">
-                  {lastScrape
-                    ? lastScrape.sources.reduce((n, s) => n + s.updated, 0)
-                    : "—"}
+                  {lastScrape ? lastScrape.sources.reduce((n, s) => n + s.updated, 0) : "—"}
                 </span>
               </div>
             </div>
@@ -478,8 +473,8 @@ function Page() {
               <Send className="w-4 h-4" /> Send test digest
             </h3>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Re-sends the most recent digest to a single address. Does not
-              affect the weekly broadcast or the "last sent" timestamp above.
+              Re-sends the most recent digest to a single address. Does not affect the weekly
+              broadcast or the "last sent" timestamp above.
             </p>
             <div className="mt-3 space-y-3">
               <div>
@@ -503,7 +498,9 @@ function Page() {
                 // button audit treats a disabled "submit-form" action as a
                 // failure, so we surface the error path via toast instead.
                 disabled={sendingTest}
-                title={!latestDigest ? "Run the scraper first so there is a digest to send." : undefined}
+                title={
+                  !latestDigest ? "Run the scraper first so there is a digest to send." : undefined
+                }
               >
                 {sendingTest ? (
                   <>

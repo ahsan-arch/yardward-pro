@@ -185,6 +185,15 @@ Deno.serve(async (req) => {
   }
 
   // ---- Body
+  // Reject oversized bodies before buffering/parsing — bounds memory and
+  // stops a hostile client from forcing a huge JSON.parse.
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 64 * 1024) {
+    return new Response(JSON.stringify({ error: "request body too large" }), {
+      status: 413,
+      headers: corsHeaders,
+    });
+  }
   let input: SendInput;
   try {
     input = (await req.json()) as SendInput;
@@ -215,6 +224,33 @@ Deno.serve(async (req) => {
       status: 400,
       headers: corsHeaders,
     });
+  }
+  // Cap attachment count — each entry triggers a Storage sign, a full-byte
+  // fetch buffered in memory, and a Twilio MCS upload. Unbounded mediaPaths is
+  // a resource-exhaustion lever (and an SSRF-amplification one).
+  const MAX_MEDIA = 10;
+  if (mediaPaths.length > MAX_MEDIA) {
+    return new Response(
+      JSON.stringify({ error: `at most ${MAX_MEDIA} attachments per message` }),
+      { status: 400, headers: corsHeaders },
+    );
+  }
+  // IDOR guard. Each mediaPaths entry is signed below with the SERVICE-ROLE key,
+  // which bypasses the message-attachments bucket's owner-scoped RLS. Without
+  // pinning every path to THIS conversation's Storage prefix, an active
+  // participant of conversation A could pass "B/secret.jpg" and exfiltrate
+  // another conversation's attachment to their own phone via Twilio. Upload
+  // conventions: outbound is `${conversationId}/...` (src/lib/api.ts),
+  // inbound webhook media is `inbound/${conversationId}/...`.
+  const allowedMediaPrefixes = [`${conversationId}/`, `inbound/${conversationId}/`];
+  const badMediaPath = mediaPaths.find(
+    (p) => typeof p !== "string" || !allowedMediaPrefixes.some((pre) => p.startsWith(pre)),
+  );
+  if (badMediaPath !== undefined) {
+    return new Response(
+      JSON.stringify({ error: "every attachment must belong to this conversation" }),
+      { status: 403, headers: corsHeaders },
+    );
   }
 
   // ---- Caller must be an active participant
@@ -252,6 +288,34 @@ Deno.serve(async (req) => {
           "caller is not an active participant of this conversation. Tag them, or admin must join_conversation first.",
       }),
       { status: 403, headers: corsHeaders },
+    );
+  }
+
+  // ---- Cost-DoS guard: claim an SMS quota segment, keyed per caller, before
+  // any paid Twilio dispatch. Fail-OPEN — a quota RPC error (migration not yet
+  // applied, transient blip) logs and proceeds; only an explicit allowed=false
+  // returns 429 so a single participant can't loop the endpoint into a runaway
+  // Twilio bill.
+  try {
+    const qResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_sms_quota`, {
+      method: "POST",
+      headers: sbHeaders,
+      body: JSON.stringify({ p_actor: `msg:${callerId}`, p_segments: 1 }),
+    });
+    if (qResp.ok) {
+      const rows = await qResp.json();
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (row && row.allowed === false) {
+        return new Response(
+          JSON.stringify({ error: `Hourly message limit reached (${row.cap}). Try again later.` }),
+          { status: 429, headers: corsHeaders },
+        );
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "twilio-send-message: quota check failed, proceeding (fail-open):",
+      e instanceof Error ? e.message : String(e),
     );
   }
 

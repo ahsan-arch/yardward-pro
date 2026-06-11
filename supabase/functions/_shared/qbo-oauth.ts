@@ -209,22 +209,112 @@ export async function getQboAccessToken(
     }
 
     const tokenJson = await tokenRes.json()
+    // Validate the response shape before we trust it. A 200 with a missing/zero
+    // expires_in would make `new Date(NaN).toISOString()` throw a RangeError
+    // mid-persist; a missing refresh_token/access_token would write null over a
+    // still-valid credential. Fail loudly instead.
+    const ttlSec = Number(tokenJson.expires_in)
+    if (!Number.isFinite(ttlSec) || ttlSec <= 0) {
+      throw new Error(`QBO refresh returned invalid expires_in: ${tokenJson.expires_in}`)
+    }
+    if (!tokenJson.refresh_token || !tokenJson.access_token) {
+      throw new Error('QBO refresh returned without refresh_token/access_token')
+    }
     // 30s safety margin so a token returned at the edge of its validity isn't
     // sent to QBO after expiry due to clock drift / handler latency.
-    const expiresAtMs = nowMs + tokenJson.expires_in * 1000 - 30_000
+    const expiresAtMs = nowMs + ttlSec * 1000 - 30_000
     const expiresAtIso = new Date(expiresAtMs).toISOString()
     const updatedAtIso = new Date().toISOString()
 
-    const { error: upErr } = await supabase
-      .from('qbo_oauth_tokens')
-      .update({
-        refresh_token: tokenJson.refresh_token,
-        access_token: tokenJson.access_token,
-        access_token_expires_at: expiresAtIso,
-        updated_at: updatedAtIso,
-      })
-      .eq('id', 'default')
-    if (upErr) {
+    // Intuit rotates the refresh_token on EVERY successful refresh: the moment
+    // the call above returned 200, the OLD refresh_token is dead and the NEW
+    // one (tokenJson.refresh_token) is the ONLY valid credential — it exists
+    // nowhere but this local variable. If we fail to persist it, the whole QBO
+    // integration is bricked (every future refresh → invalid_grant → manual
+    // re-consent).
+    //
+    // Persist with an OPTIMISTIC COMPARE-AND-SWAP on the refresh_token we
+    // actually used (usedRefreshToken). The advisory lock can leak across
+    // PostgREST's connection pool (lock + unlock are separate requests that may
+    // hit different backends), so we don't fully trust it for serialization.
+    // The CAS makes rotation correct regardless: if a concurrent refresh
+    // already rotated the row, our UPDATE matches 0 rows and we ADOPT the
+    // winner's token instead of clobbering it with ours. Three outcomes/attempt:
+    //   error           → transient DB fault: back off + retry
+    //   0 rows matched   → concurrent rotation won: re-read + return its token
+    //   1 row matched    → we persisted: done
+    // On persistent DB error we durably stash the rotated token (alert row +
+    // log) BEFORE throwing so an operator can recover without a full re-OAuth.
+    const usedRefreshToken = row.refresh_token
+    let upErr: { message: string } | null = null
+    let persisted = false
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: updRows, error } = await supabase
+        .from('qbo_oauth_tokens')
+        .update({
+          refresh_token: tokenJson.refresh_token,
+          access_token: tokenJson.access_token,
+          access_token_expires_at: expiresAtIso,
+          updated_at: updatedAtIso,
+        })
+        .eq('id', 'default')
+        .eq('refresh_token', usedRefreshToken)
+        .select('id')
+      if (error) {
+        upErr = error
+        // Brief backoff to ride out a pooler timeout / failover blip.
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)))
+        continue
+      }
+      upErr = null
+      if (!updRows || updRows.length === 0) {
+        // CAS miss: a concurrent refresh already rotated the row. Adopt its
+        // canonical token rather than overwrite it.
+        const { data: fresh } = await supabase
+          .from('qbo_oauth_tokens')
+          .select('access_token, refresh_token, access_token_expires_at, realm_id')
+          .eq('id', 'default')
+          .single()
+        if (fresh && fresh.access_token) {
+          return {
+            access_token: fresh.access_token,
+            refresh_token: fresh.refresh_token,
+            expires_at: fresh.access_token_expires_at,
+            realm_id: fresh.realm_id,
+          }
+        }
+        // Couldn't re-read the winner — our own tokens are still valid inside
+        // Intuit's grace window, so return them without persisting again.
+      }
+      persisted = true
+      break
+    }
+    if (!persisted && upErr) {
+      // integration_alerts (per migrations) only has kind/message/context —
+      // do NOT add source/severity columns here or the insert itself fails.
+      try {
+        await supabase.from('integration_alerts').insert({
+          kind: 'qbo_refresh_persist_failed',
+          message:
+            `Persisting the rotated QBO refresh_token failed after retries (${upErr.message}). ` +
+            `The token in context.refresh_token is now the ONLY valid one — store it in ` +
+            `qbo_oauth_tokens.refresh_token manually to avoid a full re-consent.`,
+          context: {
+            refresh_token: tokenJson.refresh_token,
+            access_token_expires_at: expiresAtIso,
+          },
+        })
+      } catch (alertErr) {
+        // Last resort: emit the rotated token to the function logs so it is at
+        // least recoverable from there.
+        console.error(
+          '[qbo-oauth] CRITICAL: rotated refresh_token could not be persisted OR alerted. ' +
+            'Recover it from this log line. refresh_token=',
+          tokenJson.refresh_token,
+          'alertErr=',
+          alertErr,
+        )
+      }
       throw new Error(`Failed to persist rotated QBO tokens: ${upErr.message}`)
     }
 

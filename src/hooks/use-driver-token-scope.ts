@@ -141,5 +141,14 @@ const SCOPE_ALLOWED_PATHS: Record<TokenScope, readonly string[]> = {
 // Used by route beforeLoad guards and the layout-level redirect.
 export function isPathAllowedForScope(scope: TokenScope, pathname: string): boolean {
   const allowed = SCOPE_ALLOWED_PATHS[scope] ?? [];
-  return allowed.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return allowed.some((prefix) => {
+    // The bare "/driver" entry (the dashboard) must match EXACTLY — never as a
+    // startsWith prefix. Otherwise "/driver" + "/" is a prefix of every driver
+    // subroute, so a shift-scoped token would be authorized for the whole
+    // driver app: /driver/profile (PII), /driver/messages, and crucially
+    // /driver/tickets (which debits a client's prepaid balance — money).
+    // Specific subroute prefixes still match their children via startsWith.
+    if (prefix === "/driver") return pathname === "/driver";
+    return pathname === prefix || pathname.startsWith(`${prefix}/`);
+  });
 }

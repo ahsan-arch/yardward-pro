@@ -48,8 +48,11 @@ function Page() {
   const q = query.trim().toLowerCase();
   const filtered = q
     ? rows.filter((r) =>
-        [r.id, r.client, r.location, r.driver]
-          .some((v) => String(v ?? "").toLowerCase().includes(q)),
+        [r.id, r.client, r.location, r.driver].some((v) =>
+          String(v ?? "")
+            .toLowerCase()
+            .includes(q),
+        ),
       )
     : rows;
   const sorted = [...filtered].sort(
@@ -89,9 +92,10 @@ function Page() {
     }
     setSavingJob(true);
     try {
-      const when = newJobForm.date && newJobForm.time
-        ? new Date(`${newJobForm.date}T${newJobForm.time}:00Z`).toISOString()
-        : new Date().toISOString();
+      const when =
+        newJobForm.date && newJobForm.time
+          ? new Date(`${newJobForm.date}T${newJobForm.time}:00Z`).toISOString()
+          : new Date().toISOString();
       const job = await api.createJob({
         clientId: newJobForm.clientId,
         location: { address: newJobForm.address || "TBD", lat: null, lng: null },
@@ -122,6 +126,12 @@ function Page() {
       } else {
         toast.success(`${jobId} published · SMS sent to driver`);
       }
+    } catch (e) {
+      // publishJob() can throw from the DB update OR the Twilio SMS edge
+      // function. Without this catch the rejection was swallowed: the spinner
+      // reset but the admin got no signal the publish/SMS failed, so a driver
+      // could silently never be notified of their assignment.
+      toast.error(e instanceof Error ? e.message : "Could not publish job");
     } finally {
       setPublishingId(null);
     }

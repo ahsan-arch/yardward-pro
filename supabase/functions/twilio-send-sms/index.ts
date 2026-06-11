@@ -212,6 +212,38 @@ serve(async (req) => {
       )
     }
 
+    // 2b. Cost-DoS guard: claim an SMS quota segment before spending money.
+    // Fail-OPEN — if the quota RPC errors (e.g. the migration hasn't been
+    // applied yet, or a transient DB blip), we log and proceed rather than
+    // block real dispatch. Only an explicit allowed=false returns 429.
+    try {
+      const qResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_sms_quota`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY!,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_actor: 'twilio-send-sms', p_segments: 1 }),
+      })
+      if (qResp.ok) {
+        const rows = await qResp.json()
+        const row = Array.isArray(rows) ? rows[0] : rows
+        if (row && row.allowed === false) {
+          console.warn(`twilio-send-sms: hourly SMS quota reached (${row.used}/${row.cap})`)
+          return jsonResponse(
+            { error: `Hourly SMS limit reached (${row.cap}). Try again later.` },
+            429,
+          )
+        }
+      }
+    } catch (e) {
+      console.warn(
+        'twilio-send-sms: quota check failed, proceeding (fail-open):',
+        e instanceof Error ? e.message : String(e),
+      )
+    }
+
     console.log(
       `twilio-send-sms: dispatch start; to=${to}, bodyLen=${messageBody.length}, driverId=${driverId ?? 'none'}, jobId=${jobId ?? 'none'}`,
     )

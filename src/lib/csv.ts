@@ -3,7 +3,17 @@
 
 export function toCsv(headers: string[], rows: Array<Array<string | number | null | undefined>>) {
   const cell = (v: string | number | null | undefined) => {
-    const s = v == null ? "" : String(v);
+    let s = v == null ? "" : String(v);
+    // CSV / formula injection guard. A field that an untrusted submitter
+    // controls (driver name, notes, client-portal load type, etc.) can start
+    // with =, +, -, @ or a tab/CR and Excel/Sheets will evaluate it as a
+    // formula when the exported file is opened — e.g. =HYPERLINK(...) to
+    // phish the admin, or a DDE payload. Neutralise by prefixing a single
+    // quote so the cell renders as literal text. We do this BEFORE quoting so
+    // the leading quote is inside the quoted cell. (Negative numbers that are
+    // genuinely numeric still read fine with the leading apostrophe stripped
+    // by the user if needed; safety wins over a cosmetic apostrophe.)
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return `"${s.replaceAll('"', '""')}"`;
   };
   return (
@@ -28,11 +38,16 @@ export function downloadCsv(filename: string, csv: string) {
 export function openPrintView(title: string, bodyHtml: string) {
   const w = window.open("", "_blank", "width=800,height=900");
   if (!w) return;
+  // `title` is interpolated into the document <title> raw, so escape it here
+  // even though current callers pass system-generated strings — a formstack
+  // form name or imported field could carry markup and break out of the
+  // <title> context (</title><script>…). `bodyHtml` is the callers'
+  // responsibility (they escapeHtml every cell before composing it).
   w.document.write(`<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1a1a; max-width: 640px; margin: 24px auto; padding: 0 16px; }
     .brand { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #D7261E; padding-bottom: 12px; margin-bottom: 20px; }

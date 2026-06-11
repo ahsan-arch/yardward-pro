@@ -523,10 +523,17 @@ serve(async (req) => {
   //    - reuses a cached access_token if it has >60s remaining
   //    - persists rotated refresh_token + access_token atomically under the lock
   let accessToken: string
+  // The realm that owns the refresh_token MUST be the realm the API URL
+  // targets. Use the OAuth-stored realm_id (returned by the helper) as the
+  // source of truth, falling back to the env var only if it's somehow unset —
+  // otherwise a QBO_REALM_ID env that drifts from the authorized company
+  // pushes invoices into the wrong (or a non-existent) QuickBooks file.
+  let realmId: string
   try {
     console.log('[qbo-push-invoice] requesting QBO access token (shared helper)')
     const tok = await getQboAccessToken(admin, Deno.env)
     accessToken = tok.access_token
+    realmId = tok.realm_id || QBO_REALM_ID
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack ?? null : null
@@ -580,7 +587,7 @@ serve(async (req) => {
     )
   }
 
-  const baseUrl = `${QBO_API_HOST}/v3/company/${QBO_REALM_ID}`
+  const baseUrl = `${QBO_API_HOST}/v3/company/${realmId}`
   const qboHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/json',

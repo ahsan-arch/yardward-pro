@@ -390,7 +390,10 @@ serve(async (req) => {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       }
-      baseUrl = `${QBO_API_HOST}/v3/company/${QBO_REALM_ID}`
+      // Use the realm that actually owns the refresh_token (OAuth-stored),
+      // falling back to the env var only if unset — so a drifted QBO_REALM_ID
+      // can't push payroll time into the wrong QuickBooks company.
+      baseUrl = `${QBO_API_HOST}/v3/company/${tok.realm_id || QBO_REALM_ID}`
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const stack = err instanceof Error ? err.stack ?? null : null

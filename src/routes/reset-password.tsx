@@ -126,7 +126,7 @@ function ResetPasswordPage() {
                     autoComplete="new-password"
                     value={pw}
                     onChange={(e) => setPw(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder="At least 8 characters"
                     aria-invalid={!!err.pw}
                     className={cn("h-11 pl-9", err.pw && "border-danger focus-visible:ring-danger")}
                     data-testid="new-password"

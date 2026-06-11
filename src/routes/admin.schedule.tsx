@@ -199,6 +199,12 @@ function Page() {
       setOpen(false);
       setForm(EMPTY_FORM);
       setErrors({});
+    } catch (e) {
+      // createJob() or the publish SMS edge function can throw. Surface it so
+      // the admin isn't left thinking the job was scheduled (and the driver
+      // notified) when it silently failed. Keep the dialog open so they can
+      // retry without re-entering everything.
+      toast.error(e instanceof Error ? e.message : "Could not save the job");
     } finally {
       setSaving(null);
     }
@@ -216,6 +222,8 @@ function Page() {
           duration: 6000,
         });
       }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not publish job");
     } finally {
       setPublishingId(null);
     }

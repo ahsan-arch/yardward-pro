@@ -468,8 +468,27 @@ function Page() {
     const hours = (t: (typeof closed)[number]) =>
       (new Date(t.clockOut as string).getTime() - new Date(t.clockIn).getTime()) / 3_600_000;
     // ISO week key (yyyy-Www) for the weekly OT split.
+    //
+    // Bucket by the shift's CIVIL date in the org timezone, not UTC. A shift
+    // clocked in Sunday evening in America/Toronto is already Monday in UTC, so
+    // a UTC week key would push it into the next payroll week — mis-splitting
+    // regular vs overtime hours and inflating/deflating the 1.5× gross. We read
+    // the local Y/M/D via Intl, then run the standard tz-free ISO-week math on
+    // that civil date (treated as UTC purely as a calendar).
+    const orgTz = appSettings.timezone || "America/Toronto";
+    const civilParts = (iso: string) => {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: orgTz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date(iso));
+      const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "1");
+      return { y: get("year"), m: get("month"), d: get("day") };
+    };
     const weekKey = (iso: string) => {
-      const d = new Date(iso);
+      const { y, m, d: dom } = civilParts(iso);
+      const d = new Date(Date.UTC(y, m - 1, dom));
       const day = (d.getUTCDay() + 6) % 7;
       d.setUTCDate(d.getUTCDate() - day + 3);
       const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));

@@ -471,7 +471,15 @@ export const offlineQueue = {
             break;
         }
       }
-      write(remaining);
+      // Re-read at write time and merge any newcomers. enqueue() is NOT gated
+      // by the single-flight `inflightFlush` guard, so a submission the driver
+      // makes WHILE this flush is awaiting network round-trips lands in
+      // localStorage but is absent from our `items` snapshot. A blind
+      // write(remaining) would clobber it — silent data loss. Preserve items
+      // whose id we never processed this pass.
+      const processedIds = new Set(items.map((it) => it.id));
+      const newcomers = read().filter((it) => !processedIds.has(it.id));
+      write([...remaining, ...newcomers]);
       notify();
       return { flushed, remaining: remaining.length, deadLettered };
     })().finally(() => {

@@ -696,6 +696,12 @@ export const api = {
       ? resolveLineItemRate(wo.loadType, "tonne", c?.rateTableId ?? null, s.rateTables)
       : null;
     const lineRate = matched?.rate ?? 24;
+    // The fallback rate (24) is per-tonne; a matched rate carries its own unit.
+    // CRITICAL: only multiply by tonnage when the matched rate is actually
+    // per-tonne. A flat or per-load rate (e.g. "$500 flat per dump") matched
+    // for a weight-based WO must bill ONCE, not $500 × the tonnage — otherwise
+    // a 20-tonne load invoices at $10,000 instead of $500.
+    const lineUnit = matched?.unit ?? "tonne";
     if (wo && matched == null) {
       console.warn(
         `approveWorkOrder: no rate match for client=${c?.id ?? "?"} rateTable=${c?.rateTableId ?? "(none)"} loadType="${wo.loadType}" preferredUnit=tonne — falling back to 24/tonne`,
@@ -707,6 +713,15 @@ export const api = {
         `approveWorkOrder: client=${c?.id ?? "?"} rateTable=${c?.rateTableId ?? "(none)"} matched on unit=${matched.unit} (preferred tonne) for loadType="${wo.loadType}"`,
       );
     }
+    // Per-tonne rates scale by weight; load/flat/hour rates bill a single
+    // unit (we have no hours on a WO, so an hour-rate match degrades to one
+    // unit rather than silently multiplying by tonnage).
+    const lineQty = wo ? (lineUnit === "tonne" ? wo.weightTonnes : 1) : 0;
+    const lineDesc = wo
+      ? lineUnit === "tonne"
+        ? `${wo.loadType} haul`
+        : `${wo.loadType} haul (${lineUnit} rate)`
+      : "";
     const invoice: InvoiceData = {
       id: uid("INV"),
       workOrderId: id,
@@ -715,14 +730,14 @@ export const api = {
       lineItems: wo
         ? [
             {
-              description: `${wo.loadType} haul`,
-              qty: wo.weightTonnes,
+              description: lineDesc,
+              qty: lineQty,
               rate: lineRate,
-              amount: wo.weightTonnes * lineRate,
+              amount: lineQty * lineRate,
             },
           ]
         : [],
-      total: wo ? wo.weightTonnes * lineRate : 0,
+      total: wo ? lineQty * lineRate : 0,
       qboSyncStatus: "pending",
       qboInvoiceId: null,
     };
@@ -2399,8 +2414,16 @@ export const api = {
         .slice(0, 12)
         .toUpperCase() || "CLIENT";
     const alphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+    // The slug is derived from the (publicly known) client name, so it adds no
+    // secrecy — ALL of the unguessability lives in the random suffix. Six
+    // chars over a 29-symbol alphabet is only ~29 bits, which a determined
+    // attacker could brute-force against the un-throttled public client-portal
+    // function. Ten chars puts it at ~49 bits, making online enumeration
+    // infeasible. Existing 6-char codes keep working (the function accepts
+    // 6..80); new codes are stronger. Length stays well under the 80-char cap.
+    const SUFFIX_LEN = 10;
     const gen = () => {
-      const buf = new Uint8Array(6);
+      const buf = new Uint8Array(SUFFIX_LEN);
       crypto.getRandomValues(buf);
       return `${slug}-${Array.from(buf, (b) => alphabet[b % alphabet.length]).join("")}`;
     };
@@ -4012,6 +4035,13 @@ ${rows}
         context: { clientId },
       });
       throw new Error(`topUpTickets: ${msg}`);
+    }
+    // Guard the bundle size before any math: a blank/zeroed/NaN input (the
+    // admin clears the "default bundle size" field) would otherwise build a
+    // corrupt invoice line — rate: price / 0 === Infinity, or all-NaN — and
+    // poison the client's balance.
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new Error(`topUpTickets: bundle size must be a positive number (got ${qty})`);
     }
     const price = client.tickets.bundlePrice;
     let newBalance = client.tickets.balance + qty;

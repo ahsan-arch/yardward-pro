@@ -17,12 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,15 +38,39 @@ function Page() {
   const nav = useNavigate();
   const { user, logout, sendPasswordReset } = useAuth();
   const { drivers, timeEntries, appSettings } = useData();
+  // Hooks first (rules-of-hooks) so the unhydrated-roster guard below can
+  // early-return without changing hook order between renders.
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+
   const me = drivers.find((d) => d.id === user.id || d.email === user.email) ?? drivers[0];
+  // In Supabase mode DataContext seeds `drivers` to [] and hydrates it
+  // asynchronously, so `me` is undefined during that window (and permanently
+  // if the fetch errors). Dereferencing me.id/initials/etc. below would white-
+  // screen the driver. Render a lightweight loading state instead of crashing.
+  if (!me) {
+    return (
+      <DriverShell>
+        <div className="p-4">
+          <Link
+            to="/driver"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground mb-3"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Link>
+          <div className="bg-card border border-border rounded-xl p-6 flex items-center gap-3 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading your profile…
+          </div>
+        </div>
+      </DriverShell>
+    );
+  }
+
   const openShift = timeEntries.find((t) => t.driverId === me.id && !t.clockOut);
   const v = openShift ? vehicleById(me.vehicleAssignmentId) : undefined;
   const hoursSoFar = openShift
     ? ((Date.now() - new Date(openShift.clockIn).getTime()) / 3600_000).toFixed(1)
     : null;
-
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
 
   async function handleChangePassword() {
     if (!user.email) {
@@ -118,16 +137,8 @@ function Page() {
             label="Change password"
             onClick={() => void handleChangePassword()}
           />
-          <ActionRow
-            icon={Bell}
-            label="Notifications"
-            onClick={() => setNotifOpen(true)}
-          />
-          <ActionRow
-            icon={HelpCircle}
-            label="Help & support"
-            onClick={() => setHelpOpen(true)}
-          />
+          <ActionRow icon={Bell} label="Notifications" onClick={() => setNotifOpen(true)} />
+          <ActionRow icon={HelpCircle} label="Help & support" onClick={() => setHelpOpen(true)} />
           <ActionRow
             icon={LogOut}
             label="Logout"
@@ -146,7 +157,9 @@ function Page() {
         onOpenChange={setHelpOpen}
         orgPhone={me.phone}
         supportEmail={
-          appSettings.businessName ? `support@${slugify(appSettings.businessName)}.co` : "support@yardward.pro"
+          appSettings.businessName
+            ? `support@${slugify(appSettings.businessName)}.co`
+            : "support@yardward.pro"
         }
       />
     </DriverShell>
@@ -154,10 +167,12 @@ function Page() {
 }
 
 function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 24) || "yardward";
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 24) || "yardward"
+  );
 }
 
 function NotificationsSheet({
@@ -239,9 +254,7 @@ function NotificationsSheet({
                   <div className="text-sm">{row.label}</div>
                   <Switch
                     checked={prefs[row.key]}
-                    onCheckedChange={(v) =>
-                      setPrefs((p) => ({ ...p, [row.key]: v }))
-                    }
+                    onCheckedChange={(v) => setPrefs((p) => ({ ...p, [row.key]: v }))}
                     data-testid={`user-notif-${row.key}`}
                   />
                 </div>
@@ -333,10 +346,7 @@ function HelpSheet({
         <div className="mt-5 space-y-3">
           <h3 className="text-sm font-semibold">Frequently asked</h3>
           {FAQ_ITEMS.map((item, i) => (
-            <details
-              key={i}
-              className="border border-border rounded-md px-3 py-2 group"
-            >
+            <details key={i} className="border border-border rounded-md px-3 py-2 group">
               <summary className="cursor-pointer text-sm font-medium list-none flex items-center justify-between">
                 <span>{item.q}</span>
                 <ChevronRight className="w-4 h-4 text-muted-foreground transition-transform group-open:rotate-90" />

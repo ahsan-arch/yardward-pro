@@ -134,11 +134,52 @@ async function verifyAdminOrServiceRole(
 // ---------------------------------------------------------------------------
 // fetchWithTimeout
 // ---------------------------------------------------------------------------
+
+// SSRF guard. base_url is admin-configured, but a typo'd/hostile source row (or
+// a compromised admin) must not be able to make this service-role function
+// fetch internal infrastructure — cloud metadata at 169.254.169.254, localhost
+// admin panels, RFC-1918 hosts. Reject non-http(s) schemes and any host that is
+// a private/loopback/link-local literal. Hostname-based; DNS-rebinding to a
+// private IP is out of scope (the source list is admin-trust-bounded).
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "") // strip IPv6 brackets
+  if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1" || h === "::")
+    return true
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (m) {
+    const a = Number(m[1]),
+      b = Number(m[2])
+    if (a === 127 || a === 10 || a === 0) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+    if (a === 169 && b === 254) return true // link-local incl. cloud metadata
+    if (a === 100 && b >= 64 && b <= 127) return true // CGNAT
+  }
+  if (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true // IPv6 ULA / link-local
+  return false
+}
+
+function assertSafeFetchUrl(url: string): void {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    throw new Error(`invalid URL: ${url}`)
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(`blocked non-http(s) scheme: ${u.protocol}`)
+  }
+  if (isPrivateOrLocalHost(u.hostname)) {
+    throw new Error(`blocked private/loopback host: ${u.hostname}`)
+  }
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit = {},
   ms = 20000,
 ): Promise<Response> {
+  assertSafeFetchUrl(url)
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
   try {

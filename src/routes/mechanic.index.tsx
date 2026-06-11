@@ -32,8 +32,7 @@ function Page() {
     return maintenanceWorkOrders
       .filter(
         (w) =>
-          w.assignedMechanicId === user.id &&
-          (w.status === "in_progress" || w.status === "queued"),
+          w.assignedMechanicId === user.id && (w.status === "in_progress" || w.status === "queued"),
       )
       .slice(0, 6)
       .map((w) => {
@@ -51,10 +50,7 @@ function Page() {
   }, [maintenanceWorkOrders, user.id, vehicles, drivers]);
 
   const myPendingPos = useMemo(
-    () =>
-      purchaseRequests.filter(
-        (p) => p.mechanicId === user.id && p.status === "pending",
-      ).length,
+    () => purchaseRequests.filter((p) => p.mechanicId === user.id && p.status === "pending").length,
     [purchaseRequests, user.id],
   );
   const [urgency, setUrgency] = useState<"low" | "medium" | "high">("medium");
@@ -99,6 +95,11 @@ function Page() {
       toast.error("Fill all required fields");
       return;
     }
+    const costNum = Number(cost);
+    if (!Number.isFinite(costNum) || costNum < 0) {
+      toast.error("Estimated cost must be a non-negative number");
+      return;
+    }
     if (checkInv && hasStock && !overrodeStock) {
       toast.error("Inventory has matching stock — confirm override below to continue");
       return;
@@ -121,7 +122,7 @@ function Page() {
         mechanicId: user.id,
         item,
         reason,
-        estimatedCost: +cost,
+        estimatedCost: costNum,
         urgency,
         inventoryCheckedAt: checkInv ? new Date().toISOString() : null,
         inventoryCheckResult,
@@ -150,7 +151,9 @@ function Page() {
   return (
     <MechanicShell title="Workshop dashboard">
       <div className="mb-6">
-        <h2 className="text-lg font-semibold">Welcome back, {user.name.split(" ")[0] || "Mechanic"}</h2>
+        <h2 className="text-lg font-semibold">
+          Welcome back, {user.name.split(" ")[0] || "Mechanic"}
+        </h2>
         <p className="text-sm text-muted-foreground">
           {myActiveMwos.length} active work order{myActiveMwos.length === 1 ? "" : "s"}
           {" · "}
@@ -167,33 +170,33 @@ function Page() {
             No active work orders. Check the queue at /mechanic/work-orders to claim a new one.
           </p>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {myActiveMwos.map((w) => (
-            <div
-              key={w.id}
-              className="bg-card border border-border rounded-lg p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="font-mono text-sm font-bold text-navy bg-navy/10 dark:bg-navy/40 dark:text-amber-brand px-2 py-1 rounded">
-                  {w.vehicle}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {myActiveMwos.map((w) => (
+              <div
+                key={w.id}
+                className="bg-card border border-border rounded-lg p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-mono text-sm font-bold text-navy bg-navy/10 dark:bg-navy/40 dark:text-amber-brand px-2 py-1 rounded">
+                    {w.vehicle}
+                  </div>
+                  <StatusBadge status={w.priority} />
                 </div>
-                <StatusBadge status={w.priority} />
+                <p className="text-sm mt-3">{w.issue}</p>
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+                  <span className="text-xs text-muted-foreground">
+                    Reported by <span className="font-medium text-foreground">{w.reportedBy}</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+                  >
+                    <Play className="w-3 h-3" /> Start work
+                  </Button>
+                </div>
               </div>
-              <p className="text-sm mt-3">{w.issue}</p>
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-                <span className="text-xs text-muted-foreground">
-                  Reported by <span className="font-medium text-foreground">{w.reportedBy}</span>
-                </span>
-                <Button
-                  size="sm"
-                  className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
-                >
-                  <Play className="w-3 h-3" /> Start work
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
         )}
       </section>
 
@@ -216,8 +219,8 @@ function Page() {
                 <div className="mt-2 space-y-1">
                   {matches.length === 0 ? (
                     <div className="text-xs text-muted-foreground flex items-center gap-1.5 px-1">
-                      <Package className="w-3 h-3" /> No inventory matches —
-                      supplier order will be needed.
+                      <Package className="w-3 h-3" /> No inventory matches — supplier order will be
+                      needed.
                     </div>
                   ) : (
                     matches.map((m) => (
@@ -303,9 +306,8 @@ function Page() {
                       Are you sure? We have stock.
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      One or more matching items show qty on hand &gt; 0. Confirm an
-                      override if you still need a fresh order (different spec,
-                      reserved for another job, etc.).
+                      One or more matching items show qty on hand &gt; 0. Confirm an override if you
+                      still need a fresh order (different spec, reserved for another job, etc.).
                     </p>
                   </div>
                 </div>
