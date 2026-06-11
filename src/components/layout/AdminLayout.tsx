@@ -135,7 +135,13 @@ export function AdminShell({ children, title }: { children?: ReactNode; title?: 
                 {title || "Dashboard"}
               </h1>
               <div className="text-xs text-muted-foreground font-mono hidden sm:block">
-                Wed · 14 May 2025
+                {/* Real clock — was a hardcoded demo date until 2026-06. */}
+                {new Date().toLocaleDateString("en-CA", {
+                  weekday: "short",
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
               </div>
             </div>
           </div>

@@ -3,7 +3,15 @@ import { AdminShell } from "@/components/layout/AdminLayout";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { jobDisplay } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
-import { Briefcase, Users, ClipboardCheck, AlertTriangle, ArrowUpRight, Ticket, Clock } from "lucide-react";
+import {
+  Briefcase,
+  Users,
+  ClipboardCheck,
+  AlertTriangle,
+  ArrowUpRight,
+  Ticket,
+  Clock,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VehicleMap } from "@/components/crm/VehicleMap";
 import { useEffect, useMemo, useRef } from "react";
@@ -23,17 +31,9 @@ type Stat = {
   href?: string;
 };
 
-const baseStats: Stat[] = [
-  { label: "Active Jobs Today", value: "8", icon: Briefcase, badge: "Live", tone: "success" },
-  { label: "Drivers On Site", value: "6 / 9", icon: Users, badge: "67%", tone: "muted" },
-  {
-    label: "Pending Work Orders",
-    value: "3",
-    icon: ClipboardCheck,
-    badge: "Needs review",
-    tone: "warning",
-  },
-];
+// KPI values are computed from hydrated data inside Dashboard() — these were
+// hardcoded demo strings ("8", "6 / 9") until 2026-06, which made the
+// production dashboard lie regardless of database state.
 
 const toneClass: Record<string, string> = {
   success: "bg-success/15 text-success",
@@ -109,8 +109,41 @@ function writeOtDedup(map: Record<string, true>) {
 }
 
 function Dashboard() {
-  const { jobs, vehicles, clients, timeEntries, appSettings, drivers, notifications, pushNotification } =
-    useData();
+  const {
+    jobs,
+    vehicles,
+    clients,
+    timeEntries,
+    appSettings,
+    drivers,
+    workOrders,
+    notifications,
+    pushNotification,
+  } = useData();
+
+  // ---- Real KPI computations (replaced hardcoded demo strings) ----
+  const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
+  const activeJobsToday = useMemo(
+    () =>
+      jobs.filter(
+        (j) =>
+          (j.status === "scheduled" || j.status === "active" || j.status === "delayed") &&
+          new Date(j.scheduledAt).toLocaleDateString("en-CA") === todayStr,
+      ).length,
+    [jobs, todayStr],
+  );
+  const driversOnSite = useMemo(
+    () => new Set(timeEntries.filter((t) => !t.clockOut).map((t) => t.driverId)).size,
+    [timeEntries],
+  );
+  const pendingWorkOrders = useMemo(
+    () => workOrders.filter((w) => w.status === "pending").length,
+    [workOrders],
+  );
+  const flaggedSubmissions = useMemo(
+    () => timeEntries.filter((t) => t.flagged).length,
+    [timeEntries],
+  );
 
   // Most-recent 10 notifications drive the activity feed. We sort defensively
   // (the realtime channel upserts in arbitrary order) and slice — no mock.
@@ -218,14 +251,38 @@ function Dashboard() {
         : "/admin/timesheets",
   };
   const stats: Stat[] = [
-    ...baseStats,
+    {
+      label: "Active Jobs Today",
+      value: String(activeJobsToday),
+      icon: Briefcase,
+      badge: activeJobsToday > 0 ? "Live" : "None today",
+      tone: activeJobsToday > 0 ? "success" : "muted",
+      href: "/admin/jobs",
+    },
+    {
+      label: "Drivers On Site",
+      value: `${driversOnSite} / ${drivers.length}`,
+      icon: Users,
+      badge: drivers.length > 0 ? `${Math.round((driversOnSite / drivers.length) * 100)}%` : "—",
+      tone: "muted",
+      href: "/admin/timesheets",
+    },
+    {
+      label: "Pending Work Orders",
+      value: String(pendingWorkOrders),
+      icon: ClipboardCheck,
+      badge: pendingWorkOrders > 0 ? "Needs review" : "All clear",
+      tone: pendingWorkOrders > 0 ? "warning" : "muted",
+      href: "/admin/work-orders",
+    },
     otStat,
     {
       label: "Flagged Submissions",
-      value: "1",
+      value: String(flaggedSubmissions),
       icon: AlertTriangle,
-      badge: "Urgent",
-      tone: "danger",
+      badge: flaggedSubmissions > 0 ? "Urgent" : "All clear",
+      tone: flaggedSubmissions > 0 ? "danger" : "muted",
+      href: "/admin/timesheets",
     },
   ];
 
@@ -293,7 +350,8 @@ function Dashboard() {
                 <div>
                   <div className="font-medium text-sm">{c.name}</div>
                   <div className="text-[10px] font-mono text-muted-foreground">
-                    threshold {c.tickets.threshold} · auto-bill {c.tickets.autoBillEnabled ? "on" : "off"}
+                    threshold {c.tickets.threshold} · auto-bill{" "}
+                    {c.tickets.autoBillEnabled ? "on" : "off"}
                   </div>
                 </div>
                 <div
@@ -303,7 +361,9 @@ function Dashboard() {
                   )}
                 >
                   {c.tickets.balance}
-                  <span className="text-[10px] font-normal text-muted-foreground ml-1">tickets</span>
+                  <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                    tickets
+                  </span>
                 </div>
               </Link>
             ))}
@@ -391,8 +451,7 @@ function Dashboard() {
           <h2 className="font-semibold mb-4">Recent activity</h2>
           {recentNotifs.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
-              No activity yet. New form submissions, job updates, and approvals
-              will appear here.
+              No activity yet. New form submissions, job updates, and approvals will appear here.
             </p>
           ) : (
             <div className="relative pl-5">
