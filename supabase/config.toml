@@ -164,6 +164,12 @@ additional_redirect_urls = [
   "http://localhost:5173/reset-password",
   "http://127.0.0.1:5173/reset-password",
   "https://yardward-pro.vercel.app/reset-password",
+  # Current production host (post-rebrand). REQUIRED or supabase.auth
+  # .resetPasswordForEmail silently rewrites the email link back to site_url,
+  # sending users to the wrong host. Mirror this in the hosted project's
+  # Auth → URL Configuration → Redirect URLs (dashboard) too.
+  "https://engage-hydrovac-crm.vercel.app/reset-password",
+  "https://engage-hydrovac-crm.vercel.app",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -237,15 +243,20 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# Production SMTP via Resend, so auth emails (password reset / recovery /
+# confirmation) send reliably instead of being capped at Supabase's built-in
+# ~2-4/hour testing limit. The password is a Resend sending API key, supplied as
+# the SUPABASE_AUTH_SMTP_PASSWORD env var (never committed). Applies to the
+# hosted project on `supabase config push`; OR mirror these exact values in the
+# dashboard (Auth → Emails → SMTP Settings), which also has a "send test" button.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(SUPABASE_AUTH_SMTP_PASSWORD)"
+admin_email = "noreply@engagehscrm.com"
+sender_name = "Engage Hydrovac CRM"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
