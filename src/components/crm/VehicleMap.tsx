@@ -325,6 +325,17 @@ export function VehicleMap({
             doubleClickZoom={interactive}
             zoomControl={interactive}
             attributionControl
+            // Disable Leaflet's deferred animations. safeMapMove already passes
+            // animate:false on explicit moves, but zoom/marker/fade animations
+            // schedule their own requestAnimationFrame callbacks that fire AFTER
+            // a route change has torn the map down — reading `_leaflet_pos` on a
+            // removed pane (undefined) and crashing. This was still logging to
+            // error_log (WINDOW_ERROR) on /admin/vehicles/$id for GPS-less
+            // (Fleetio-imported) vehicles even after the safeMapMove fix.
+            // Turning the animations off removes the deferred callbacks entirely.
+            zoomAnimation={false}
+            markerZoomAnimation={false}
+            fadeAnimation={false}
           >
             <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
             <FitToPins coords={pinList.map((p) => p.coord)} />
