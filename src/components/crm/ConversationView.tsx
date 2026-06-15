@@ -8,16 +8,7 @@
 // different thread fully remounts (clears draft / scroll position) while
 // realtime updates to the SAME thread just re-render.
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Send,
-  Paperclip,
-  AtSign,
-  X,
-  Lock,
-  CheckCircle2,
-  Loader2,
-  UserPlus,
-} from "lucide-react";
+import { Send, Paperclip, AtSign, X, Lock, CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -26,15 +17,11 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
-import type {
-  Conversation,
-  ConversationParticipant,
-  Message,
-} from "@/types/domain";
+import type { Conversation, ConversationParticipant, Message } from "@/types/domain";
 
 export interface ConversationViewProps {
   conversation: Conversation;
-  messages: Message[];               // already filtered + sorted ASC by parent
+  messages: Message[]; // already filtered + sorted ASC by parent
   participants: ConversationParticipant[]; // for this conversation
   /** Role the current viewer plays in the app shell. */
   viewerRole: "admin" | "driver" | "mechanic";
@@ -49,12 +36,9 @@ export function ConversationView({
   const { user } = useAuth();
   const { drivers, mechanics } = useData();
   const viewerId = user.id;
-  const isParticipant = participants.some(
-    (p) => p.userId === viewerId && p.leftAt === null,
-  );
+  const isParticipant = participants.some((p) => p.userId === viewerId && p.leftAt === null);
   const isOriginator = conversation.createdBy === viewerId;
-  const canClose =
-    conversation.status === "active" && (viewerRole === "admin" || isOriginator);
+  const canClose = conversation.status === "active" && (viewerRole === "admin" || isOriginator);
   const isClosed = conversation.status === "closed";
 
   const activeAdmins = useMemo(
@@ -71,9 +55,9 @@ export function ConversationView({
   const [closeReason, setCloseReason] = useState("");
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   // Pending attachments. Each entry is { path, name } — already uploaded.
-  const [pendingAttachments, setPendingAttachments] = useState<
-    { path: string; name: string }[]
-  >([]);
+  const [pendingAttachments, setPendingAttachments] = useState<{ path: string; name: string }[]>(
+    [],
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Signed-URL cache for inline attachment rendering. Keyed by storage path.
@@ -342,7 +326,8 @@ export function ConversationView({
                 data-sender-id={m.senderId}
               >
                 <div className="text-[10px] text-muted-foreground font-mono">
-                  {nameFor(m.senderId)} · {new Date(m.createdAt).toLocaleTimeString([], {
+                  {nameFor(m.senderId)} ·{" "}
+                  {new Date(m.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
@@ -395,22 +380,29 @@ export function ConversationView({
                       see the photo while it's still fresh. */}
                   {m.mediaPaths.length === 0 && m.twilioMediaUrls.length > 0 && (
                     <div className="mt-2 flex flex-col gap-1.5">
-                      {m.twilioMediaUrls.map((url, i) => (
-                        <a
-                          key={`tmu-${i}`}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs underline truncate"
-                          data-testid="message-attachment-twilio"
-                        >
-                          {isImageUrl(url) ? (
-                            <img src={url} alt="attachment" className="max-w-full rounded" />
-                          ) : (
-                            (url.split("/").pop() ?? "attachment").slice(0, 64)
-                          )}
-                        </a>
-                      ))}
+                      {m.twilioMediaUrls.map((url, i) => {
+                        // Defense-in-depth: twilioMediaUrls come from the
+                        // HMAC-verified Twilio webhook (already trust-gated), but
+                        // only ever render an http(s) URL as a clickable link /
+                        // <img> — never a javascript:/data: URL.
+                        const safe = /^https?:\/\//i.test(url);
+                        return (
+                          <a
+                            key={`tmu-${i}`}
+                            href={safe ? url : "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs underline truncate"
+                            data-testid="message-attachment-twilio"
+                          >
+                            {safe && isImageUrl(url) ? (
+                              <img src={url} alt="attachment" className="max-w-full rounded" />
+                            ) : (
+                              (url.split("/").pop() ?? "attachment").slice(0, 64)
+                            )}
+                          </a>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -440,7 +432,9 @@ export function ConversationView({
             data-testid="join-conversation"
             className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
           >
-            {joining ? "Joining…" : (
+            {joining ? (
+              "Joining…"
+            ) : (
               <>
                 <UserPlus className="w-4 h-4" /> Join conversation
               </>
@@ -462,9 +456,7 @@ export function ConversationView({
                   <button
                     type="button"
                     onClick={() =>
-                      setPendingAttachments((prev) =>
-                        prev.filter((x) => x.path !== a.path),
-                      )
+                      setPendingAttachments((prev) => prev.filter((x) => x.path !== a.path))
                     }
                     aria-label={`Remove ${a.name}`}
                   >
@@ -521,7 +513,11 @@ export function ConversationView({
                   data-testid="tag-admin-button"
                   className="h-9 w-9"
                 >
-                  {tagging ? <Loader2 className="w-4 h-4 animate-spin" /> : <AtSign className="w-4 h-4" />}
+                  {tagging ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <AtSign className="w-4 h-4" />
+                  )}
                 </Button>
               )}
               <Button
@@ -531,7 +527,11 @@ export function ConversationView({
                 data-testid="send-message"
                 className="h-9 w-9 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
               >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </Button>
             </div>
           </div>

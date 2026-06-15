@@ -80,6 +80,11 @@ function Page() {
           x.id === r.id ? { ...x, paidAt: r.paidAt ? null : new Date().toISOString() } : x,
         ),
       );
+    } catch (e) {
+      // markInvoicePaid can throw (network/DB). Without this the rejection was
+      // swallowed: the admin saw no error and couldn't tell the paid/unpaid
+      // toggle silently failed on a financial record.
+      toast.error(e instanceof Error ? e.message : "Could not update paid status");
     } finally {
       setBusyId(null);
     }

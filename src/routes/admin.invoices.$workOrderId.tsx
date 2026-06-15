@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
-import { clientById, jobById } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import {
@@ -25,7 +24,7 @@ export const Route = createFileRoute("/admin/invoices/$workOrderId")({
 
 function Page() {
   const { workOrderId } = useParams({ from: "/admin/invoices/$workOrderId" });
-  const { workOrders, invoiceData } = useData();
+  const { workOrders, invoiceData, jobs, clients } = useData();
   const wo = workOrders.find((w) => w.id === workOrderId);
   const inv = wo?.invoiceDataId
     ? invoiceData.find((i) => i.id === wo.invoiceDataId)
@@ -48,9 +47,13 @@ function Page() {
       </AdminShell>
     );
 
-  const job = jobById(wo.jobId);
-  const client = job ? clientById(job.clientId) : null;
-  const lineItems =
+  // Resolve job/client against LIVE data (useData), not the static mockData
+  // seed helpers — in Supabase mode real work orders carry UUID job/client ids
+  // that aren't in the seed, so jobById/clientById returned undefined and the
+  // billing header + SendPaymentCard never rendered for real invoices.
+  const job = jobs.find((j) => j.id === wo.jobId);
+  const client = job ? clients.find((c) => c.id === job.clientId) : null;
+  const lineItems = (
     inv?.lineItems ??
     (wo.weightTonnes > 0
       ? [
@@ -61,7 +64,14 @@ function Page() {
             amount: wo.weightTonnes * 24,
           },
         ]
-      : []);
+      : [])
+  ).map((li) => ({
+    // Coerce DB-sourced numbers so a null/missing rate or amount can't render
+    // `$NaN` (or crash .toFixed) and flow into the client-facing invoice email.
+    ...li,
+    rate: Number(li.rate) || 0,
+    amount: Number(li.amount) || 0,
+  }));
   const total = lineItems.reduce((s, li) => s + li.amount, 0);
 
   async function push() {

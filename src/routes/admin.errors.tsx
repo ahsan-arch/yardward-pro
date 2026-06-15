@@ -311,7 +311,11 @@ function ErrorsTab() {
     const query: any = sb
       .from("error_log")
       .select("*, profiles!error_log_user_id_fkey(name, email)")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      // Bound the fetch — error_log can grow large on a busy tenant and an
+      // unbounded select pulls the whole table to the client each load. The
+      // newest 500 cover the dashboard's needs; older rows are queryable in DB.
+      .limit(500);
 
     const { data, error } = await query;
     if (error) {
@@ -328,7 +332,7 @@ function ErrorsTab() {
   }, [load]);
 
   const current = useMemo(
-    () => (openId ? rows.find((r) => r.id === openId) ?? null : null),
+    () => (openId ? (rows.find((r) => r.id === openId) ?? null) : null),
     [openId, rows],
   );
 
@@ -347,10 +351,7 @@ function ErrorsTab() {
       if (source !== "all" && r.source !== source) return false;
       if (severity !== "all" && r.severity !== severity) return false;
       if (needle) {
-        const hay =
-          (r.message ?? "").toLowerCase() +
-          " " +
-          (r.error_code ?? "").toLowerCase();
+        const hay = (r.message ?? "").toLowerCase() + " " + (r.error_code ?? "").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
@@ -442,7 +443,7 @@ function ErrorsTab() {
           <SelectContent>
             {SOURCES.map((s) => (
               <SelectItem key={s} value={s}>
-                {s === "all" ? "All sources" : sourceLabel[s] ?? s}
+                {s === "all" ? "All sources" : (sourceLabel[s] ?? s)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -462,11 +463,7 @@ function ErrorsTab() {
         </Select>
 
         <div className="flex items-center gap-2 px-3 rounded-md border border-border bg-card">
-          <Switch
-            id="show-resolved"
-            checked={showResolved}
-            onCheckedChange={setShowResolved}
-          />
+          <Switch id="show-resolved" checked={showResolved} onCheckedChange={setShowResolved} />
           <Label htmlFor="show-resolved" className="text-xs cursor-pointer">
             Show resolved
           </Label>
@@ -501,9 +498,7 @@ function ErrorsTab() {
                   <td className="px-4 py-3 font-mono text-xs">
                     {new Date(r.created_at).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-xs">
-                    {sourceLabel[r.source] ?? r.source}
-                  </td>
+                  <td className="px-4 py-3 text-xs">{sourceLabel[r.source] ?? r.source}</td>
                   <td className="px-4 py-3">
                     <SeverityBadge severity={r.severity} />
                   </td>
@@ -548,10 +543,7 @@ function ErrorsTab() {
             })}
             {filteredRows.length === 0 && (
               <tr>
-                <td
-                  colSpan={8}
-                  className="px-4 py-10 text-center text-sm text-muted-foreground"
-                >
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {loading
                     ? "Loading…"
                     : showResolved
@@ -620,11 +612,7 @@ function ErrorsTab() {
 
                 {current.resolved_at ? (
                   <Section title="Resolution">
-                    <Row
-                      k="Resolved at"
-                      v={new Date(current.resolved_at).toLocaleString()}
-                      mono
-                    />
+                    <Row k="Resolved at" v={new Date(current.resolved_at).toLocaleString()} mono />
                     <Row k="Resolved by" v={current.resolved_by ?? "—"} mono />
                     {current.resolution_notes && (
                       <p className="text-sm text-foreground/90 mt-2 whitespace-pre-wrap">
@@ -658,8 +646,8 @@ function ErrorsTab() {
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md p-3">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                     <span>
-                      Supabase is not configured. Connect VITE_SUPABASE_URL to load real
-                      error_log data.
+                      Supabase is not configured. Connect VITE_SUPABASE_URL to load real error_log
+                      data.
                     </span>
                   </div>
                 )}
@@ -712,7 +700,7 @@ function DeadLetterTab() {
   }, [load]);
 
   const current = useMemo(
-    () => (openId ? rows.find((r) => r.id === openId) ?? null : null),
+    () => (openId ? (rows.find((r) => r.id === openId) ?? null) : null),
     [openId, rows],
   );
 
@@ -750,9 +738,7 @@ function DeadLetterTab() {
     return (
       <div className="bg-card border border-border rounded-lg p-10 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
         <Inbox className="w-8 h-8 mx-auto text-success mb-3" />
-        <div className="text-sm font-semibold">
-          All systems clear — no dead-letter submissions.
-        </div>
+        <div className="text-sm font-semibold">All systems clear — no dead-letter submissions.</div>
         <div className="text-xs text-muted-foreground mt-1">
           When a queued submission exhausts its retries it lands here for review.
         </div>
@@ -766,19 +752,13 @@ function DeadLetterTab() {
         <table className="w-full text-sm min-w-[900px]" data-testid="dlq-table">
           <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
-              {[
-                "Moved to DLQ",
-                "Kind",
-                "Retries",
-                "Last error",
-                "Queued at",
-                "User",
-                "",
-              ].map((h) => (
-                <th key={h} className="text-left font-medium px-4 py-3">
-                  {h}
-                </th>
-              ))}
+              {["Moved to DLQ", "Kind", "Retries", "Last error", "Queued at", "User", ""].map(
+                (h) => (
+                  <th key={h} className="text-left font-medium px-4 py-3">
+                    {h}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
@@ -826,10 +806,7 @@ function DeadLetterTab() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-10 text-center text-sm text-muted-foreground"
-                >
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {loading ? "Loading…" : "No rows."}
                 </td>
               </tr>
@@ -905,8 +882,8 @@ function DeadLetterTab() {
                     {requeueing ? "Requeueing…" : "Requeue"}
                   </Button>
                   <p className="text-[10px] text-muted-foreground mt-2">
-                    Drops the payload back into the offline queue with
-                    retryCount=0 and removes this row.
+                    Drops the payload back into the offline queue with retryCount=0 and removes this
+                    row.
                   </p>
                 </Section>
 
@@ -914,8 +891,8 @@ function DeadLetterTab() {
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md p-3">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                     <span>
-                      Supabase is not configured. Connect VITE_SUPABASE_URL to
-                      load real dead_letter_submissions data.
+                      Supabase is not configured. Connect VITE_SUPABASE_URL to load real
+                      dead_letter_submissions data.
                     </span>
                   </div>
                 )}
@@ -943,12 +920,7 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-3 text-sm py-1">
       <span className="text-muted-foreground shrink-0">{k}</span>
-      <span
-        className={cn(
-          "font-medium text-right break-all",
-          mono && "font-mono text-xs",
-        )}
-      >
+      <span className={cn("font-medium text-right break-all", mono && "font-mono text-xs")}>
         {v}
       </span>
     </div>

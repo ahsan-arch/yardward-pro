@@ -175,6 +175,10 @@ function Page() {
             : x,
         ),
       );
+    } catch (e) {
+      // approveDumpLog can throw — surface it instead of silently leaving the
+      // record un-approved with no feedback.
+      toast.error(e instanceof Error ? e.message : "Could not approve disposal");
     } finally {
       setApproving(null);
     }
