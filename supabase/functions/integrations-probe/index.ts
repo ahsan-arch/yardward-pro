@@ -25,6 +25,16 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
+// Constant-time bearer compare — matches the convention used by every other
+// admin edge function (a raw `===` on the service-role key is a (gateway-
+// unreachable, but still) timing side-channel; keep the whole codebase uniform).
+function eqConstTime(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 type IntegrationStatus = {
   name: string;
   desc: string;
@@ -397,7 +407,7 @@ Deno.serve(async (req) => {
     // claim is service_role — the gateway (verify_jwt) has already validated
     // the signature before this code runs, and only the service key carries
     // that claim.
-    let srOk = bearer === SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length > 0;
+    let srOk = SUPABASE_SERVICE_ROLE_KEY.length > 0 && eqConstTime(bearer, SUPABASE_SERVICE_ROLE_KEY);
     if (!srOk) {
       try {
         const payload = JSON.parse(
