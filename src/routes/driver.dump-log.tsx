@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, Loader2, Droplets } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { GpsBadge, useGpsCapture } from "@/components/crm/GpsBadge";
@@ -55,6 +55,17 @@ function Page() {
   const { jobs } = useData();
   const myJobs = jobs.filter((j) => j.driverId === user.id);
   const [jobId, setJobId] = useState<string>(myJobs[0]?.id ?? NONE_JOB);
+  // myJobs is [] until jobs hydrate (Supabase mode). Pre-select the driver's
+  // first job ONCE it arrives — guarded by a ref so a later deliberate "no job"
+  // (NONE_JOB) selection isn't clobbered (NONE_JOB is both the initial default
+  // and a valid user choice, so a value-based guard would fight the user).
+  const didPreselect = useRef(false);
+  useEffect(() => {
+    if (!didPreselect.current && myJobs.length > 0) {
+      didPreselect.current = true;
+      setJobId(myJobs[0].id);
+    }
+  }, [myJobs]);
   const pickedJob = myJobs.find((j) => j.id === jobId);
   const fallback = useMemo(() => {
     if (pickedJob?.location.lat != null && pickedJob.location.lng != null) {

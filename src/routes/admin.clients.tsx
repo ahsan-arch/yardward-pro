@@ -387,6 +387,8 @@ function PortalAccessEditor({ clientId, clientName }: { clientId: string; client
       });
       if (r.ok) toast.success("Portal settings saved");
       else toast.error(r.reason);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save portal settings");
     } finally {
       setBusy(false);
     }
@@ -407,6 +409,8 @@ function PortalAccessEditor({ clientId, clientName }: { clientId: string; client
       toast.success(`Code created: ${r.code}`);
       setNewLabel("");
       setTokens(await api.fetchClientPortalTokens(clientId));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not create access code");
     } finally {
       setBusy(false);
     }
@@ -422,6 +426,8 @@ function PortalAccessEditor({ clientId, clientName }: { clientId: string; client
       }
       toast.success(`Access revoked for ${label || "code"}`);
       setTokens(await api.fetchClientPortalTokens(clientId));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not revoke access");
     } finally {
       setBusy(false);
     }

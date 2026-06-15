@@ -176,11 +176,22 @@ function Dashboard() {
   const alertedRef = useRef<Record<string, true>>(readOtDedup());
 
   // Drafts shouldn't surface on the dashboard — they aren't published to drivers
-  // and the today's-jobs tile is meant to mirror what's actually live.
+  // and the today's-jobs tile is meant to mirror what's actually live. Filter to
+  // the ACTUAL calendar date (was a frozen `day === 1` = always-Tuesday filter);
+  // jobDisplay now resolves live client/driver/truck names via the DataContext
+  // lookup bridge.
+  const todayLabel = new Date().toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
   const todays = jobs
-    .filter((j) => j.status !== "draft")
+    .filter(
+      (j) =>
+        j.status !== "draft" && new Date(j.scheduledAt).toLocaleDateString("en-CA") === todayStr,
+    )
     .map(jobDisplay)
-    .filter((j) => j.day === 1)
     .slice(0, 6);
   const lowTicketClients = clients
     .filter((c) => c.tickets.enabled && c.tickets.balance <= c.tickets.threshold)
@@ -400,7 +411,7 @@ function Dashboard() {
           <div className="flex items-center justify-between p-4 border-b border-border">
             <div>
               <h2 className="font-semibold">Today's Schedule</h2>
-              <p className="text-xs text-muted-foreground font-mono">Wed · 14 May 2025</p>
+              <p className="text-xs text-muted-foreground font-mono">{todayLabel}</p>
             </div>
             <Link
               to="/admin/schedule"

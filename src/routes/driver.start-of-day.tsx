@@ -144,7 +144,11 @@ function Page() {
       return;
     }
     const errs: typeof err = {};
-    if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
+    // Reject blank, whitespace (Number("  ")===0), zero, negative, and absurd
+    // values — matches the server-side record_vehicle_odometer 0..5,000,000 range.
+    const odoNum = Number(odo);
+    if (!Number.isFinite(odoNum) || odoNum <= 0 || odoNum > 5_000_000)
+      errs.odo = "Enter a valid odometer reading";
     if (cond === "minor" && !note.trim()) errs.note = "Describe the issue";
     setErr(errs);
     if (Object.keys(errs).length) return;
@@ -152,7 +156,7 @@ function Page() {
     try {
       const payload = {
         driverId: user.id,
-        odometer: +odo,
+        odometer: odoNum,
         fuelLevel: fuel,
         condition: cond,
         gps: gps.coords,
@@ -231,7 +235,9 @@ function Page() {
                 ? `Vehicle: ${assignedVehicle.id} — ${assignedVehicle.name}`
                 : "No vehicle assigned"}
               {pretripStatus.lastAt && (
-                <div>Last pre-trip: {new Date(pretripStatus.lastAt).toLocaleString()} (expired)</div>
+                <div>
+                  Last pre-trip: {new Date(pretripStatus.lastAt).toLocaleString()} (expired)
+                </div>
               )}
               {!pretripStatus.lastAt && <div>No pre-trip on file for today</div>}
             </div>

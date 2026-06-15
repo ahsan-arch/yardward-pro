@@ -114,7 +114,10 @@ function Page() {
       return;
     }
     const errs: typeof err = {};
-    if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
+    // Reject blank/whitespace/zero/negative/absurd (matches server 0..5,000,000).
+    const odoNum = Number(odo);
+    if (!Number.isFinite(odoNum) || odoNum <= 0 || odoNum > 5_000_000)
+      errs.odo = "Enter a valid odometer reading";
     if (!summary.trim()) errs.summary = "Add a quick summary";
     setErr(errs);
     if (Object.keys(errs).length) return;
@@ -122,7 +125,7 @@ function Page() {
     try {
       const payload = {
         driverId: user.id,
-        odometer: +odo,
+        odometer: odoNum,
         fuelLevel: fuel,
         summary,
         gps: gps.coords,

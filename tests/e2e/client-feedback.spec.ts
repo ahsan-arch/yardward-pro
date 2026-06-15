@@ -59,11 +59,18 @@ test.describe("Client feedback punch list", () => {
     await expect(page.getByText("Active Jobs Today")).toBeVisible();
     await expect(page.getByText("Pending Work Orders")).toBeVisible();
     await expect(page.getByText("Flagged Submissions")).toBeVisible();
-    // Header shows a real, current-year date (was the literal "14 May 2025").
-    await expect(page.getByText(new RegExp(String(new Date().getFullYear())))).toBeVisible();
+    // A real, current-year date is shown (was the literal "14 May 2025"). There
+    // are now two such dates on the dashboard — the admin header AND the
+    // "Today's Schedule" subtitle (also de-hardcoded) — so match the first
+    // rather than requiring a single strict-mode hit.
+    await expect(
+      page.getByText(new RegExp(String(new Date().getFullYear()))).first(),
+    ).toBeVisible();
   });
 
-  test("Mechanic inventory Adjust opens a real save dialog (not a mock toast)", async ({ page }) => {
+  test("Mechanic inventory Adjust opens a real save dialog (not a mock toast)", async ({
+    page,
+  }) => {
     await loginAs(page, "mechanic");
     await page.goto("/mechanic/inventory");
     const firstAdjust = page.locator("[data-testid^='mech-inv-adjust-']").first();

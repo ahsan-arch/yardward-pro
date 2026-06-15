@@ -1320,12 +1320,35 @@ export const tenders: Tender[] = [
 ];
 
 // ============ Lookup helpers ============
-export const clientById = (id: string) => clients.find((c) => c.id === id);
+// Live-data bridge. In Supabase mode the REAL rows (UUID ids) are not in the
+// static seed arrays above, so these helpers — and jobDisplay(), which uses
+// them — would resolve `undefined` and render blank/"—" client/driver/truck
+// names across ~45 call sites. DataContext calls setLiveLookupData() with the
+// hydrated lists on every render, so the helpers resolve real rows; they fall
+// back to the seed only when live data hasn't been set (mock mode, or the brief
+// pre-hydration window). One bridge fixes every call site at once.
+let liveClients: typeof clients | null = null;
+let liveDrivers: typeof drivers | null = null;
+let liveVehicles: typeof vehicles | null = null;
+let liveJobs: typeof jobs | null = null;
+export function setLiveLookupData(d: {
+  clients: typeof clients;
+  drivers: typeof drivers;
+  vehicles: typeof vehicles;
+  jobs: typeof jobs;
+}) {
+  liveClients = d.clients;
+  liveDrivers = d.drivers;
+  liveVehicles = d.vehicles;
+  liveJobs = d.jobs;
+}
+
+export const clientById = (id: string) => (liveClients ?? clients).find((c) => c.id === id);
 export const driverById = (id: string | null) =>
-  id ? drivers.find((d) => d.id === id) : undefined;
+  id ? (liveDrivers ?? drivers).find((d) => d.id === id) : undefined;
 export const vehicleById = (id: string | null) =>
-  id ? vehicles.find((v) => v.id === id) : undefined;
-export const jobById = (id: string) => jobs.find((j) => j.id === id);
+  id ? (liveVehicles ?? vehicles).find((v) => v.id === id) : undefined;
+export const jobById = (id: string) => (liveJobs ?? jobs).find((j) => j.id === id);
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace("-", " ");
@@ -1374,12 +1397,17 @@ export function workOrderDisplay(w: WorkOrder) {
   const j = jobById(w.jobId);
   const c = j ? clientById(j.clientId) : undefined;
   const d = driverById(w.driverId);
+  const v = vehicleById(j?.vehicleId ?? null);
   const dt = new Date(w.submittedAt);
   return {
     id: w.id,
     job: w.jobId,
     client: c?.name ?? "—",
     driver: d?.name ?? "—",
+    // Real submitted date + assigned truck (were hardcoded "14 May 2025" /
+    // "TRK-07" literals in the detail sheet).
+    date: dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    truck: v?.id ?? "—",
     submitted: dt.toUTCString().slice(5, 22),
     status: cap(w.status),
     workPerformed: w.workPerformed,
@@ -1428,12 +1456,12 @@ export const mechanicWorkOrders = [
 // Per-vehicle Geotab "last known" coords for mock cross-reference.
 // Coordinates are near the seeded job locations so the haversine distance is small.
 export const vehicleGeotabCoords: Record<string, { lat: number; lng: number }> = {
-  "TRK-03": { lat: 43.6510, lng: -79.3470 },
+  "TRK-03": { lat: 43.651, lng: -79.347 },
   "TRK-07": { lat: 43.6532, lng: -79.3832 },
-  "TRK-11": { lat: 43.6720, lng: -79.3960 },
+  "TRK-11": { lat: 43.672, lng: -79.396 },
   "TRK-14": { lat: 43.6605, lng: -79.4101 },
-  "EQ-02":  { lat: 43.6605, lng: -79.4101 },
-  "TRL-01": { lat: 43.6580, lng: -79.3300 },
+  "EQ-02": { lat: 43.6605, lng: -79.4101 },
+  "TRL-01": { lat: 43.658, lng: -79.33 },
 };
 
 export function geotabCoordsForVehicle(vehicleId: string | null | undefined) {
@@ -1461,7 +1489,12 @@ export const vehicleInspections: VehicleInspection[] = [
     vehicleId: "TRK-07",
     submittedAt: "2025-05-14T07:05:00Z",
     gpsCapture: { lat: 43.6532, lng: -79.3832, capturedAt: "2025-05-14T07:05:00Z" },
-    geotabSnapshot: { lat: 43.6532, lng: -79.3832, capturedAt: "2025-05-14T07:00:00Z", distanceMeters: 12 },
+    geotabSnapshot: {
+      lat: 43.6532,
+      lng: -79.3832,
+      capturedAt: "2025-05-14T07:00:00Z",
+      distanceMeters: 12,
+    },
     items: inspectionChecklist.map((i) => ({ name: i.name, status: "ok", notes: "" })),
     notes: "",
     photos: [],
@@ -1472,8 +1505,13 @@ export const vehicleInspections: VehicleInspection[] = [
     driverId: "D-02",
     vehicleId: "TRK-03",
     submittedAt: "2025-05-14T07:15:00Z",
-    gpsCapture: { lat: 43.6510, lng: -79.3470, capturedAt: "2025-05-14T07:15:00Z" },
-    geotabSnapshot: { lat: 43.6510, lng: -79.3470, capturedAt: "2025-05-14T07:10:00Z", distanceMeters: 8 },
+    gpsCapture: { lat: 43.651, lng: -79.347, capturedAt: "2025-05-14T07:15:00Z" },
+    geotabSnapshot: {
+      lat: 43.651,
+      lng: -79.347,
+      capturedAt: "2025-05-14T07:10:00Z",
+      distanceMeters: 8,
+    },
     items: inspectionChecklist.map((i, idx) => ({
       name: i.name,
       status: idx === 4 ? "issue" : "ok",
@@ -1488,8 +1526,13 @@ export const vehicleInspections: VehicleInspection[] = [
     driverId: "D-03",
     vehicleId: "TRK-11",
     submittedAt: "2025-05-13T06:50:00Z",
-    gpsCapture: { lat: 43.6720, lng: -79.3960, capturedAt: "2025-05-13T06:50:00Z" },
-    geotabSnapshot: { lat: 43.6720, lng: -79.3960, capturedAt: "2025-05-13T06:45:00Z", distanceMeters: 22 },
+    gpsCapture: { lat: 43.672, lng: -79.396, capturedAt: "2025-05-13T06:50:00Z" },
+    geotabSnapshot: {
+      lat: 43.672,
+      lng: -79.396,
+      capturedAt: "2025-05-13T06:45:00Z",
+      distanceMeters: 22,
+    },
     items: inspectionChecklist.map((i) => ({ name: i.name, status: "ok", notes: "" })),
     notes: "",
     photos: [],

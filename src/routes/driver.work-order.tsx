@@ -205,6 +205,11 @@ function Page() {
         toast.success("Work order submitted for approval");
       }
       nav({ to: "/driver" });
+    } catch (e) {
+      // The core api.submitWorkOrder (and the online token-consume) can throw —
+      // without this catch the rejection was swallowed and the driver saw no
+      // error, just a spinner reset, with no idea the work order didn't land.
+      toast.error(e instanceof Error ? e.message : "Could not submit work order");
     } finally {
       setLoading(false);
     }

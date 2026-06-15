@@ -1034,6 +1034,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Mirror the live lists into the module-level lookup helpers (mockData.ts) so
+  // non-React callers — clientById/driverById/vehicleById/jobById and
+  // jobDisplay() — resolve REAL rows in Supabase mode instead of the frozen
+  // seed. Done during render (not an effect) so child components see current
+  // data on the same pass; the assignment is idempotent so a StrictMode
+  // double-render is harmless.
+  seed.setLiveLookupData({ clients, drivers, vehicles, jobs });
+
   return (
     <DataCtx.Provider
       value={{

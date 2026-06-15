@@ -73,9 +73,15 @@ function Page() {
             those tests want to click), instead of these tabs which appear
             first in DOM order.
           */}
-          <TabsTrigger value="pending" aria-label="Pending Approval">Pending review</TabsTrigger>
-          <TabsTrigger value="approved" aria-label="Approved">Completed</TabsTrigger>
-          <TabsTrigger value="rejected" aria-label="Rejected">Declined</TabsTrigger>
+          <TabsTrigger value="pending" aria-label="Pending Approval">
+            Pending review
+          </TabsTrigger>
+          <TabsTrigger value="approved" aria-label="Approved">
+            Completed
+          </TabsTrigger>
+          <TabsTrigger value="rejected" aria-label="Rejected">
+            Declined
+          </TabsTrigger>
         </TabsList>
         <TabsContent value={tab} className="mt-4">
           <div className="bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-x-auto">
@@ -157,7 +163,7 @@ function Page() {
 
       <Sheet open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          {wo && (
+          {wo && woRaw && (
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
@@ -173,9 +179,9 @@ function Page() {
                 <Section title="Job details">
                   <Row k="Client" v={wo.client} />
                   <Row k="Location" v={wo.location} />
-                  <Row k="Date" v="14 May 2025" />
+                  <Row k="Date" v={wo.date} />
                   <Row k="Driver" v={wo.driver} />
-                  <Row k="Truck" v="TRK-07" />
+                  <Row k="Truck" v={wo.truck} />
                 </Section>
                 <Section title="Work performed">
                   <p className="text-sm text-foreground/90">{wo.workPerformed}</p>
@@ -260,11 +266,20 @@ function Page() {
                 </Section>
                 <Section title="GPS + timestamp">
                   <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="w-4 h-4 text-success" />
+                    <MapPin
+                      className={`w-4 h-4 ${woRaw.gpsCapture ? "text-success" : "text-muted-foreground"}`}
+                    />
                     <span className="font-mono text-xs">
-                      Form submitted at 14:32 from 88 York Ave
+                      Form submitted {new Date(woRaw.submittedAt).toLocaleString()}
+                      {woRaw.gpsCapture
+                        ? ` · ${woRaw.gpsCapture.lat.toFixed(5)}, ${woRaw.gpsCapture.lng.toFixed(5)}`
+                        : ""}
                     </span>
-                    <span className="text-success text-xs">GPS ✓</span>
+                    {woRaw.gpsCapture ? (
+                      <span className="text-success text-xs">GPS ✓</span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">No GPS</span>
+                    )}
                   </div>
                 </Section>
                 <div className="space-y-2 pt-2">

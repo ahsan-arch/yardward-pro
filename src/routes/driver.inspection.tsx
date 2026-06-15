@@ -60,6 +60,12 @@ function Page() {
   const defaultVehicleId = me?.vehicleAssignmentId ?? vehicles[0]?.id ?? "";
 
   const [vehicleId, setVehicleId] = useState(defaultVehicleId);
+  // defaultVehicleId is "" until drivers/vehicles hydrate (Supabase mode); set it
+  // once available so the inspection isn't stuck with no vehicle selected (which
+  // would also skip the Geotab cross-reference). Only while still unset.
+  useEffect(() => {
+    if (!vehicleId && defaultVehicleId) setVehicleId(defaultVehicleId);
+  }, [defaultVehicleId, vehicleId]);
   const [items, setItems] = useState<ChecklistRow[]>(
     inspectionChecklist.map((i) => ({ name: i.name, status: "ok", notes: "" })),
   );
@@ -100,8 +106,7 @@ function Page() {
     };
   }, [vehicleId]);
 
-  const distance =
-    gps.coords && geotab ? Math.round(haversineMeters(gps.coords, geotab)) : null;
+  const distance = gps.coords && geotab ? Math.round(haversineMeters(gps.coords, geotab)) : null;
 
   const matchLabel = (() => {
     if (distance == null) return "Waiting for GPS + Geotab…";
@@ -184,6 +189,11 @@ function Page() {
       await api.submitVehicleInspection(payload);
       toast.success(`Inspection submitted${issueCount ? ` · ${issueCount} flagged` : ""}`);
       nav({ to: "/driver" });
+    } catch (e) {
+      // Online submit (or a re-thrown offline-enqueue error) had no catch — a
+      // transport failure silently lost the completed walk-around with no toast.
+      // Surface it so the driver can retry instead of losing their inspection.
+      toast.error(e instanceof Error ? e.message : "Could not submit inspection — please retry");
     } finally {
       setSubmitting(false);
     }

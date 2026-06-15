@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, Wrench } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -28,6 +28,14 @@ function Page() {
   const { vehicles, maintenanceLogs } = useData();
   const { user } = useAuth();
   const [vehicleId, setVehicleId] = useState<string>(vehicles[0]?.id ?? "");
+  // In Supabase mode `vehicles` is [] on first render and hydrates async, so the
+  // initializer above leaves vehicleId "" forever — the selector stays blank,
+  // the logs table filters to nothing, and handleSubmit silently no-ops. Pick
+  // the first vehicle once the list arrives (only while still unset, so a user's
+  // manual choice isn't clobbered).
+  useEffect(() => {
+    if (!vehicleId && vehicles.length > 0) setVehicleId(vehicles[0].id);
+  }, [vehicles, vehicleId]);
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -204,11 +212,7 @@ function Page() {
             </div>
             <div>
               <Label>Notes</Label>
-              <Textarea
-                rows={3}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
+              <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
             <Button
               type="submit"

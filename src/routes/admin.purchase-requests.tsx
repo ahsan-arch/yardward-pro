@@ -47,9 +47,7 @@ function Page() {
   // ordered) are all reachable from a fresh page load without forcing the
   // admin to switch tabs first. Per-row buttons gate themselves on status,
   // so this only widens what's visible — it doesn't add bogus actions.
-  const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "ordered" | "all">(
-    "all",
-  );
+  const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "ordered" | "all">("all");
   const [openId, setOpenId] = useState<string | null>(null);
   // Inline "mark ordered" form: stores the supplier order ref the admin types
   // in. Keyed by PR id so the form is local to the row that's currently being
@@ -70,6 +68,12 @@ function Page() {
   async function approve(id: string) {
     try {
       const res = await api.approvePurchaseRequest(id, user.id);
+      if (!res.ok) {
+        // Lost the race — another admin already handled this PR. Don't toast a
+        // false "approved"; tell the user the real current status.
+        toast.info(`${id} was already ${res.currentStatus} by someone else`);
+        return;
+      }
       if (res.reservedInventory) {
         toast.success(`${id} approved · reserved 1 from stock`);
       } else {
@@ -294,15 +298,10 @@ function Page() {
                   ) : (
                     <div className="space-y-1.5">
                       {open.inventoryCheckResult.map((m) => (
-                        <div
-                          key={m.inventoryItemId}
-                          className="flex items-center gap-2 text-sm"
-                        >
+                        <div key={m.inventoryItemId} className="flex items-center gap-2 text-sm">
                           <Package className="w-3.5 h-3.5 shrink-0" />
                           <span className="flex-1 truncate">{m.name}</span>
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {m.sku}
-                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">{m.sku}</span>
                           <span
                             className={
                               m.qtyOnHand > 0
@@ -334,7 +333,9 @@ function Page() {
                     <div className="text-[10px] uppercase tracking-wider font-mono text-success mb-1.5">
                       Approval result
                     </div>
-                    {open.inventoryDecrementQty && open.inventoryDecrementQty > 0 && inventoryMatch ? (
+                    {open.inventoryDecrementQty &&
+                    open.inventoryDecrementQty > 0 &&
+                    inventoryMatch ? (
                       <div className="text-sm flex items-center gap-2">
                         <Package className="w-3.5 h-3.5 shrink-0 text-success" />
                         <span>
