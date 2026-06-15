@@ -182,7 +182,9 @@ function AdjustForm({
 
   async function save() {
     const n = Number(qty);
-    if (isNaN(n) || n < 0) {
+    // Number.isFinite (not isNaN) so Infinity/-Infinity are also rejected —
+    // isNaN(Infinity) is false, which would otherwise send Infinity to the API.
+    if (!Number.isFinite(n) || n < 0) {
       toast.error("Enter a non-negative count");
       return;
     }
