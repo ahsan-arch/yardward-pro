@@ -244,6 +244,8 @@ function TemplateEditor({
       }
       toast.success(`Template saved${t.active ? " — live for drivers now" : ""}`);
       onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save template");
     } finally {
       setSaving(false);
     }

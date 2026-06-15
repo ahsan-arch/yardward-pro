@@ -1291,6 +1291,12 @@ function TokensTab() {
       toast.error("Pick a driver");
       return;
     }
+    // A zero/negative/blank validity window would mint an already-expired link
+    // (the server rejects it too, but guard here for a clear message).
+    if (!Number.isFinite(hours) || hours <= 0) {
+      toast.error("Token validity must be a positive number of hours");
+      return;
+    }
     setGenerating(true);
     try {
       const t = await api.generateDriverToken(driverId, scope, hours);
