@@ -85,10 +85,13 @@ function Page() {
   }
   async function reject(id: string) {
     try {
-      // Mock-only path — no api.rejectPurchaseRequest yet, so this just
-      // records the intent in the toast log. Wrapped defensively so a
-      // future api wire-up automatically picks up the failure-toast path.
-      toast.error(`${id} rejected (mock)`);
+      const res = await api.rejectPurchaseRequest(id, user.id);
+      if (!res.ok) {
+        // Lost the race — another admin already handled it.
+        toast.info(`${id} was already ${res.currentStatus} by someone else`);
+        return;
+      }
+      toast.success(`${id} rejected`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`Reject failed: ${msg}`);

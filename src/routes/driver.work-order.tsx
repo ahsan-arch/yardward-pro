@@ -35,7 +35,13 @@ function Page() {
   const { user } = useAuth();
   const { isOnline } = useOffline();
   const { jobs } = useData();
-  const currentJob = jobs.find((j) => j.id === "JOB-041");
+  // The driver's current job — prefer an active/scheduled one, else any job
+  // assigned to them. Was hardcoded "JOB-041" (a demo stub), which mis-filed
+  // EVERY driver's work order against one demo job for billing/attribution.
+  const currentJob =
+    jobs.find(
+      (j) => j.driverId === user.id && (j.status === "active" || j.status === "scheduled"),
+    ) ?? jobs.find((j) => j.driverId === user.id);
   const fallback = useMemo(() => {
     if (currentJob?.location.lat != null && currentJob.location.lng != null) {
       return {
@@ -107,16 +113,20 @@ function Page() {
     const errs: Record<string, string> = {};
     if (!work.trim()) errs.work = "Required";
     if (!load) errs.load = "Required";
-    if (!weight || isNaN(+weight)) errs.weight = "Enter valid weight";
+    if (!weight || !Number.isFinite(+weight) || +weight <= 0) errs.weight = "Enter valid weight";
     if (!dump.trim()) errs.dump = "Required";
     if (!hasSig) errs.sig = "Signature required";
     setErr(errs);
     if (Object.keys(errs).length) return;
+    if (!currentJob) {
+      toast.error("No job assigned to you — contact dispatch before filing a work order");
+      return;
+    }
     setLoading(true);
     try {
       const sig = canvasRef.current?.toDataURL("image/png") ?? "";
       const payload = {
-        jobId: "JOB-041",
+        jobId: currentJob.id,
         driverId: user.id,
         workPerformed: work,
         loadType: load,

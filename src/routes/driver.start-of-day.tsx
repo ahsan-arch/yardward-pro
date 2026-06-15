@@ -159,6 +159,10 @@ function Page() {
         odometer: odoNum,
         fuelLevel: fuel,
         condition: cond,
+        // Safety answers — were captured by the switches but never sent. Folded
+        // into the time-entry flag so admin sees a missing-PPE / passengers note.
+        pax,
+        ppe,
         gps: gps.coords,
         idempotencyKey,
       };

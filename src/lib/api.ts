@@ -858,6 +858,14 @@ export const api = {
     odometer: number;
     fuelLevel: string;
     condition: string;
+    /**
+     * Start-of-day safety answers: passengers present, and any personal PPE
+     * missing. Folded into flagged/flag_reason below so admin sees them on the
+     * timesheet review (they were captured in the form but dropped from the
+     * payload entirely — a missing-PPE report silently went nowhere).
+     */
+    pax?: boolean;
+    ppe?: boolean;
     gps: { lat: number; lng: number } | null;
     /**
      * Optional client-minted key, persisted by the offline-queue and replayed
@@ -888,8 +896,14 @@ export const api = {
       gpsClockIn: p.gps,
       gpsClockOut: null,
       vehicleMovementCorrelation: "pending",
-      flagged: p.condition !== "ok",
-      flagReason: p.condition !== "ok" ? `Condition: ${p.condition}` : "",
+      flagged: p.condition !== "ok" || p.ppe === true || p.pax === true,
+      flagReason: [
+        p.condition !== "ok" ? `Condition: ${p.condition}` : "",
+        p.ppe ? "PPE missing" : "",
+        p.pax ? "Passengers in vehicle" : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       pretripInspectionId,
     };
     if (USE_SUPABASE && supabase) {
@@ -957,9 +971,13 @@ export const api = {
           `submitEndOfDay.select: ${reportApiError("SUBMIT_END_OF_DAY_SELECT", selErr, { driverId: p.driverId })}`,
         );
       if (!open) {
-        // Surface as an error so the offline-queue can move it to dead-letter
-        // rather than silently losing the EOD payload.
-        throw new Error("submitEndOfDay: no open shift");
+        // No open shift to close. This is the common REPLAY case — an
+        // offline-queued EOD whose first attempt already closed the shift.
+        // Return success so the queue drops it cleanly instead of retrying to
+        // a spurious dead-letter (which alarms an admin over a successful
+        // no-op). A genuine "EOD without clock-in" is itself a no-op — there's
+        // nothing to close — so returning gracefully is correct either way.
+        return { ok: true as const, alreadyClosed: true as const };
       }
       const clockOutIso = new Date().toISOString();
       const { error: updErr } = await supabase
@@ -1331,6 +1349,40 @@ export const api = {
     if (reservation) store.adjustInventoryReservation(reservation.itemId, reservation.qty);
     store.approvePurchaseRequest(id, approverId, reservation);
     return { ok: true as const, reservedInventory: reservation };
+  },
+
+  // Reject a pending PR. Was a UI-only mock no-op; now an atomic, admin-gated,
+  // idempotent RPC (mirror of approve). Returns ok=false (no throw) on a lost
+  // race so the UI can show the real current status.
+  rejectPurchaseRequest: async (id: string, rejecterId: string, reason?: string) => {
+    const store = getStore();
+    const pr = store.purchaseRequests.find((p) => p.id === id);
+    if (!pr) throw new Error(`rejectPurchaseRequest: PR ${id} not found`);
+    if (USE_SUPABASE && supabase) {
+      const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+      const { data, error } = await untyped.rpc("reject_purchase_request", {
+        p_id: id,
+        p_rejecter_id: rejecterId,
+        p_reason: reason ?? null,
+      });
+      if (error)
+        throw new Error(
+          `rejectPurchaseRequest: ${reportApiError("REJECT_PR", error, { purchaseRequestId: id })}`,
+        );
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row?.ok) {
+        return {
+          ok: false as const,
+          alreadyHandled: true as const,
+          currentStatus: (row?.status as string) ?? "rejected",
+        };
+      }
+      store.rejectPurchaseRequest(id);
+      return { ok: true as const };
+    }
+    await wait();
+    store.rejectPurchaseRequest(id);
+    return { ok: true as const };
   },
 
   /**

@@ -142,6 +142,8 @@ type Ctx = {
    * stock here.
    */
   markPurchaseRequestOrdered: (id: string, ordererId: string, supplierOrderRef: string) => void;
+  /** Flip a pending PR to 'rejected' (local mirror of api.rejectPurchaseRequest). */
+  rejectPurchaseRequest: (id: string) => void;
   clockIn: (entry: TimeEntry) => void;
   clockOut: (entryId: string, patch: Partial<TimeEntry>) => void;
   addSms: (sms: SmsLog) => void;
@@ -868,6 +870,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ),
     [],
   );
+  const rejectPurchaseRequest = useCallback(
+    (id: string) =>
+      setPRs((arr) => arr.map((x) => (x.id === id ? { ...x, status: "rejected" as const } : x))),
+    [],
+  );
   const adjustInventoryReservation = useCallback(
     (inventoryItemId: string, qtyDelta: number) =>
       setInventoryItems((arr) =>
@@ -1093,6 +1100,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         submitEndOfDay,
         submitPurchaseRequest,
         approvePurchaseRequest,
+        rejectPurchaseRequest,
         markPurchaseRequestOrdered,
         clockIn,
         clockOut,

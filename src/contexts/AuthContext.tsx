@@ -91,6 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // haven't already hydrated a real session.
         setAuthed((prev) => prev || true);
         setRoleState((prev) => (prev === "admin" || prev === "mechanic" ? prev : "driver"));
+        // Attribute submissions to the token's REAL driver. Without this, `user`
+        // stayed the default mock admin (A-01) — so every tokenized driver
+        // submission (work order, start-of-day, inspection, …) posted
+        // driverId: user.id = "A-01" instead of the actual driver. Only override
+        // a mock-default user; never clobber a real Supabase login (UUID id).
+        const mockIds = [MOCK_USERS.admin.id, MOCK_USERS.driver.id, MOCK_USERS.mechanic.id];
+        setUser((prev) => (mockIds.includes(prev.id) ? { ...prev, id: ts.driverId } : prev));
       } else {
         setIsDriverTokenSession(false);
       }
@@ -125,9 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     let lastHiddenAt: number | null =
-      typeof document !== "undefined" && document.visibilityState === "hidden"
-        ? Date.now()
-        : null;
+      typeof document !== "undefined" && document.visibilityState === "hidden" ? Date.now() : null;
     // Single-flight guard — visibilitychange and focus can both fire on
     // resume, and we don't want two parallel validate RPCs racing each other.
     let revalidateInFlight = false;
@@ -328,10 +333,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // One-shot mount-time check for the same case (event may have fired
     // before this listener attached, or may not fire if the session was
     // already established in a prior render cycle).
-    if (
-      typeof window !== "undefined" &&
-      window.location.hash.includes("type=recovery")
-    ) {
+    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
       navigateToResetPassword();
     }
 
@@ -400,20 +402,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Demo creds carve-out — alex@/tom@/jamie@fleetops.co aren't real Auth
     // users, so Supabase would return "user not found". Short-circuit with a
     // helpful message rather than the raw error.
-    const demoEmails = [
-      "alex@fleetops.co",
-      "tom@fleetops.co",
-      "jamie@fleetops.co",
-    ];
+    const demoEmails = ["alex@fleetops.co", "tom@fleetops.co", "jamie@fleetops.co"];
     if (demoEmails.includes(trimmed.toLowerCase())) {
       return {
         error: "Demo accounts don't have email reset — sign in with password 'demo1234'.",
       };
     }
     const redirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/reset-password`
-        : undefined;
+      typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
       redirectTo,
     });
