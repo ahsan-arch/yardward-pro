@@ -66,10 +66,21 @@ export function openPrintView(title: string, bodyHtml: string) {
   </div>
   ${bodyHtml}
   <p class="footer">Generated ${new Date().toLocaleString()} — Engage Hydrovac Services</p>
-  <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:8px 16px;">Print / Save as PDF</button>
+  <button id="print-btn" class="noprint" style="margin-top:16px;padding:8px 16px;">Print / Save as PDF</button>
 </body>
 </html>`);
   w.document.close();
+  // Attach the print handler from the parent context instead of an inline
+  // onclick="" in the written markup — a strict script-src CSP blocks inline
+  // event handlers, and the popup inherits this origin's policy. The popup is
+  // same-origin (about:blank), so reaching into its DOM here is allowed.
+  try {
+    w.document.getElementById("print-btn")?.addEventListener("click", () => {
+      w.print();
+    });
+  } catch {
+    /* popup closed/blocked — the browser's native Ctrl+P still works */
+  }
   w.focus();
 }
 

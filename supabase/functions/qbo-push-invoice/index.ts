@@ -676,8 +676,23 @@ serve(async (req) => {
   }
 
   // 7. Build the QBO Invoice payload
-  // Deterministic DocNumber lets us look up an existing invoice on retry.
-  const docNumber = `YW-${invoiceDataId.slice(0, 16)}`
+  // Deterministic DocNumber lets us look up an existing invoice on retry. It
+  // must stay <=21 chars (QBO's DocNumber limit) AND be collision-free across
+  // distinct invoice ids. A naive `invoiceDataId.slice(0,16)` silently maps two
+  // ids sharing a 16-char prefix to the SAME DocNumber, so the idempotency
+  // lookup could adopt/overwrite a different invoice. Use the FULL id when it
+  // fits (the common case today: INV-XXXXXX); otherwise a deterministic FNV-1a
+  // hash of the full id. Deterministic either way, so retries still match.
+  const docNumber = (() => {
+    const full = `YW-${invoiceDataId}`
+    if (full.length <= 21) return full
+    let h = 0xcbf29ce484222325n
+    for (let i = 0; i < invoiceDataId.length; i++) {
+      h ^= BigInt(invoiceDataId.charCodeAt(i))
+      h = (h * 0x100000001b3n) & 0xffffffffffffffffn
+    }
+    return `YW-${h.toString(36).toUpperCase()}`.slice(0, 21)
+  })()
 
   // Idempotency check: if we already pushed this DocNumber, just record + return.
   try {
