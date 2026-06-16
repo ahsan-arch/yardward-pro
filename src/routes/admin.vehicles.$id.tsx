@@ -8,12 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -57,7 +52,10 @@ function Page() {
     // page into a blank screen — the Refresh location button stays
     // reachable so the admin can retry.
     if (v) {
-      api.fetchGeotabLocation(v.id).then(setTele).catch(() => setTele(null));
+      api
+        .fetchGeotabLocation(v.id)
+        .then(setTele)
+        .catch(() => setTele(null));
     }
   }, [v]);
 
@@ -120,7 +118,7 @@ function Page() {
             <Row k="Odometer" v={`${v.odometer.toLocaleString()} km`} mono />
             <Row k="Engine hours" v={`${v.engineHours.toLocaleString()}h`} mono />
             <Row k="Last service" v={v.lastService} />
-            <Row k="Next service" v={v.nextServiceDue} />
+            <NextServiceDueRow vehicleId={v.id} value={v.nextServiceDue} />
             {tele && <Row k="Last GPS" v={`${tele.lat.toFixed(4)}, ${tele.lng.toFixed(4)}`} mono />}
           </div>
           <Button
@@ -220,11 +218,7 @@ function Page() {
         <Card>
           <div className="flex items-center justify-between mb-3">
             <SectionLabel icon={Fuel}>Fuel log</SectionLabel>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setFuelOpen(true)}
-            >
+            <Button size="sm" variant="outline" onClick={() => setFuelOpen(true)}>
               <Plus className="w-4 h-4" /> Add fuel entry
             </Button>
           </div>
@@ -296,6 +290,85 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
     <div className="flex justify-between">
       <span className="text-muted-foreground">{k}</span>
       <span className={mono ? "font-mono text-xs" : ""}>{v}</span>
+    </div>
+  );
+}
+
+// Inline editor for next_service_due. This is the free-text km/hours service
+// target ("90,000 km" / "5,800 hrs") the preventive-maintenance-check parses —
+// the only operator-facing way to set it on an existing vehicle, so PM alerts
+// can actually fire. Persists via api.updateVehicle (admin-only under RLS).
+function NextServiceDueRow({ vehicleId, value }: { vehicleId: string; value: string }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const r = await api.updateVehicle(vehicleId, { nextServiceDue: draft });
+      if (!r.ok) {
+        toast.error(`Save failed: ${r.reason}`);
+        return;
+      }
+      toast.success("Next service updated");
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Next service</span>
+        <span className="flex items-center gap-2">
+          <span>{value || "—"}</span>
+          <button
+            type="button"
+            className="text-xs text-amber-brand hover:underline"
+            onClick={() => {
+              setDraft(value);
+              setEditing(true);
+            }}
+            data-testid="edit-next-service"
+          >
+            Edit
+          </button>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex justify-between items-center gap-2">
+      <span className="text-muted-foreground shrink-0">Next service</span>
+      <span className="flex items-center gap-1.5">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="90,000 km"
+          className="h-8 w-36 text-sm"
+          data-testid="next-service-input"
+        />
+        <Button
+          size="sm"
+          className="h-8"
+          onClick={save}
+          disabled={saving}
+          data-testid="save-next-service"
+        >
+          {saving ? "…" : "Save"}
+        </Button>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:underline"
+          onClick={() => setEditing(false)}
+        >
+          Cancel
+        </button>
+      </span>
     </div>
   );
 }
@@ -394,11 +467,7 @@ function ScheduleServiceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Date</Label>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
             <div>
               <Label>Mileage</Label>
@@ -523,11 +592,7 @@ function AddFuelDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Date</Label>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
             <div>
               <Label>Gallons</Label>

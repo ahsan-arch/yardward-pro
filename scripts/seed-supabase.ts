@@ -50,7 +50,20 @@ function parseDate(s: string | null | undefined): string | null {
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2}) ([A-Za-z]+) (\d{4})$/);
   if (m) {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     const idx = months.indexOf(m[2].slice(0, 3));
     if (idx >= 0) {
       return `${m[3]}-${String(idx + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
@@ -206,7 +219,12 @@ async function seedAll() {
         odometer: v.odometer,
         engine_hours: v.engineHours,
         last_service: parseDate(v.lastService),
-        next_service_due: parseDate(v.nextServiceDue),
+        // next_service_due is free text ("90,000 km" / "5,800 hrs"), NOT a date —
+        // the preventive-maintenance-check function parses the leading number +
+        // unit from it. Running it through parseDate() (which only matches date
+        // formats) nulled every value, so PM alerts never fired. Write the raw
+        // string so the column carries the parseable metric target.
+        next_service_due: v.nextServiceDue || null,
         driver_id: legacyToUuid(v.driverId),
         geotab_device_id: v.geotabDeviceId,
         status: v.status,
@@ -298,36 +316,37 @@ async function seedAll() {
   console.log("==> Upserting work_orders");
   const jobIds = new Set(seed.jobs.map((j) => j.id));
   const skippedWOs = seed.workOrders.filter((w) => !jobIds.has(w.jobId)).map((w) => w.id);
-  if (skippedWOs.length) console.log("    (skipping WOs with missing jobs:", skippedWOs.join(", "), ")");
+  if (skippedWOs.length)
+    console.log("    (skipping WOs with missing jobs:", skippedWOs.join(", "), ")");
   check(
     "work_orders",
     await admin.from("work_orders").upsert(
-      seed.workOrders.filter((w) => jobIds.has(w.jobId)).map((w) => ({
-        id: w.id,
-        job_id: w.jobId,
-        driver_id: legacyToUuid(w.driverId)!,
-        work_performed: w.workPerformed,
-        load_type: w.loadType,
-        weight_tonnes: w.weightTonnes,
-        dump_site: w.dumpSite,
-        gps_lat: w.gpsCapture?.lat ?? null,
-        gps_lng: w.gpsCapture?.lng ?? null,
-        gps_captured_at: w.gpsCapture?.capturedAt ?? null,
-        foreman_signature: w.foremanSignature,
-        site_issues: w.siteIssues,
-        site_issues_note: w.siteIssuesNote,
-        submitted_at: w.submittedAt,
-        status: w.status,
-        approved_by: w.approvedBy ? ADMIN_UUID : null,
-        approved_at: w.approvedAt,
-      })),
+      seed.workOrders
+        .filter((w) => jobIds.has(w.jobId))
+        .map((w) => ({
+          id: w.id,
+          job_id: w.jobId,
+          driver_id: legacyToUuid(w.driverId)!,
+          work_performed: w.workPerformed,
+          load_type: w.loadType,
+          weight_tonnes: w.weightTonnes,
+          dump_site: w.dumpSite,
+          gps_lat: w.gpsCapture?.lat ?? null,
+          gps_lng: w.gpsCapture?.lng ?? null,
+          gps_captured_at: w.gpsCapture?.capturedAt ?? null,
+          foreman_signature: w.foremanSignature,
+          site_issues: w.siteIssues,
+          site_issues_note: w.siteIssuesNote,
+          submitted_at: w.submittedAt,
+          status: w.status,
+          approved_by: w.approvedBy ? ADMIN_UUID : null,
+          approved_at: w.approvedAt,
+        })),
     ),
   );
 
   console.log("==> Upserting invoice_data + line items");
-  const woIds = new Set(
-    seed.workOrders.filter((w) => jobIds.has(w.jobId)).map((w) => w.id),
-  );
+  const woIds = new Set(seed.workOrders.filter((w) => jobIds.has(w.jobId)).map((w) => w.id));
   check(
     "invoice_data",
     await admin.from("invoice_data").upsert(
@@ -346,10 +365,7 @@ async function seedAll() {
   // Link work orders to invoices
   for (const inv of seed.invoiceData) {
     if (inv.workOrderId) {
-      await admin
-        .from("work_orders")
-        .update({ invoice_data_id: inv.id })
-        .eq("id", inv.workOrderId);
+      await admin.from("work_orders").update({ invoice_data_id: inv.id }).eq("id", inv.workOrderId);
     }
   }
   // Wipe + reinsert invoice_line_items

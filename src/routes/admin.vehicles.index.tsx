@@ -82,9 +82,7 @@ function FleetioImportDialog({
     }
     setRunning(true);
     setResult(null);
-    const toastId = toast.loading(
-      dryRun ? "Running Fleetio dry run…" : "Importing from Fleetio…",
-    );
+    const toastId = toast.loading(dryRun ? "Running Fleetio dry run…" : "Importing from Fleetio…");
     try {
       const r = await api.importFromFleetio(kind, dryRun);
       setResult(r);
@@ -105,20 +103,19 @@ function FleetioImportDialog({
         } else {
           summary = `would import ${planned?.fuelLogsToImport ?? r.imported} fuel logs`;
         }
-        toast.success(
-          `Dry run complete — ${summary} (no changes made)`,
-          { id: toastId, duration: 6000 },
-        );
+        toast.success(`Dry run complete — ${summary} (no changes made)`, {
+          id: toastId,
+          duration: 6000,
+        });
       } else if (r.errors.length) {
         toast.warning(
           `Imported ${r.imported} from Fleetio (skipped ${r.skipped}, ${r.errors.length} error${r.errors.length === 1 ? "" : "s"}) in ${seconds}s`,
           { id: toastId },
         );
       } else {
-        toast.success(
-          `Imported ${r.imported} from Fleetio (skipped ${r.skipped}) in ${seconds}s`,
-          { id: toastId },
-        );
+        toast.success(`Imported ${r.imported} from Fleetio (skipped ${r.skipped}) in ${seconds}s`, {
+          id: toastId,
+        });
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Fleetio import failed";
@@ -145,19 +142,15 @@ function FleetioImportDialog({
         <DialogHeader>
           <DialogTitle>Import from Fleetio</DialogTitle>
           <DialogDescription>
-            Pulls the selected dataset from Fleetio and upserts into our DB.
-            Use dry run first to preview the create/update counts before
-            committing.
+            Pulls the selected dataset from Fleetio and upserts into our DB. Use dry run first to
+            preview the create/update counts before committing.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
             <Label htmlFor="fleetio-kind">Dataset</Label>
-            <Select
-              value={kind}
-              onValueChange={(v) => setKind(v as FleetioImportKind)}
-            >
+            <Select value={kind} onValueChange={(v) => setKind(v as FleetioImportKind)}>
               <SelectTrigger id="fleetio-kind" data-testid="fleetio-kind">
                 <SelectValue />
               </SelectTrigger>
@@ -175,8 +168,8 @@ function FleetioImportDialog({
                 Dry run
               </Label>
               <p className="text-[11px] text-muted-foreground">
-                Preview only — no rows are upserted. Writes a summary row to
-                integration_alerts (kind=fleetio_dryrun_summary).
+                Preview only — no rows are upserted. Writes a summary row to integration_alerts
+                (kind=fleetio_dryrun_summary).
               </p>
             </div>
             <Switch
@@ -237,11 +230,7 @@ function FleetioImportDialog({
         </div>
 
         <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={running}
-          >
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={running}>
             Close
           </Button>
           <Button
@@ -305,15 +294,7 @@ function PlannedSummary({
   );
 }
 
-function Stat({
-  label,
-  value,
-  testid,
-}: {
-  label: string;
-  value: number;
-  testid: string;
-}) {
+function Stat({ label, value, testid }: { label: string; value: number; testid: string }) {
   return (
     <div>
       <div className="text-muted-foreground">{label}</div>
@@ -326,7 +307,7 @@ function Stat({
 
 // Empty defaults for the Add Vehicle form. Hoisted so the click handler can
 // fall back to these if seeding from contextual data ever throws.
-const EMPTY_VEHICLE_FORM = { id: "", name: "", type: "truck", year: "" };
+const EMPTY_VEHICLE_FORM = { id: "", name: "", type: "truck", year: "", nextServiceDue: "" };
 
 function Page() {
   const { vehicles, drivers } = useData();
@@ -444,6 +425,7 @@ function Page() {
         name: vehicleForm.name.trim(),
         type,
         year: yearNum,
+        nextServiceDue: vehicleForm.nextServiceDue.trim() || undefined,
       });
       if (!result.ok) {
         toast.error(`Add vehicle failed: ${result.reason}`);
@@ -507,18 +489,13 @@ function Page() {
         side effect. Real-world flow lives on the vehicle detail page; this is
         the quick-file shortcut from the card grid.
       */}
-      <Dialog
-        open={addRecordFor !== null}
-        onOpenChange={(o) => !o && setAddRecordFor(null)}
-      >
+      <Dialog open={addRecordFor !== null} onOpenChange={(o) => !o && setAddRecordFor(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              Add record{addRecordFor ? ` — ${addRecordFor}` : ""}
-            </DialogTitle>
+            <DialogTitle>Add record{addRecordFor ? ` — ${addRecordFor}` : ""}</DialogTitle>
             <DialogDescription>
-              File a quick maintenance / service note against this vehicle. For
-              full fields and attachments use the vehicle detail page.
+              File a quick maintenance / service note against this vehicle. For full fields and
+              attachments use the vehicle detail page.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -527,10 +504,7 @@ function Page() {
               <Input placeholder="e.g. Oil top-up at depot" />
             </div>
             <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => setAddRecordFor(null)}
-              >
+              <Button variant="ghost" onClick={() => setAddRecordFor(null)}>
                 Close
               </Button>
               <Button
@@ -550,9 +524,8 @@ function Page() {
           <DialogHeader>
             <DialogTitle>Add vehicle</DialogTitle>
             <DialogDescription>
-              Register a new truck, trailer, or piece of equipment. The vehicle
-              is created immediately — refine plate, VIN, and assignments on
-              the vehicle detail page.
+              Register a new truck, trailer, or piece of equipment. The vehicle is created
+              immediately — refine plate, VIN, and assignments on the vehicle detail page.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -600,15 +573,25 @@ function Page() {
                 />
               </div>
             </div>
+            <div>
+              <Label>Next service due</Label>
+              <Input
+                value={vehicleForm.nextServiceDue}
+                onChange={(e) => setVehicleForm((f) => ({ ...f, nextServiceDue: e.target.value }))}
+                placeholder="e.g. 90,000 km or 5,800 hrs"
+                data-testid="vehicle-next-service-due"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                A km or engine-hours target — drives the preventive-maintenance alert.
+              </p>
+            </div>
             <Button
               onClick={submitVehicle}
               disabled={submittingVehicle}
               data-testid="submit-add-vehicle"
               className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
             >
-              {submittingVehicle ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : null}
+              {submittingVehicle ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {submittingVehicle ? "Adding…" : "Add vehicle"}
             </Button>
           </div>
@@ -680,7 +663,10 @@ function Page() {
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <VehicleStat k="Odometer" v={t.odometer ? `${t.odometer.toLocaleString()} km` : "—"} />
+                <VehicleStat
+                  k="Odometer"
+                  v={t.odometer ? `${t.odometer.toLocaleString()} km` : "—"}
+                />
                 <VehicleStat k="Engine hours" v={`${t.hours.toLocaleString()} hrs`} />
                 <VehicleStat k="Last service" v={t.lastService} />
                 <VehicleStat k="Next service due" v={t.nextDue} />

@@ -785,6 +785,21 @@ export const api = {
       await wait();
     }
     s.approveWorkOrder(id, approverId, invoice);
+    // Advance the parent job's lifecycle to 'completed' now that its work order
+    // is approved — this is the RLS-safe moment to do it (drivers have no jobs
+    // UPDATE policy, so it can't happen at driver submit). Best-effort and
+    // guarded so re-approval / a job already completed or cancelled can't
+    // regress the state.
+    if (wo?.jobId && j && j.status !== "completed" && j.status !== "cancelled") {
+      void api
+        .updateJob(wo.jobId, { status: "completed" })
+        .catch((err) =>
+          console.warn(
+            "job completion update failed:",
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+    }
     if (wo && c?.id && wo.dumpSite) {
       // Fire-and-forget so approval UX isn't blocked by ticket bookkeeping.
       debitTicketForWorkOrder(id, c.id, j?.vehicleId ?? null, wo.dumpSite, approverId).catch(
@@ -3516,6 +3531,9 @@ ${rows}
     name: string;
     type: "truck" | "trailer" | "equipment";
     year: number;
+    // Free-text service target, e.g. "90,000 km" or "5,800 hrs". Fed to the
+    // preventive-maintenance-check parser; optional at creation.
+    nextServiceDue?: string;
   }): Promise<
     { ok: true; vehicle: import("@/types/domain").Vehicle } | { ok: false; reason: string }
   > => {
@@ -3531,7 +3549,7 @@ ${rows}
       odometer: 0,
       engineHours: 0,
       lastService: "",
-      nextServiceDue: "",
+      nextServiceDue: input.nextServiceDue?.trim() ?? "",
       driverId: null,
       geotabDeviceId: null,
       status: "operational",
@@ -3550,6 +3568,7 @@ ${rows}
       vin: vehicle.vin,
       odometer: vehicle.odometer,
       engine_hours: vehicle.engineHours,
+      next_service_due: vehicle.nextServiceDue || null,
       status: vehicle.status,
       driver_id: vehicle.driverId,
       geotab_device_id: vehicle.geotabDeviceId,
@@ -3562,6 +3581,36 @@ ${rows}
     }
     getStore().upsertVehicle(vehicle);
     return { ok: true, vehicle };
+  },
+
+  // Patch an existing vehicle from the detail page. Scoped to next_service_due —
+  // the free-text km/hours service target that the preventive-maintenance-check
+  // parses. This is the operator-facing edit path for the existing fleet (new
+  // vehicles set it at creation; this lets an admin set/correct it afterwards).
+  // Admin-only via RLS (vehicles_admin_all). Structured return so the inline
+  // editor can surface failures without throwing.
+  updateVehicle: async (
+    id: string,
+    patch: { nextServiceDue?: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    const existing = getStore().vehicles.find((v) => v.id === id);
+    if (USE_SUPABASE && supabase) {
+      if (patch.nextServiceDue !== undefined) {
+        const { error } = await supabase
+          .from("vehicles")
+          .update({ next_service_due: patch.nextServiceDue.trim() || null })
+          .eq("id", id);
+        if (error) {
+          return { ok: false, reason: reportApiError("UPDATE_VEHICLE", error, { vehicleId: id }) };
+        }
+      }
+    } else {
+      await wait();
+    }
+    if (existing && patch.nextServiceDue !== undefined) {
+      getStore().upsertVehicle({ ...existing, nextServiceDue: patch.nextServiceDue.trim() });
+    }
+    return { ok: true };
   },
 
   // ---- Integrations health probe -----------------------------------------
@@ -4282,6 +4331,26 @@ ${rows}
     store.recordTicketTransaction(txn);
     store.recordTicketReplenishment(replenishment, invoice);
     store.updateClientTicketSettings(clientId, { balance: newBalance });
+
+    // Auto-bill: the replenishment invoice was created qbo_sync_status='pending'
+    // when autoBillEnabled. Push it to QuickBooks now — otherwise it sits
+    // 'pending' forever (it carries no work order, so it's unreachable from the
+    // only manual invoice-push UI). Best-effort: tickets are already credited,
+    // so a QBO failure must not fail the top-up; the invoice stays 'pending' for
+    // a later retry and the failure is reported.
+    if (client.tickets.autoBillEnabled && USE_SUPABASE && supabase) {
+      try {
+        await api.pushInvoiceToQbo(invoiceId);
+      } catch (err) {
+        void reportErrorToServer({
+          severity: "warn",
+          errorCode: "AUTO_BILL_QBO_PUSH",
+          message: `auto-bill QBO push failed: ${err instanceof Error ? err.message : String(err)}`,
+          context: { clientId, invoiceId },
+        });
+      }
+    }
+
     return replenishment;
   },
 
@@ -4592,24 +4661,21 @@ ${rows}
     lastAttemptAt: string | null;
   }): Promise<{ ok: true }> => {
     if (USE_SUPABASE && supabase) {
-      // user_id is best-effort: an offline driver may not have a fresh
-      // session, so fall back to null and let RLS / admin reconciliation
-      // handle attribution.
-      let userId: string | null = null;
-      try {
-        const { data } = await supabase.auth.getUser();
-        userId = data.user?.id ?? null;
-      } catch {
-        userId = null;
-      }
-      const { error } = await supabase.from("dead_letter_submissions").insert({
-        kind: item.kind,
-        payload: JSON.parse(JSON.stringify(item.payload)) as import("./database.types").Json,
-        queued_at: item.queuedAt,
-        retry_count: item.retryCount,
-        last_error: item.lastError,
-        last_attempt_at: item.lastAttemptAt,
-        user_id: userId,
+      // Insert via the SECURITY DEFINER move_to_dead_letter RPC, NOT a direct
+      // table insert: dead_letter_submissions only grants INSERT to
+      // admin/service_role, so a non-admin driver's direct insert is
+      // RLS-rejected and the exhausted submission would stay stuck in
+      // localStorage forever (never reaching /admin/errors). The RPC inserts on
+      // the caller's behalf and attributes the row to auth.uid() so the driver
+      // can still see it and an admin can requeue it.
+      const untyped = supabase as unknown as import("@supabase/supabase-js").SupabaseClient;
+      const { error } = await untyped.rpc("move_to_dead_letter", {
+        p_kind: item.kind,
+        p_payload: JSON.parse(JSON.stringify(item.payload)),
+        p_queued_at: item.queuedAt,
+        p_retry_count: item.retryCount,
+        p_last_error: item.lastError,
+        p_last_attempt_at: item.lastAttemptAt,
       });
       if (error)
         throw new Error(

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -17,7 +18,7 @@ import {
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Plus, Trash2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { RateLineItem } from "@/types/domain";
+import type { Client, RateLineItem, TicketReportFrequency } from "@/types/domain";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -157,6 +158,7 @@ function Page() {
                   </Section>
                 )}
                 <RateTableEditor clientId={current.id} initial={currentRate?.lineItems ?? []} />
+                <TicketSettingsEditor client={current} />
                 <PortalAccessEditor clientId={current.id} clientName={current.name} />
               </div>
             </>
@@ -302,6 +304,162 @@ function Page() {
         </DialogContent>
       </Dialog>
     </AdminShell>
+  );
+}
+
+// Prepaid-ticket program settings for a client. This is the ONLY in-app way to
+// enroll a client into prepaid: the Prepaid tickets page lists only clients
+// that are already enabled or carry a balance, so without this editor a
+// brand-new client (which starts enabled:false, balance:0) could never be
+// enrolled. Calls api.updateClientTicketSettings, which persists to the DB in
+// Supabase mode and mirrors into the local store either way.
+function TicketSettingsEditor({ client }: { client: Client }) {
+  const t = client.tickets;
+  const [enabled, setEnabled] = useState(t.enabled);
+  const [threshold, setThreshold] = useState(String(t.threshold));
+  const [bundleSize, setBundleSize] = useState(String(t.bundleSize));
+  const [bundlePrice, setBundlePrice] = useState(String(t.bundlePrice));
+  const [autoBill, setAutoBill] = useState(t.autoBillEnabled);
+  const [freq, setFreq] = useState<TicketReportFrequency>(t.reportFrequency);
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed the form when the admin switches to a different client in the sheet.
+  useEffect(() => {
+    setEnabled(t.enabled);
+    setThreshold(String(t.threshold));
+    setBundleSize(String(t.bundleSize));
+    setBundlePrice(String(t.bundlePrice));
+    setAutoBill(t.autoBillEnabled);
+    setFreq(t.reportFrequency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client.id]);
+
+  async function save() {
+    const thr = Number(threshold);
+    const bs = Number(bundleSize);
+    const bp = Number(bundlePrice);
+    if (![thr, bs, bp].every((n) => Number.isFinite(n) && n >= 0)) {
+      toast.error("Threshold, bundle size and price must be non-negative numbers");
+      return;
+    }
+    if (enabled && bs <= 0) {
+      toast.error("Bundle size must be greater than zero to enable prepaid tickets");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateClientTicketSettings(client.id, {
+        enabled,
+        threshold: thr,
+        bundleSize: bs,
+        bundlePrice: bp,
+        autoBillEnabled: autoBill,
+        reportFrequency: freq,
+      });
+      toast.success(enabled ? "Prepaid tickets enabled" : "Prepaid settings saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save prepaid settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="Prepaid tickets">
+      <div className="space-y-3">
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>
+            <span className="font-medium">Prepaid program enabled</span>
+            <span className="block text-xs text-muted-foreground">
+              Each approved work order with a dump site debits one ticket.
+            </span>
+          </span>
+          <Switch
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            data-testid="client-tickets-enabled"
+          />
+        </label>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">Low-balance threshold</Label>
+            <Input
+              type="number"
+              min={0}
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              className="h-9 mt-1 font-mono"
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">Bundle size</Label>
+            <Input
+              type="number"
+              min={0}
+              value={bundleSize}
+              onChange={(e) => setBundleSize(e.target.value)}
+              className="h-9 mt-1 font-mono"
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">Bundle price ($)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={bundlePrice}
+              onChange={(e) => setBundlePrice(e.target.value)}
+              className="h-9 mt-1 font-mono"
+            />
+          </div>
+        </div>
+
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>
+            <span className="font-medium">Auto-bill when threshold crossed</span>
+            <span className="block text-xs text-muted-foreground">
+              Generates a replenishment invoice and pushes it to QuickBooks.
+            </span>
+          </span>
+          <Switch
+            checked={autoBill}
+            onCheckedChange={setAutoBill}
+            data-testid="client-tickets-autobill"
+          />
+        </label>
+
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider">Report frequency</Label>
+          <Select value={freq} onValueChange={(v) => setFreq(v as TicketReportFrequency)}>
+            <SelectTrigger className="h-9 mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-xs text-muted-foreground">
+            Current balance: <span className="font-mono font-medium">{t.balance}</span> tickets ·
+            top up from the Prepaid tickets page
+          </span>
+          <Button
+            size="sm"
+            onClick={save}
+            disabled={saving}
+            data-testid="client-tickets-save"
+            className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {saving ? "Saving…" : "Save settings"}
+          </Button>
+        </div>
+      </div>
+    </Section>
   );
 }
 
