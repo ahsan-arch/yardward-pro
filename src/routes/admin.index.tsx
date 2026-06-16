@@ -123,13 +123,22 @@ function Dashboard() {
 
   // ---- Real KPI computations (replaced hardcoded demo strings) ----
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
+  // Guard against a null/garbage scheduledAt: `new Date(null)` is the 1970 epoch
+  // and `new Date(undefined)` is an Invalid Date, both of which would silently
+  // drop (or mis-bucket) the row instead of being treated as "not today".
+  const isToday = (ts: string | null | undefined) => {
+    if (!ts) return false;
+    const d = new Date(ts);
+    return Number.isFinite(d.getTime()) && d.toLocaleDateString("en-CA") === todayStr;
+  };
   const activeJobsToday = useMemo(
     () =>
       jobs.filter(
         (j) =>
           (j.status === "scheduled" || j.status === "active" || j.status === "delayed") &&
-          new Date(j.scheduledAt).toLocaleDateString("en-CA") === todayStr,
+          isToday(j.scheduledAt),
       ).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [jobs, todayStr],
   );
   const driversOnSite = useMemo(
@@ -187,10 +196,7 @@ function Dashboard() {
     year: "numeric",
   });
   const todays = jobs
-    .filter(
-      (j) =>
-        j.status !== "draft" && new Date(j.scheduledAt).toLocaleDateString("en-CA") === todayStr,
-    )
+    .filter((j) => j.status !== "draft" && isToday(j.scheduledAt))
     .map(jobDisplay)
     .slice(0, 6);
   const lowTicketClients = clients

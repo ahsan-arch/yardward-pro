@@ -65,13 +65,19 @@ function Page() {
           },
         ]
       : [])
-  ).map((li) => ({
-    // Coerce DB-sourced numbers so a null/missing rate or amount can't render
-    // `$NaN` (or crash .toFixed) and flow into the client-facing invoice email.
-    ...li,
-    rate: Number(li.rate) || 0,
-    amount: Number(li.amount) || 0,
-  }));
+  ).map((li) => {
+    // Coerce DB-sourced numbers so a null/missing/garbage rate or amount can't
+    // render `$NaN`/`$Infinity` (or crash .toFixed) and flow into the
+    // client-facing invoice email. `Number.isFinite` (not `|| 0`) so Infinity
+    // from a value like "1e400" is also rejected.
+    const rate = Number(li.rate);
+    const amount = Number(li.amount);
+    return {
+      ...li,
+      rate: Number.isFinite(rate) ? rate : 0,
+      amount: Number.isFinite(amount) ? amount : 0,
+    };
+  });
   const total = lineItems.reduce((s, li) => s + li.amount, 0);
 
   async function push() {

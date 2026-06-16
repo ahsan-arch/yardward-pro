@@ -271,8 +271,11 @@ function Page() {
                     />
                     <span className="font-mono text-xs">
                       Form submitted {new Date(woRaw.submittedAt).toLocaleString()}
-                      {woRaw.gpsCapture
-                        ? ` · ${woRaw.gpsCapture.lat.toFixed(5)}, ${woRaw.gpsCapture.lng.toFixed(5)}`
+                      {Number.isFinite(Number(woRaw.gpsCapture?.lat)) &&
+                      Number.isFinite(Number(woRaw.gpsCapture?.lng))
+                        ? ` · ${Number(woRaw.gpsCapture!.lat).toFixed(5)}, ${Number(
+                            woRaw.gpsCapture!.lng,
+                          ).toFixed(5)}`
                         : ""}
                     </span>
                     {woRaw.gpsCapture ? (

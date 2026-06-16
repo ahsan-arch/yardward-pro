@@ -78,7 +78,14 @@ function Page() {
   ) {
     void (async () => {
       try {
-        await api.submitEndOfDay(payload);
+        const res = await api.submitEndOfDay(payload);
+        if ("alreadyClosed" in res && res.alreadyClosed) {
+          // The optimistic toast already said "shift closed", but the server
+          // found no open shift to close — either there was no clock-in to
+          // begin with or this is a replay. Correct the record so the driver
+          // isn't told they clocked out when there was nothing to clock out of.
+          toast.info("No open shift was found — nothing to clock out of.");
+        }
         if (burnToken) {
           const claimed = await api.consumeDriverToken(burnToken);
           if (claimed) {

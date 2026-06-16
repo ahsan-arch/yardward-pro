@@ -19,11 +19,13 @@ import { authedAs, recordConsoleErrors } from "./helpers";
  *  6. Asserts no error boundary fallback rendered
  *  7. Asserts no uncaught console / page errors
  *
- * Expected failures are caught and converted to test.fail() so the suite reports
- * every miss instead of aborting on the first one.
+ * A button that throws is a genuine RED — we do NOT convert failures to xfail
+ * (that masked real breakage as "expected to fail"). Transient flakes under
+ * full-suite parallel load are absorbed by per-test retries instead, so a real
+ * regression still surfaces while a one-off hiccup self-heals on re-run.
  */
 
-test.describe.configure({ mode: "parallel" });
+test.describe.configure({ mode: "parallel", retries: 2 });
 
 // ---------------------------------------------------------------------------
 // Inventory
@@ -832,37 +834,27 @@ for (const spec of BUTTONS) {
     await authedAs(page, "admin");
     const consoleErrors = recordConsoleErrors(page);
 
-    try {
-      await page.goto(spec.route, { waitUntil: "domcontentloaded" });
+    // No try/catch-to-xfail wrapper: a button that throws is a genuine failure
+    // and must go RED so a real regression can't hide behind an "expected to
+    // fail" badge. Transient flakes are handled by the suite's retries above.
+    await page.goto(spec.route, { waitUntil: "domcontentloaded" });
 
-      await ensureNoCrash(page);
-      await preOpenContext(page, spec);
+    await ensureNoCrash(page);
+    await preOpenContext(page, spec);
 
-      const button = locateButton(page, spec.selector);
-      await button.waitFor({ state: "visible", timeout: 8_000 });
+    const button = locateButton(page, spec.selector);
+    await button.waitFor({ state: "visible", timeout: 8_000 });
 
-      await expect(button, "button should be visible").toBeVisible();
-      await expect(button, "button should be enabled").toBeEnabled();
+    await expect(button, "button should be visible").toBeVisible();
+    await expect(button, "button should be enabled").toBeEnabled();
 
-      const prevUrl = page.url();
-      await button.click({ trial: false });
+    const prevUrl = page.url();
+    await button.click({ trial: false });
 
-      await assertActionEffect(page, spec, prevUrl);
-      await ensureNoCrash(page);
+    await assertActionEffect(page, spec, prevUrl);
+    await ensureNoCrash(page);
 
-      const fatal = flushConsoleErrors(consoleErrors);
-      expect(fatal, `Uncaught errors after click:\n${fatal.join("\n")}`).toEqual([]);
-    } catch (err) {
-      // A button that throws — genuinely broken OR a transient flake under
-      // full-suite load — is recorded as an EXPECTED failure (xfail), not a hard
-      // red, and not a suite abort. We must BOTH mark test.fail AND re-throw:
-      // test.fail says "this test is expected to fail" and the re-throw actually
-      // fails it, so Playwright records a clean xfail. Swallowing the error (the
-      // previous behaviour) left the test passing while marked fail, which
-      // Playwright reports as a spurious "Expected to fail, but passed" red on
-      // any transient hiccup.
-      test.fail(true, `Button "${spec.label}" at ${spec.route} failed: ${(err as Error).message}`);
-      throw err;
-    }
+    const fatal = flushConsoleErrors(consoleErrors);
+    expect(fatal, `Uncaught errors after click:\n${fatal.join("\n")}`).toEqual([]);
   });
 }

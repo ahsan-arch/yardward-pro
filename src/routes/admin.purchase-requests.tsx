@@ -54,6 +54,9 @@ function Page() {
   // ordered (which is always the one in the open sheet).
   const [orderRef, setOrderRef] = useState("");
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  // In-flight guard so a rapid double-click can't fire two concurrent
+  // approve/reject RPCs against the same PR.
+  const [actingId, setActingId] = useState<string | null>(null);
 
   const filtered = useMemo(
     () => purchaseRequests.filter((p) => (tab === "all" ? true : p.status === tab)),
@@ -66,6 +69,8 @@ function Page() {
   const inventoryMatch = open ? findMatchedInventory(open, inventoryItems) : null;
 
   async function approve(id: string) {
+    if (actingId) return;
+    setActingId(id);
     try {
       const res = await api.approvePurchaseRequest(id, user.id);
       if (!res.ok) {
@@ -81,9 +86,13 @@ function Page() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to approve ${id}`);
+    } finally {
+      setActingId(null);
     }
   }
   async function reject(id: string) {
+    if (actingId) return;
+    setActingId(id);
     try {
       const res = await api.rejectPurchaseRequest(id, user.id);
       if (!res.ok) {
@@ -95,6 +104,8 @@ function Page() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`Reject failed: ${msg}`);
+    } finally {
+      setActingId(null);
     }
   }
   async function markOrdered(id: string) {
@@ -181,6 +192,7 @@ function Page() {
                           variant="outline"
                           className="h-7 border-success text-success hover:bg-success/10"
                           data-testid={`approve-pr-${p.id}`}
+                          disabled={!!actingId}
                           onClick={() => approve(p.id)}
                         >
                           <Check className="w-3 h-3" />
@@ -190,6 +202,7 @@ function Page() {
                           variant="outline"
                           className="h-7 border-danger text-danger hover:bg-danger/10"
                           data-testid={`reject-pr-${p.id}`}
+                          disabled={!!actingId}
                           onClick={() => reject(p.id)}
                         >
                           <X className="w-3 h-3" />
@@ -377,6 +390,7 @@ function Page() {
                   <Button
                     className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
                     data-testid="sheet-approve-pr"
+                    disabled={!!actingId}
                     onClick={() => approve(open.id)}
                   >
                     Approve &amp; reserve
@@ -385,6 +399,7 @@ function Page() {
                     variant="outline"
                     className="w-full border-danger text-danger hover:bg-danger/10"
                     data-testid="sheet-reject-pr"
+                    disabled={!!actingId}
                     onClick={() => reject(open.id)}
                   >
                     Reject

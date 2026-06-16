@@ -286,8 +286,12 @@ export function DriverShell({ children }: { children?: ReactNode }) {
           </SheetHeader>
           <div className="mt-4 space-y-1">
             <div className="px-3 py-2 rounded-md bg-muted/40">
-              <div className="text-sm font-semibold">{user.name}</div>
-              <div className="text-xs text-muted-foreground">{user.email}</div>
+              {/* Prefer the roster-resolved driver (`me`) over `user`: a token
+                  session only carries the driver's id, so user.name/email are
+                  still the mock-admin defaults — me.name/email are the real
+                  driver's. Fall back to user.* before the roster hydrates. */}
+              <div className="text-sm font-semibold">{me?.name ?? user.name}</div>
+              <div className="text-xs text-muted-foreground">{me?.email ?? user.email}</div>
             </div>
             {tabs.map((t) => (
               <Link

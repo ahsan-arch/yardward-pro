@@ -997,13 +997,19 @@ export const api = {
       await wait();
       const s = getStore();
       const openLocal = s.timeEntries.find((t) => t.driverId === p.driverId && !t.clockOut);
-      if (openLocal)
-        s.submitEndOfDay(openLocal.id, {
-          clockOut: new Date().toISOString(),
-          gpsClockOut: p.gps,
-        });
+      if (!openLocal) {
+        // Mirror the Supabase path: no open shift means there's nothing to
+        // close, so report alreadyClosed instead of a bare ok. Lets the UI tell
+        // a real clock-out apart from a no-op (replay / EOD with no clock-in)
+        // rather than toasting a misleading "shift closed".
+        return { ok: true as const, alreadyClosed: true as const };
+      }
+      s.submitEndOfDay(openLocal.id, {
+        clockOut: new Date().toISOString(),
+        gpsClockOut: p.gps,
+      });
     }
-    return { ok: true };
+    return { ok: true as const };
   },
   submitToolChecklist: async (
     input: Omit<ToolChecklistSubmission, "id" | "submittedAt"> & {
@@ -1374,13 +1380,23 @@ export const api = {
         return {
           ok: false as const,
           alreadyHandled: true as const,
-          currentStatus: (row?.status as string) ?? "rejected",
+          // OUT column is pr_status (renamed to avoid the status-ambiguity bug).
+          currentStatus: (row?.pr_status as string) ?? "rejected",
         };
       }
       store.rejectPurchaseRequest(id);
       return { ok: true as const };
     }
     await wait();
+    // Mirror the RPC's pending-only guard so demo/mock mode can't flip an
+    // already approved/ordered PR to 'rejected'.
+    if (pr.status !== "pending") {
+      return {
+        ok: false as const,
+        alreadyHandled: true as const,
+        currentStatus: pr.status,
+      };
+    }
     store.rejectPurchaseRequest(id);
     return { ok: true as const };
   },

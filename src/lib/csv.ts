@@ -75,9 +75,15 @@ export function openPrintView(title: string, bodyHtml: string) {
   // event handlers, and the popup inherits this origin's policy. The popup is
   // same-origin (about:blank), so reaching into its DOM here is allowed.
   try {
-    w.document.getElementById("print-btn")?.addEventListener("click", () => {
-      w.print();
-    });
+    const printBtn = w.document.getElementById("print-btn");
+    if (printBtn) {
+      printBtn.addEventListener("click", () => w.print());
+    } else {
+      // The button is part of the markup we just wrote, so a miss here means
+      // the document didn't parse as expected. Surface it rather than leaving a
+      // dead-looking control silently — native Ctrl+P still prints.
+      console.warn("openPrintView: print button not found; use Ctrl+P to print");
+    }
   } catch {
     /* popup closed/blocked — the browser's native Ctrl+P still works */
   }

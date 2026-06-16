@@ -94,10 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Attribute submissions to the token's REAL driver. Without this, `user`
         // stayed the default mock admin (A-01) — so every tokenized driver
         // submission (work order, start-of-day, inspection, …) posted
-        // driverId: user.id = "A-01" instead of the actual driver. Only override
-        // a mock-default user; never clobber a real Supabase login (UUID id).
-        const mockIds = [MOCK_USERS.admin.id, MOCK_USERS.driver.id, MOCK_USERS.mechanic.id];
-        setUser((prev) => (mockIds.includes(prev.id) ? { ...prev, id: ts.driverId } : prev));
+        // driverId: user.id = "A-01" instead of the actual driver.
+        //
+        // Gate on the mock EMAIL, not the id: a token session keeps the mock
+        // email (we only swap the id), so this ALSO re-attributes when a
+        // different driver's token is opened in the same tab (id changed, email
+        // still mock). A real Supabase login carries a real email, so it is
+        // never clobbered. role is preserved for real admin/mechanic logins above.
+        const mockEmails = [
+          MOCK_USERS.admin.email,
+          MOCK_USERS.driver.email,
+          MOCK_USERS.mechanic.email,
+        ];
+        setUser((prev) =>
+          mockEmails.includes(prev.email) ? { ...prev, id: ts.driverId } : prev,
+        );
       } else {
         setIsDriverTokenSession(false);
       }
