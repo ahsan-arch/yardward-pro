@@ -106,9 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           MOCK_USERS.driver.email,
           MOCK_USERS.mechanic.email,
         ];
-        setUser((prev) =>
-          mockEmails.includes(prev.email) ? { ...prev, id: ts.driverId } : prev,
-        );
+        setUser((prev) => (mockEmails.includes(prev.email) ? { ...prev, id: ts.driverId } : prev));
       } else {
         setIsDriverTokenSession(false);
       }

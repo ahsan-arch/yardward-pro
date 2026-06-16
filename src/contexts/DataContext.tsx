@@ -874,8 +874,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Asymmetric with approve on purpose: the PurchaseRequest domain type models
     // `approvedBy` but has no rejecter/reason field, so the only thing to mirror
     // locally is the status flip. api.rejectPurchaseRequest still persists
-    // rejected_by / rejected_at / rejection_reason to the DB row for audit — we
-    // just don't surface those columns in the client model.
+    // rejected_by / rejection_reason to the DB row for audit — we just don't
+    // surface those columns in the client model.
     (id: string) =>
       setPRs((arr) => arr.map((x) => (x.id === id ? { ...x, status: "rejected" as const } : x))),
     [],

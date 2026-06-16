@@ -47,7 +47,14 @@ export function DriverShell({ children }: { children?: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { timeEntries, drivers, toolChecklistSubmissions } = useData();
   const openShift = timeEntries.find((t) => t.driverId === user.id && !t.clockOut);
-  const me = drivers.find((d) => d.id === user.id || d.email === user.email);
+  // Prefer the id match, fall back to email only if no driver matches by id.
+  // In a token session AuthContext swaps user.id to the token's driver but
+  // keeps user.email at the mock default ("tom@fleetops.co"); a single OR'd
+  // find() short-circuits on the email clause and returns the FIRST roster
+  // driver with that mock email (Tom) instead of the real token driver. Two
+  // sequential finds keep the email path for real logins whose auth id differs
+  // from the roster id, without letting it mask a token session.
+  const me = drivers.find((d) => d.id === user.id) ?? drivers.find((d) => d.email === user.email);
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(me?.vehicleAssignmentId ?? null);
     return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;

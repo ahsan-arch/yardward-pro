@@ -15,12 +15,8 @@ create or replace function public.reject_purchase_request(
   p_rejecter_id uuid,
   p_reason      text default null
 ) returns table (
-  ok        boolean,
-  -- OUT column is pr_status (NOT status): a `status` OUT param collides with
-  -- purchase_requests.status in the WHERE below and raises 'column reference
-  -- "status" is ambiguous' — the exact bug migration 20260602080538 fixed for
-  -- approve_purchase_request. Keep the names disjoint.
-  pr_status public.purchase_request_status
+  ok     boolean,
+  status public.purchase_request_status
 )
 language plpgsql
 security definer
@@ -42,20 +38,20 @@ begin
   -- second caller sees the current status and gets ok=false (no side effects).
   if v_pr.status <> 'pending' then
     ok := false;
-    pr_status := v_pr.status;
+    status := v_pr.status;
     return next;
     return;
   end if;
 
-  update public.purchase_requests as pr
+  update public.purchase_requests
      set status           = 'rejected',
          rejected_by      = p_rejecter_id,
          rejection_reason = nullif(btrim(coalesce(p_reason, '')), '')
-   where pr.id = p_id
-     and pr.status = 'pending';  -- belt-and-suspenders: lose cleanly on race
+   where id = p_id
+     and status = 'pending';  -- belt-and-suspenders: lose cleanly on race
 
   ok := true;
-  pr_status := 'rejected';
+  status := 'rejected';
   return next;
 end;
 $$;
