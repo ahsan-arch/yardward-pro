@@ -7,6 +7,13 @@
 // the role-specific side row (drivers for role='driver', no extra needed
 // for mechanic/admin since the trigger covers everything).
 //
+// REASSIGN: if the submitted email already has an auth user, we do NOT error
+// with "already registered". Instead we treat the submit as a reassignment —
+// update that user's name / phone / role, reconcile their role side-row
+// (drivers/mechanics upsert), and re-issue their invite or reset their temp
+// password. The pre-existing auth user is never deleted. The response carries
+// `reassigned: true` so the SPA can say "updated" instead of "created".
+//
 // Returns the new userId AND a one-time temporary password so the admin
 // can hand it off or message it to the new hire. We strongly recommend the
 // admin immediately triggers a password reset (the /login Forgot? flow)
@@ -186,49 +193,24 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ---- Create the auth user. raw_app_meta_data.role drives the
-  // handle_new_auth_user trigger; raw_user_meta_data.name shows in the
-  // dashboard + flows through to profiles.name via the same trigger.
+  // ---- Create the auth user, OR reassign an existing one.
+  // We generate the temp password up front: the fresh-create path passes it
+  // into the POST; the reassign path (email already registered) PATCHes it
+  // onto the existing user when we're NOT sending an email invite, so the
+  // admin still gets a credential to hand over.
+  //
+  // raw_app_meta_data.role drives the handle_new_auth_user trigger;
+  // raw_user_meta_data.name shows in the dashboard + flows through to
+  // profiles.name via the same trigger.
   const tempPassword = generatePassword(16);
-  const adminUserResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      email,
-      password: tempPassword,
-      email_confirm: true, // skip the click-to-verify; admin vouches for the address
-      app_metadata: { role },
-      user_metadata: { name },
-    }),
-  });
-  if (!adminUserResp.ok) {
-    const raw = await adminUserResp.text();
-    return new Response(
-      JSON.stringify({
-        error: `auth admin createUser failed: HTTP ${adminUserResp.status} — ${raw.slice(0, 300)}`,
-      }),
-      { status: adminUserResp.status >= 500 ? 502 : 400, headers: corsHeaders },
-    );
-  }
-  const created = await adminUserResp.json();
-  const newUserId = created?.user?.id ?? created?.id;
-  if (!newUserId) {
-    return new Response(
-      JSON.stringify({ error: "auth admin createUser returned no user id" }),
-      { status: 502, headers: corsHeaders },
-    );
-  }
 
-  // Helper for rolling back the auth user when a subsequent step fails.
-  // The drivers row is essential — without it the driver cannot function
-  // (no license_number, no initials, no vehicle assignment lookup). If we
-  // can't insert it cleanly, we delete the auth.users row to maintain
-  // atomicity. Phone failures are softer: the driver is usable without
-  // a phone (just no SMS); we keep the user and surface a loud warning.
+  // Helper for rolling back the auth user when a subsequent CREATE step
+  // fails. NEVER called on the reassign path — that user pre-existed and
+  // deleting it would destroy a real account. On the create path the drivers
+  // row is essential (license_number NOT NULL; initials shown everywhere),
+  // so if it can't be inserted cleanly we delete the just-made auth.users row
+  // to keep onboarding atomic. Phone failures are softer: the user is usable
+  // without a phone (just no SMS); we keep them and surface a loud warning.
   async function deleteAuthUser(userId: string): Promise<boolean> {
     try {
       const r = await fetch(
@@ -247,15 +229,182 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ---- The trigger created profiles(id, email, name, role). It does NOT
-  // set phone — patch that ourselves. Failure here is non-fatal: the user
-  // exists and can sign in; admin can set the phone via /admin/drivers
-  // pencil after the fact. We surface a `warning` field and the SPA
-  // toasts it as a warning (not success) so the admin can't miss it.
+  let userId: string;
+  let reassigned = false;
   let phoneWarning: string | null = null;
-  if (phone) {
-    const patchResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(newUserId)}`,
+
+  const adminUserResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      password: tempPassword,
+      email_confirm: true, // skip the click-to-verify; admin vouches for the address
+      app_metadata: { role },
+      user_metadata: { name },
+    }),
+  });
+
+  if (adminUserResp.ok) {
+    // ---- Fresh create path -------------------------------------------------
+    const created = await adminUserResp.json();
+    const newUserId = created?.user?.id ?? created?.id;
+    if (!newUserId) {
+      return new Response(
+        JSON.stringify({ error: "auth admin createUser returned no user id" }),
+        { status: 502, headers: corsHeaders },
+      );
+    }
+    userId = newUserId;
+
+    // The trigger created profiles(id, email, name, role) but does NOT set
+    // phone — patch that ourselves. Failure here is non-fatal: the user
+    // exists and can sign in; admin can set the phone via /admin/drivers
+    // pencil after the fact. We surface a `warning` field the SPA toasts.
+    if (phone) {
+      const patchResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify({ phone }),
+        },
+      );
+      if (!patchResp.ok) {
+        const raw = await patchResp.text();
+        phoneWarning = `Phone (${phone}) was NOT saved: HTTP ${patchResp.status} — ${raw.slice(0, 150)}. Set it manually via /admin/drivers → pencil. SMS will not deliver until you do.`;
+      }
+    }
+
+    // Drivers side row is required for the driver to function. If the INSERT
+    // fails we ROLL BACK the auth user — the admin can retry with the same
+    // email cleanly. A half-created driver is far worse than no driver: the
+    // auth user exists and can sign in, but /driver/* routes crash trying to
+    // look up their drivers row.
+    if (role === "driver") {
+      const driverInsResp = await fetch(`${SUPABASE_URL}/rest/v1/drivers`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          id: userId,
+          license_number: licenseNumber,
+          license_expiry: licenseExpiry,
+          initials: initialsFromName(name),
+        }),
+      });
+      if (!driverInsResp.ok) {
+        const raw = await driverInsResp.text();
+        // Roll back the auth user so the admin can retry with the same email.
+        const rolledBack = await deleteAuthUser(userId);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: `Drivers row insert failed: HTTP ${driverInsResp.status} — ${raw.slice(0, 200)}. ${
+              rolledBack
+                ? "Auth user was rolled back; you can retry with the same email."
+                : `WARNING: rollback of auth user ${userId} also failed. Manually delete via Supabase dashboard before retrying.`
+            }`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
+      }
+    }
+  } else {
+    // ---- Existing email → reassign instead of erroring --------------------
+    // The admin re-submitted an email that already has an auth user. Rather
+    // than hard-failing with "already registered", update that user to match
+    // the submitted name / phone / role, reconcile their role side-row, and
+    // re-issue their invite or credential. We NEVER delete the pre-existing
+    // auth user on any failure in this branch — it's a real account.
+    const raw = await adminUserResp.text();
+    const isEmailExists =
+      /email_exists/i.test(raw) || /already\s+(been\s+)?registered/i.test(raw);
+    if (!isEmailExists) {
+      return new Response(
+        JSON.stringify({
+          error: `auth admin createUser failed: HTTP ${adminUserResp.status} — ${raw.slice(0, 300)}`,
+        }),
+        { status: adminUserResp.status >= 500 ? 502 : 400, headers: corsHeaders },
+      );
+    }
+
+    reassigned = true;
+
+    // profiles.email is UNIQUE and the signup trigger always creates a
+    // profiles row, so this is the reliable auth-user-id lookup.
+    const lookupResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      },
+    );
+    const lookupRows = lookupResp.ok
+      ? ((await lookupResp.json()) as Array<{ id: string }>)
+      : [];
+    const existingId = Array.isArray(lookupRows) ? lookupRows[0]?.id : undefined;
+    if (!existingId) {
+      return new Response(
+        JSON.stringify({
+          error: `${email} is already registered but no matching profile row was found to reassign. Resolve the orphaned auth user in the Supabase dashboard.`,
+        }),
+        { status: 409, headers: corsHeaders },
+      );
+    }
+    userId = existingId;
+
+    // Update the auth user's role (app_metadata — the trustworthy source the
+    // role guard honours) and display name. GoTrue admin update is a PUT and
+    // shallow-merges app_metadata / user_metadata, so other keys survive.
+    const metaResp = await fetch(
+      `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+      {
+        method: "PUT",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          app_metadata: { role },
+          user_metadata: { name },
+        }),
+      },
+    );
+    if (!metaResp.ok) {
+      const rawM = await metaResp.text();
+      return new Response(
+        JSON.stringify({
+          error: `Reassign failed updating auth metadata for ${email}: HTTP ${metaResp.status} — ${rawM.slice(0, 200)}`,
+        }),
+        { status: metaResp.status >= 500 ? 502 : 400, headers: corsHeaders },
+      );
+    }
+
+    // Update the profiles row: name, role, phone (if provided), and
+    // reactivate (a previously deactivated user is being re-onboarded).
+    // service_role is exempt from the enforce_profile_role_change_admin_only
+    // trigger, so changing role here is permitted.
+    const profBody: Record<string, unknown> = { name, role, status: "active" };
+    if (phone) profBody.phone = phone;
+    const profPatch = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
       {
         method: "PATCH",
         headers: {
@@ -264,53 +413,94 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
           Prefer: "return=minimal",
         },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify(profBody),
       },
     );
-    if (!patchResp.ok) {
-      const raw = await patchResp.text();
-      phoneWarning = `Phone (${phone}) was NOT saved: HTTP ${patchResp.status} — ${raw.slice(0, 150)}. Set it manually via /admin/drivers → pencil. SMS will not deliver until you do.`;
-    }
-  }
-
-  // ---- Role-specific side rows
-  // For drivers: the drivers side table is required for the driver to
-  // function (license_number is NOT NULL; initials shown everywhere).
-  // If the INSERT fails we ROLL BACK the auth user — the admin can retry
-  // with the same email cleanly. A half-created driver in the DB is far
-  // worse than no driver at all: the auth user exists, can sign in, but
-  // /driver/* routes crash trying to look up their drivers row.
-  if (role === "driver") {
-    const driverInsResp = await fetch(`${SUPABASE_URL}/rest/v1/drivers`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        id: newUserId,
-        license_number: licenseNumber,
-        license_expiry: licenseExpiry,
-        initials: initialsFromName(name),
-      }),
-    });
-    if (!driverInsResp.ok) {
-      const raw = await driverInsResp.text();
-      // Roll back the auth user so the admin can retry with the same email.
-      const rolledBack = await deleteAuthUser(newUserId);
+    if (!profPatch.ok) {
+      const rawP = await profPatch.text();
       return new Response(
         JSON.stringify({
-          ok: false,
-          error: `Drivers row insert failed: HTTP ${driverInsResp.status} — ${raw.slice(0, 200)}. ${
-            rolledBack
-              ? "Auth user was rolled back; you can retry with the same email."
-              : `WARNING: rollback of auth user ${newUserId} also failed. Manually delete via Supabase dashboard before retrying.`
-          }`,
+          error: `Reassign failed updating profile for ${email}: HTTP ${profPatch.status} — ${rawP.slice(0, 200)}`,
         }),
-        { status: 500, headers: corsHeaders },
+        { status: 400, headers: corsHeaders },
       );
+    }
+
+    // Reconcile the role-specific side row. Upsert on the primary key so it
+    // works whether or not the row already existed (e.g. mechanic → driver).
+    if (role === "driver") {
+      const upsert = await fetch(`${SUPABASE_URL}/rest/v1/drivers?on_conflict=id`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          id: userId,
+          license_number: licenseNumber,
+          license_expiry: licenseExpiry,
+          initials: initialsFromName(name),
+        }),
+      });
+      if (!upsert.ok) {
+        const rawD = await upsert.text();
+        return new Response(
+          JSON.stringify({
+            error: `Reassign updated the profile but the drivers row failed: HTTP ${upsert.status} — ${rawD.slice(0, 200)}. The user's role is now driver but they have no license record; fix via /admin/drivers.`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
+      }
+    } else if (role === "mechanic") {
+      const upsert = await fetch(`${SUPABASE_URL}/rest/v1/mechanics?on_conflict=id`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({ id: userId }),
+      });
+      if (!upsert.ok) {
+        const rawMe = await upsert.text();
+        return new Response(
+          JSON.stringify({
+            error: `Reassign updated the profile but the mechanics row failed: HTTP ${upsert.status} — ${rawMe.slice(0, 200)}.`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
+      }
+    }
+
+    // When not emailing an invite, reset the password so the admin has a
+    // fresh credential to hand over (mirrors the create path's tempPassword).
+    // When sendInviteEmail is true we leave the password alone — the recovery
+    // link below lets the user set their own.
+    if (!sendInviteEmail) {
+      const pwResp = await fetch(
+        `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+        {
+          method: "PUT",
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ password: tempPassword }),
+        },
+      );
+      if (!pwResp.ok) {
+        const rawPw = await pwResp.text();
+        return new Response(
+          JSON.stringify({
+            error: `Reassigned ${email} but could not reset the password: HTTP ${pwResp.status} — ${rawPw.slice(0, 200)}. Use the /login → Forgot? flow to send them a reset.`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
+      }
     }
   }
 
@@ -386,6 +576,43 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ---- Reassign fallback: make the fallback credential real.
+  // On the reassign path the temp password is only applied to the pre-existing
+  // user in the `!sendInviteEmail` reset block above. If we DID try to send an
+  // invite but it failed, we're about to fall through to the tempPassword
+  // response — but that password was never set on the account, so it would
+  // authenticate nothing. Apply it now so the credential we hand back is valid.
+  // (Fresh-create never needs this: the user was created WITH the temp
+  // password at POST time.)
+  if (reassigned && sendInviteEmail && !inviteEmailSent) {
+    const pwResp = await fetch(
+      `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+      {
+        method: "PUT",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password: tempPassword }),
+      },
+    );
+    if (!pwResp.ok) {
+      // Both delivery mechanisms failed (invite email AND password reset). The
+      // user's details/role WERE updated, but we can't hand over a working
+      // credential — surface that honestly rather than returning a dead temp
+      // password the admin would relay in vain.
+      const rawPw = await pwResp.text();
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: `Reassigned ${email} (details/role updated) but could not deliver a credential: invite email failed (${inviteEmailError}) and the password reset also failed: HTTP ${pwResp.status} — ${rawPw.slice(0, 150)}. Use /login → Forgot? to send them a reset.`,
+        }),
+        { status: 500, headers: corsHeaders },
+      );
+    }
+  }
+
   // Final response shape:
   //   - sendInviteEmail=false (or omitted): existing behavior, returns
   //     tempPassword for the admin to relay manually.
@@ -403,10 +630,13 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        userId: newUserId,
+        userId,
+        reassigned,
         inviteSent: true,
         ...(warning ? { warning } : {}),
-        hint: `Invite email sent to ${email}. User clicks the link to set their password.`,
+        hint: reassigned
+          ? `${email} already existed — updated their details/role and sent a fresh invite. They click the link to set their password.`
+          : `Invite email sent to ${email}. User clicks the link to set their password.`,
       }),
       { status: 200, headers: corsHeaders },
     );
@@ -415,11 +645,14 @@ Deno.serve(async (req) => {
   return new Response(
     JSON.stringify({
       ok: true,
-      userId: newUserId,
+      userId,
+      reassigned,
       tempPassword,
       inviteSent: false,
       ...(warning ? { warning } : {}),
-      hint: "Send the temp password to the user. They should change it on first login via the Forgot? link.",
+      hint: reassigned
+        ? `${email} already existed — updated their details/role and reset their password. Send the new temp password; they can rotate it via the Forgot? link.`
+        : "Send the temp password to the user. They should change it on first login via the Forgot? link.",
     }),
     { status: 200, headers: corsHeaders },
   );

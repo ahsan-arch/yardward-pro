@@ -469,12 +469,14 @@ function UsersTab() {
         name: string;
         email: string;
         tempPassword: string;
+        reassigned: boolean;
         warning?: string;
       }
     | {
         kind: "inviteSent";
         name: string;
         email: string;
+        reassigned: boolean;
         warning?: string;
       }
     | null
@@ -524,12 +526,13 @@ function UsersTab() {
         toast.error(r.reason);
         return;
       }
-      toast.success(`${name} created`);
+      toast.success(r.reassigned ? `${name} updated` : `${name} created`);
       if (r.inviteSent) {
         setCreatedInfo({
           kind: "inviteSent",
           name,
           email,
+          reassigned: r.reassigned,
           ...(r.warning ? { warning: r.warning } : {}),
         });
       } else {
@@ -538,6 +541,7 @@ function UsersTab() {
           name,
           email,
           tempPassword: r.tempPassword,
+          reassigned: r.reassigned,
           ...(r.warning ? { warning: r.warning } : {}),
         });
       }
@@ -573,14 +577,25 @@ function UsersTab() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{createdInfo ? "User created" : "Invite user"}</DialogTitle>
+            <DialogTitle>
+              {createdInfo ? (createdInfo.reassigned ? "User updated" : "User created") : "Invite user"}
+            </DialogTitle>
           </DialogHeader>
           {createdInfo ? (
             <div className="space-y-3">
+              {createdInfo.reassigned && (
+                <div
+                  className="bg-amber-brand/10 border border-amber-brand/40 rounded-md p-3 text-xs text-muted-foreground"
+                  data-testid="invite-reassigned-note"
+                >
+                  {createdInfo.email} was already registered, so we updated the existing
+                  user's name, phone, and role instead of creating a duplicate.
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
                 {createdInfo.kind === "inviteSent"
-                  ? `${createdInfo.name} has been created and an invite email was sent to ${createdInfo.email}. They click the link to set their own password.`
-                  : `${createdInfo.name} has been created. Send these credentials to them and ask them to rotate the password via the Forgot? link on first sign in.`}
+                  ? `${createdInfo.name} ${createdInfo.reassigned ? "was updated" : "has been created"} and an invite email was sent to ${createdInfo.email}. They click the link to set their own password.`
+                  : `${createdInfo.name} ${createdInfo.reassigned ? "was updated" : "has been created"}. Send these credentials to them and ask them to rotate the password via the Forgot? link on first sign in.`}
               </p>
               {createdInfo.warning && (
                 <div
