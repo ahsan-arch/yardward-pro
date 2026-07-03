@@ -321,6 +321,13 @@ export const api = {
   createJob: async (input: Omit<Job, "id" | "createdAt">) => {
     const job: Job = { ...input, id: uid("JOB"), createdAt: new Date().toISOString() };
     if (USE_SUPABASE && supabase) {
+      // The admin UI passes a mock createdBy ("A-01"); the real creator is the
+      // signed-in user. jobs.created_by is a uuid FK, so a mock id throws
+      // "invalid input syntax for type uuid". Override with the authenticated
+      // user's uuid (created_by is nullable, so "" -> null is a safe fallback
+      // via domainJobToDb's `j.createdBy || null`).
+      const { data: authData } = await supabase.auth.getUser();
+      job.createdBy = authData.user?.id ?? "";
       const { error } = await supabase.from("jobs").insert(domainJobToDb(job));
       if (error)
         throw new Error(`createJob: ${reportApiError("CREATE_JOB", error, { jobId: job.id })}`);
@@ -3370,8 +3377,8 @@ ${rows}
     // SITE_URL/reset-password on the edge function side.
     redirectTo?: string;
   }): Promise<
-    | { ok: true; userId: string; tempPassword: string; inviteSent: false; warning?: string }
-    | { ok: true; userId: string; inviteSent: true; warning?: string }
+    | { ok: true; userId: string; tempPassword: string; inviteSent: false; reassigned: boolean; warning?: string }
+    | { ok: true; userId: string; inviteSent: true; reassigned: boolean; warning?: string }
     | { ok: false; reason: string }
   > => {
     if (!USE_SUPABASE || !supabase) {
@@ -3381,6 +3388,7 @@ ${rows}
           ok: true,
           userId: `MOCK-${Math.random().toString(36).slice(2, 10)}`,
           inviteSent: true,
+          reassigned: false,
         };
       }
       return {
@@ -3388,6 +3396,7 @@ ${rows}
         userId: `MOCK-${Math.random().toString(36).slice(2, 10)}`,
         tempPassword: "mock-pw-12345",
         inviteSent: false,
+        reassigned: false,
       };
     }
     const { data, error } = await supabase.functions.invoke<{
@@ -3395,6 +3404,7 @@ ${rows}
       userId?: string;
       tempPassword?: string;
       inviteSent?: boolean;
+      reassigned?: boolean;
       warning?: string;
       error?: string;
     }>("admin-create-user", { body: input });
@@ -3420,6 +3430,7 @@ ${rows}
         ok: true,
         userId: data.userId,
         inviteSent: true,
+        reassigned: data.reassigned === true,
         ...(data.warning ? { warning: data.warning } : {}),
       };
     }
@@ -3431,6 +3442,7 @@ ${rows}
       userId: data.userId,
       tempPassword: data.tempPassword,
       inviteSent: false,
+      reassigned: data.reassigned === true,
       ...(data.warning ? { warning: data.warning } : {}),
     };
   },

@@ -50,6 +50,7 @@ function Page() {
     name: string;
     email: string;
     tempPassword: string;
+    reassigned: boolean;
     warning?: string;
   } | null>(null);
 
@@ -101,7 +102,7 @@ function Page() {
         toast.error(r.reason);
         return;
       }
-      toast.success(`${name} created`);
+      toast.success(r.reassigned ? `${name} updated` : `${name} created`);
       // This entry point doesn't (yet) offer the email-invite toggle, so
       // the response is always the tempPassword branch. Narrowing is
       // defensive — if we add the toggle here later, the else branch
@@ -111,6 +112,7 @@ function Page() {
           name,
           email,
           tempPassword: "(sent via email)",
+          reassigned: r.reassigned,
           ...(r.warning ? { warning: r.warning } : {}),
         });
       } else {
@@ -118,6 +120,7 @@ function Page() {
           name,
           email,
           tempPassword: r.tempPassword,
+          reassigned: r.reassigned,
           ...(r.warning ? { warning: r.warning } : {}),
         });
       }
@@ -251,13 +254,25 @@ function Page() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{createdInfo ? "Driver created" : "Add driver"}</DialogTitle>
+            <DialogTitle>
+              {createdInfo ? (createdInfo.reassigned ? "Driver updated" : "Driver created") : "Add driver"}
+            </DialogTitle>
           </DialogHeader>
           {createdInfo ? (
             <div className="space-y-3">
+              {createdInfo.reassigned && (
+                <div
+                  className="bg-amber-brand/10 border border-amber-brand/40 rounded-md p-3 text-xs text-muted-foreground"
+                  data-testid="driver-reassigned-note"
+                >
+                  {createdInfo.email} was already registered, so we updated the existing user to a
+                  driver (name, phone, license) instead of creating a duplicate.
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
-                {createdInfo.name} has been created. Send these credentials to them and ask them to
-                rotate the password via the Forgot? link on first sign in.
+                {createdInfo.name} {createdInfo.reassigned ? "was updated" : "has been created"}. Send
+                these credentials to them and ask them to rotate the password via the Forgot? link on
+                first sign in.
               </p>
               {createdInfo.warning && (
                 <div
