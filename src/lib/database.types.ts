@@ -39,6 +39,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_roles: {
+        Row: {
+          allowed_tabs: string[]
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_tabs?: string[]
+          created_at?: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_tabs?: string[]
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           address: string
@@ -1180,9 +1204,12 @@ export type Database = {
       }
       profiles: {
         Row: {
+          admin_role_id: string | null
+          allowed_tabs_override: string[] | null
           created_at: string
           email: string
           id: string
+          is_owner: boolean
           name: string
           notification_preferences: Json
           phone: string
@@ -1190,9 +1217,12 @@ export type Database = {
           status: Database["public"]["Enums"]["user_status"]
         }
         Insert: {
+          admin_role_id?: string | null
+          allowed_tabs_override?: string[] | null
           created_at?: string
           email: string
           id: string
+          is_owner?: boolean
           name: string
           notification_preferences?: Json
           phone?: string
@@ -1200,16 +1230,27 @@ export type Database = {
           status?: Database["public"]["Enums"]["user_status"]
         }
         Update: {
+          admin_role_id?: string | null
+          allowed_tabs_override?: string[] | null
           created_at?: string
           email?: string
           id?: string
+          is_owner?: boolean
           name?: string
           notification_preferences?: Json
           phone?: string
           role?: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["user_status"]
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_admin_role_id_fkey"
+            columns: ["admin_role_id"]
+            isOneToOne: false
+            referencedRelation: "admin_roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_requests: {
         Row: {
@@ -2502,6 +2543,7 @@ export type Database = {
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
+      is_owner: { Args: never; Returns: boolean }
       join_conversation: {
         Args: { p_conversation_id: string }
         Returns: {

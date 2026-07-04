@@ -3,6 +3,8 @@ import { AdminShell } from "@/components/layout/AdminLayout";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { jobDisplay } from "@/data/mockData";
 import { useData } from "@/contexts/DataContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { isTabAllowed } from "@/lib/admin-tabs";
 import {
   Briefcase,
   Users,
@@ -120,6 +122,10 @@ function Dashboard() {
     notifications,
     pushNotification,
   } = useData();
+  const { allowedTabs } = useAuth();
+  // The low-balance widget shows prepaid ticket money — hide it from admins
+  // whose tab set excludes prepaid-tickets (owner/custom-roles feature).
+  const canSeePrepaid = isTabAllowed(allowedTabs, "prepaid-tickets");
 
   // ---- Real KPI computations (replaced hardcoded demo strings) ----
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
@@ -323,7 +329,7 @@ function Dashboard() {
       </div>
 
       {/* Prepaid tickets low-balance widget */}
-      {lowTicketClients.length > 0 && (
+      {canSeePrepaid && lowTicketClients.length > 0 && (
         <div className="mt-6 bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border">
             <div className="flex items-center gap-2">

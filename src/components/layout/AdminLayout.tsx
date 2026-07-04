@@ -27,35 +27,46 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/crm/BrandMark";
 import { useApp } from "@/contexts/AppContext";
 import { NotificationsBell } from "@/components/crm/NotificationsBell";
+import type { AdminTabKey } from "@/lib/admin-tabs";
 
 const navItems = [
-  { to: "/admin", label: "Dashboard", icon: Home, exact: true },
-  { to: "/admin/schedule", label: "Schedule", icon: Calendar },
-  { to: "/admin/jobs", label: "Jobs", icon: Briefcase },
-  { to: "/admin/drivers", label: "Drivers", icon: Users },
-  { to: "/admin/vehicles", label: "Vehicles", icon: Truck },
-  { to: "/admin/map", label: "Live map", icon: MapPin },
-  { to: "/admin/work-orders", label: "Work Orders", icon: ClipboardCheck },
-  { to: "/admin/communications", label: "Communications", icon: MessagesSquare },
-  { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
-  { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare },
-  { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart },
-  { to: "/admin/inventory", label: "Inventory", icon: Package },
-  { to: "/admin/prepaid-tickets", label: "Prepaid tickets", icon: Ticket },
-  { to: "/admin/clients", label: "Clients", icon: Building2 },
-  { to: "/admin/receivables", label: "Receivables", icon: BarChart2 },
-  { to: "/admin/forms", label: "Forms & Submissions", icon: FileText },
-  { to: "/admin/hauling-records", label: "Hauling records", icon: FileSpreadsheet },
-  { to: "/admin/form-templates", label: "Form templates", icon: ClipboardCheck },
-  { to: "/admin/errors", label: "Error log", icon: Bug },
-  { to: "/admin/reports", label: "Reports", icon: BarChart2 },
-  { to: "/admin/settings", label: "Settings", icon: Settings },
-];
+  { to: "/admin", label: "Dashboard", icon: Home, exact: true, tab: "dashboard" },
+  { to: "/admin/schedule", label: "Schedule", icon: Calendar, tab: "schedule" },
+  { to: "/admin/jobs", label: "Jobs", icon: Briefcase, tab: "jobs" },
+  { to: "/admin/drivers", label: "Drivers", icon: Users, tab: "drivers" },
+  { to: "/admin/vehicles", label: "Vehicles", icon: Truck, tab: "vehicles" },
+  { to: "/admin/map", label: "Live map", icon: MapPin, tab: "map" },
+  { to: "/admin/work-orders", label: "Work Orders", icon: ClipboardCheck, tab: "work-orders" },
+  { to: "/admin/communications", label: "Communications", icon: MessagesSquare, tab: "communications" },
+  { to: "/admin/timesheets", label: "Timesheets", icon: Clock, tab: "timesheets" },
+  { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare, tab: "sms-log" },
+  { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart, tab: "purchase-orders" },
+  { to: "/admin/inventory", label: "Inventory", icon: Package, tab: "inventory" },
+  { to: "/admin/prepaid-tickets", label: "Prepaid tickets", icon: Ticket, tab: "prepaid-tickets" },
+  { to: "/admin/clients", label: "Clients", icon: Building2, tab: "clients" },
+  { to: "/admin/receivables", label: "Receivables", icon: BarChart2, tab: "receivables" },
+  { to: "/admin/forms", label: "Forms & Submissions", icon: FileText, tab: "forms" },
+  { to: "/admin/hauling-records", label: "Hauling records", icon: FileSpreadsheet, tab: "hauling-records" },
+  { to: "/admin/form-templates", label: "Form templates", icon: ClipboardCheck, tab: "form-templates" },
+  { to: "/admin/errors", label: "Error log", icon: Bug, tab: "errors" },
+  { to: "/admin/reports", label: "Reports", icon: BarChart2, tab: "reports" },
+  { to: "/admin/settings", label: "Settings", icon: Settings, tab: "settings" },
+] satisfies ReadonlyArray<{
+  to: string;
+  label: string;
+  icon: typeof Home;
+  exact?: boolean;
+  tab: AdminTabKey;
+}>;
 
 export function AdminShell({ children, title }: { children?: ReactNode; title?: string }) {
   const [open, setOpen] = useState(false);
-  const { user } = useApp();
+  const { user, allowedTabs } = useApp();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Owner/custom-roles tab filtering. "all" (owners, unrestricted admins,
+  // and any state where permission data is unavailable) keeps every item.
+  const visibleItems =
+    allowedTabs === "all" ? navItems : navItems.filter((item) => allowedTabs.includes(item.tab));
 
   return (
     <div className="flex min-h-[calc(100vh-44px)] bg-background">
@@ -74,7 +85,7 @@ export function AdminShell({ children, title }: { children?: ReactNode; title?: 
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-3 px-2">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             return (
               <Link

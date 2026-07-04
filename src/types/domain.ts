@@ -28,6 +28,22 @@ export interface Mechanic extends User {
 // real admins instead of the previous hardcoded placeholder.
 export type Admin = User;
 
+// Named custom admin role: a checklist of admin tab keys (see
+// src/lib/admin-tabs.ts for the canonical key list and resolution rules).
+export interface AdminRole {
+  id: string;
+  name: string;
+  allowedTabs: string[];
+}
+
+// Per-admin access settings as stored on profiles. Only meaningful for
+// role === "admin" users; owner accounts always resolve to full access.
+export interface AdminAccess {
+  isOwner: boolean;
+  adminRoleId: string | null;
+  allowedTabsOverride: string[] | null;
+}
+
 export type TicketReportFrequency = "off" | "daily" | "weekly" | "monthly";
 
 export interface ClientTicketSettings {

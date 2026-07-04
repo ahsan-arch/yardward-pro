@@ -1,4 +1,9 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import {
+  firstAllowedAdminPath,
+  readStoredAdminTabs,
+  tabForAdminPath,
+} from "@/lib/admin-tabs";
 
 // Wrong-role visitors get bounced to their OWN home rather than /login — they
 // already have a valid session, so logging them out would be hostile. Drivers
@@ -12,7 +17,7 @@ function homeForRole(role: string | null): "/admin" | "/driver" | "/mechanic" | 
 }
 
 export const Route = createFileRoute("/admin")({
-  beforeLoad: () => {
+  beforeLoad: ({ location }) => {
     if (typeof window === "undefined") return;
     if (localStorage.getItem("fo:authed") !== "1") {
       throw redirect({ to: "/login" });
@@ -23,6 +28,18 @@ export const Route = createFileRoute("/admin")({
     const role = localStorage.getItem("fo:role");
     if (role !== "admin") {
       throw redirect({ to: homeForRole(role) });
+    }
+    // Tab-level access: restricted admins (owner/custom-roles feature) are
+    // bounced off tabs outside their allowed set. tabForAdminPath returns
+    // null for exempt paths (qbo-callback) and readStoredAdminTabs fails
+    // open to "all" when no restriction data exists — full-access admins
+    // never hit the redirect.
+    const tab = tabForAdminPath(location.pathname);
+    if (tab !== null) {
+      const allowed = readStoredAdminTabs();
+      if (allowed !== "all" && !allowed.includes(tab)) {
+        throw redirect({ to: firstAllowedAdminPath(allowed) });
+      }
     }
   },
   component: () => <Outlet />,

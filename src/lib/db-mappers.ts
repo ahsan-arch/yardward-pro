@@ -101,7 +101,17 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
 // carries specialty + shopId which don't exist on the profiles row — keep
 // them empty/null-equivalent so the UI can still render until those columns
 // (or a side table) are added.
-export function dbProfileToMechanic(r: Row<"profiles">): Mechanic {
+
+// The profile mappers only consume the shared User-side columns, so they
+// accept any row shape that carries them — full rows and the narrower
+// column-list selects in db-queries both qualify, and the mappers stay
+// stable as profiles grows new columns (e.g. the owner/admin-roles fields).
+type ProfileUserRow = Pick<
+  Row<"profiles">,
+  "id" | "email" | "name" | "phone" | "status" | "created_at"
+>;
+
+export function dbProfileToMechanic(r: ProfileUserRow): Mechanic {
   return {
     id: r.id,
     email: r.email,
@@ -118,7 +128,7 @@ export function dbProfileToMechanic(r: Row<"profiles">): Mechanic {
 // ---------- admins ----------
 // Plain profile-row mapper. Used by db-queries to hydrate the admins[] array
 // shown on /admin/settings → Users tab.
-export function dbProfileToAdmin(r: Row<"profiles">): import("@/types/domain").Admin {
+export function dbProfileToAdmin(r: ProfileUserRow): import("@/types/domain").Admin {
   return {
     id: r.id,
     email: r.email,
@@ -137,7 +147,7 @@ export function dbProfileToAdmin(r: Row<"profiles">): import("@/types/domain").A
 // Driver object in one pass.
 export function dbDriverToDomain(
   driver: Row<"drivers">,
-  profile?: Row<"profiles"> | null,
+  profile?: ProfileUserRow | null,
 ): Driver {
   return {
     id: driver.id,

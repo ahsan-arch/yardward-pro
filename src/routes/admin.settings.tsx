@@ -16,9 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
 import { driverById } from "@/data/mockData";
+import { useAuth } from "@/contexts/AuthContext";
+import { ADMIN_TABS, type AdminTabGroup } from "@/lib/admin-tabs";
 import {
   CheckCircle2,
   XCircle,
@@ -31,11 +34,15 @@ import {
   HelpCircle,
   Loader2,
   RefreshCw,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useEffect, useRef, useState } from "react";
-import type { TokenScope, DriverToken, AppSettings } from "@/types/domain";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { TokenScope, DriverToken, AppSettings, AdminRole, AdminAccess } from "@/types/domain";
 import { toast } from "sonner";
+
+// Access info per admin profile as returned by api.listAdminAccess.
+type AccessInfo = AdminAccess & { roleName: string | null; active: boolean };
 
 export const Route = createFileRoute("/admin/settings")({
   head: () => ({ meta: [{ title: "Settings — Engage Hydrovac CRM" }] }),
@@ -454,10 +461,14 @@ const EMPTY_INVITE_FORM = {
   // configured the server will reply with an error + the admin can flip
   // this off to fall back to the temp-password path.
   sendInviteEmail: true,
+  // Admin-only, owner-only: named custom role assigned at creation. Empty
+  // string = full access (no role). Ignored when role !== 'admin'.
+  adminRoleId: "",
 };
 
 function UsersTab() {
   const { drivers, mechanics, admins } = useData();
+  const { isOwner } = useAuth();
   // Real roster from Supabase — admins, mechanics, drivers all from profiles.
   const all = [...admins, ...mechanics, ...drivers];
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -481,6 +492,49 @@ function UsersTab() {
       }
     | null
   >(null);
+
+  // Owner-only access-management state. Loaded lazily so non-owners see the
+  // legacy tab exactly as before with zero extra queries.
+  const [adminRoles, setAdminRoles] = useState<AdminRole[]>([]);
+  const [adminAccess, setAdminAccess] = useState<Record<string, AccessInfo>>({});
+  const [accessLoaded, setAccessLoaded] = useState(false);
+  const [accessEditUser, setAccessEditUser] = useState<{ id: string; name: string } | null>(null);
+
+  const reloadAccess = useCallback(async () => {
+    if (!isOwner) return;
+    const [rolesRes, accessRes] = await Promise.all([api.listAdminRoles(), api.listAdminAccess()]);
+    if (rolesRes.ok) setAdminRoles(rolesRes.roles);
+    if (accessRes.ok) {
+      setAdminAccess(accessRes.access);
+      setAccessLoaded(true);
+    } else {
+      // Do NOT let the editor open against empty data — saving from it would
+      // silently reset a restricted admin to full access. Keep it gated.
+      toast.error(`Could not load access settings: ${accessRes.reason}`);
+    }
+  }, [isOwner]);
+
+  useEffect(() => {
+    void reloadAccess();
+  }, [reloadAccess]);
+
+  // Only ACTIVE owners count toward last-owner protection, matching the DB
+  // trigger — so the editor's switch disables at the same boundary the
+  // server enforces (no confusing "bounced by trigger" surprise).
+  const ownersCount = Object.values(adminAccess).filter((a) => a.isOwner && a.active).length;
+  const memberCounts: Record<string, number> = {};
+  for (const a of Object.values(adminAccess)) {
+    if (a.adminRoleId) memberCounts[a.adminRoleId] = (memberCounts[a.adminRoleId] ?? 0) + 1;
+  }
+
+  function accessBadge(userId: string): string {
+    const a = adminAccess[userId];
+    if (!a) return "Full access";
+    if (a.isOwner) return "Owner";
+    if (a.allowedTabsOverride !== null) return "Custom";
+    if (a.roleName) return a.roleName;
+    return "Full access";
+  }
 
   function openInvite() {
     setInviteOpen(true);
@@ -521,6 +575,10 @@ function UsersTab() {
         licenseNumber: inviteForm.role === "driver" ? inviteForm.licenseNumber.trim() : undefined,
         licenseExpiry: inviteForm.role === "driver" ? inviteForm.licenseExpiry.trim() : undefined,
         sendInviteEmail: inviteForm.sendInviteEmail,
+        adminRoleId:
+          inviteForm.role === "admin" && inviteForm.adminRoleId
+            ? inviteForm.adminRoleId
+            : undefined,
       });
       if (!r.ok) {
         toast.error(r.reason);
@@ -548,6 +606,7 @@ function UsersTab() {
       if (r.warning) {
         toast.warning(r.warning, { duration: 15_000 });
       }
+      void reloadAccess();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
     } finally {
@@ -556,6 +615,7 @@ function UsersTab() {
   }
 
   return (
+    <>
     <Card title="Users & roles">
       <div className="flex justify-end mb-3">
         <Button
@@ -701,10 +761,41 @@ function UsersTab() {
                   <SelectContent>
                     <SelectItem value="driver">Driver</SelectItem>
                     <SelectItem value="mechanic">Mechanic</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    {/* Creating admins is owner-only (edge fn returns 403 for
+                        non-owners) — don't offer the option to restricted
+                        admins. Every pre-feature admin is seeded owner, so
+                        nothing changes for existing users. */}
+                    {isOwner && <SelectItem value="admin">Admin</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
+              {inviteForm.role === "admin" && isOwner && (
+                <div>
+                  <Label>Admin access</Label>
+                  <Select
+                    value={inviteForm.adminRoleId || "full"}
+                    onValueChange={(v) =>
+                      setInviteForm((f) => ({ ...f, adminRoleId: v === "full" ? "" : v }))
+                    }
+                  >
+                    <SelectTrigger data-testid="invite-admin-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full">Full access</SelectItem>
+                      {adminRoles.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Assign a custom role to limit which tabs this admin can see. Manage roles in
+                    the "Custom admin roles" section below.
+                  </p>
+                </div>
+              )}
               {inviteForm.role === "driver" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -774,6 +865,7 @@ function UsersTab() {
             <th className="text-left font-medium px-3 py-2">Name</th>
             <th className="text-left font-medium px-3 py-2">Email</th>
             <th className="text-left font-medium px-3 py-2">Role</th>
+            {isOwner && <th className="text-left font-medium px-3 py-2">Access</th>}
             <th className="text-left font-medium px-3 py-2">Status</th>
           </tr>
         </thead>
@@ -783,6 +875,38 @@ function UsersTab() {
               <td className="px-3 py-2 font-medium">{u.name}</td>
               <td className="px-3 py-2 font-mono text-xs">{u.email}</td>
               <td className="px-3 py-2 text-xs uppercase tracking-wider">{u.role}</td>
+              {isOwner && (
+                <td className="px-3 py-2">
+                  {u.role === "admin" ? (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-xs px-1.5 py-0.5 rounded",
+                          adminAccess[u.id]?.isOwner
+                            ? "bg-amber-brand/15 text-amber-brand font-medium"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                        data-testid={`access-badge-${u.id}`}
+                      >
+                        {accessBadge(u.id)}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        disabled={!accessLoaded}
+                        onClick={() => setAccessEditUser({ id: u.id, name: u.name })}
+                        data-testid={`edit-access-${u.id}`}
+                        title={accessLoaded ? "Edit access" : "Loading access settings…"}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </td>
+              )}
               <td className="px-3 py-2">
                 <StatusBadge status="Active" />
               </td>
@@ -790,7 +914,401 @@ function UsersTab() {
           ))}
         </tbody>
       </table>
+      {accessEditUser && (
+        <AccessEditorDialog
+          key={accessEditUser.id}
+          target={accessEditUser}
+          access={adminAccess[accessEditUser.id] ?? null}
+          roles={adminRoles}
+          ownersCount={ownersCount}
+          onClose={() => setAccessEditUser(null)}
+          onSaved={() => {
+            setAccessEditUser(null);
+            void reloadAccess();
+          }}
+        />
+      )}
     </Card>
+    {isOwner && (
+      <AdminRolesSection
+        roles={adminRoles}
+        memberCounts={memberCounts}
+        onChanged={() => void reloadAccess()}
+      />
+    )}
+    </>
+  );
+}
+
+// Which admin tabs a role grants, grouped like the sidebar. Shared by the
+// role editor and the per-user override editor.
+const TAB_GROUPS: AdminTabGroup[] = ["Operations", "Financial", "Admin"];
+
+function TabChecklist({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (tabs: string[]) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {TAB_GROUPS.map((group) => {
+        const tabs = ADMIN_TABS.filter((t) => t.group === group);
+        const groupKeys = tabs.map((t) => t.key as string);
+        const allOn = groupKeys.every((k) => value.includes(k));
+        return (
+          <div key={group}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {group}
+              </span>
+              <button
+                type="button"
+                className="text-xs text-amber-brand hover:underline"
+                onClick={() =>
+                  onChange(
+                    allOn
+                      ? value.filter((k) => !groupKeys.includes(k))
+                      : [...new Set([...value, ...groupKeys])],
+                  )
+                }
+              >
+                {allOn ? "Clear all" : "Select all"}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {tabs.map((t) => (
+                <label
+                  key={t.key}
+                  className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                >
+                  <Checkbox
+                    checked={value.includes(t.key)}
+                    onCheckedChange={(v) =>
+                      onChange(
+                        v === true ? [...value, t.key] : value.filter((k) => k !== t.key),
+                      )
+                    }
+                    data-testid={`tab-check-${t.key}`}
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Owner-only: create/edit/delete named custom roles. Deleting a role that is
+// still assigned is blocked (DB FK is on-delete-restrict; the button is also
+// disabled client-side with the member count as the hint).
+function AdminRolesSection({
+  roles,
+  memberCounts,
+  onChanged,
+}: {
+  roles: AdminRole[];
+  memberCounts: Record<string, number>;
+  onChanged: () => void;
+}) {
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<AdminRole | null>(null);
+  const [name, setName] = useState("");
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  function openCreate() {
+    setEditing(null);
+    setName("");
+    setTabs(ADMIN_TABS.map((t) => t.key));
+    setEditorOpen(true);
+  }
+
+  function openEdit(r: AdminRole) {
+    setEditing(r);
+    setName(r.name);
+    setTabs(r.allowedTabs);
+    setEditorOpen(true);
+  }
+
+  async function save() {
+    if (!name.trim()) return toast.error("Role name is required");
+    if (tabs.length === 0) return toast.error("Select at least one tab");
+    setSaving(true);
+    try {
+      const r = await api.saveAdminRole({
+        id: editing?.id,
+        name: name.trim(),
+        allowedTabs: tabs,
+      });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
+      toast.success(editing ? "Role updated" : "Role created");
+      setEditorOpen(false);
+      onChanged();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(r: AdminRole) {
+    const res = await api.deleteAdminRole(r.id);
+    if (!res.ok) {
+      toast.error(res.reason);
+      return;
+    }
+    toast.success(`Role "${r.name}" deleted`);
+    onChanged();
+  }
+
+  return (
+    <Card title="Custom admin roles">
+      <p className="text-xs text-muted-foreground mb-3">
+        A role is a checklist of admin tabs. Assign one to an admin in the users list above to
+        limit what they see — admins without a role (and owners) keep full access.
+      </p>
+      <div className="flex justify-end mb-3">
+        <Button
+          size="sm"
+          onClick={openCreate}
+          data-testid="create-admin-role"
+          className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        >
+          <Plus className="w-4 h-4" /> New role
+        </Button>
+      </div>
+      {roles.length === 0 ? (
+        <p className="text-sm text-muted-foreground" data-testid="no-admin-roles">
+          No custom roles yet. Create one to start restricting tabs.
+        </p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="text-left font-medium px-3 py-2">Role</th>
+              <th className="text-left font-medium px-3 py-2">Tabs</th>
+              <th className="text-left font-medium px-3 py-2">Members</th>
+              <th className="text-right font-medium px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roles.map((r) => {
+              const members = memberCounts[r.id] ?? 0;
+              return (
+                <tr key={r.id} className="border-t border-border" data-testid={`admin-role-row-${r.id}`}>
+                  <td className="px-3 py-2 font-medium">{r.name}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    {r.allowedTabs.length} of {ADMIN_TABS.length} tabs
+                  </td>
+                  <td className="px-3 py-2 text-xs">{members}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => openEdit(r)}
+                      data-testid={`edit-admin-role-${r.id}`}
+                      title="Edit role"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-danger"
+                      disabled={members > 0}
+                      onClick={() => void remove(r)}
+                      data-testid={`delete-admin-role-${r.id}`}
+                      title={
+                        members > 0
+                          ? `Assigned to ${members} user${members === 1 ? "" : "s"} — reassign first`
+                          : "Delete role"
+                      }
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? `Edit role — ${editing.name}` : "New role"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Role name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Manager – no financials"
+                data-testid="admin-role-name"
+              />
+            </div>
+            <TabChecklist value={tabs} onChange={setTabs} />
+            <Button
+              onClick={() => void save()}
+              disabled={saving || tabs.length === 0}
+              data-testid="save-admin-role"
+              className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+            >
+              {saving ? "Saving…" : editing ? "Save role" : "Create role"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+// Owner-only per-admin access editor. The DB guard triggers are the real
+// authority (owner-only writes, last-owner protection) — this dialog just
+// mirrors those rules for a friendlier UX and surfaces trigger errors as-is.
+function AccessEditorDialog({
+  target,
+  access,
+  roles,
+  ownersCount,
+  onClose,
+  onSaved,
+}: {
+  target: { id: string; name: string };
+  access: AccessInfo | null;
+  roles: AdminRole[];
+  ownersCount: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const initial: AccessInfo = access ?? {
+    isOwner: false,
+    adminRoleId: null,
+    allowedTabsOverride: null,
+    roleName: null,
+    active: true,
+  };
+  const [ownerFlag, setOwnerFlag] = useState(initial.isOwner);
+  const [roleId, setRoleId] = useState(initial.adminRoleId ?? "");
+  const [overrideOn, setOverrideOn] = useState(initial.allowedTabsOverride !== null);
+  const [overrideTabs, setOverrideTabs] = useState<string[]>(
+    initial.allowedTabsOverride ?? ADMIN_TABS.map((t) => t.key),
+  );
+  const [saving, setSaving] = useState(false);
+  const isLastOwner = initial.isOwner && ownersCount <= 1;
+
+  async function save() {
+    if (!ownerFlag && overrideOn && overrideTabs.length === 0) {
+      return toast.error("Select at least one tab");
+    }
+    setSaving(true);
+    try {
+      const res = await api.updateAdminAccess(target.id, {
+        isOwner: ownerFlag,
+        adminRoleId: roleId || null,
+        allowedTabsOverride: !ownerFlag && overrideOn ? overrideTabs : null,
+      });
+      if (!res.ok) {
+        toast.error(res.reason);
+        return;
+      }
+      toast.success(`Access updated for ${target.name}`);
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Access — {target.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/30 p-3">
+            <div className="flex-1">
+              <Label htmlFor="access-owner" className="text-sm font-medium cursor-pointer">
+                Owner admin
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isLastOwner
+                  ? "This is the only owner — promote another admin first before demoting them."
+                  : "Owners see every tab and are the only ones who can manage other admins' access."}
+              </p>
+            </div>
+            <Switch
+              id="access-owner"
+              checked={ownerFlag}
+              disabled={isLastOwner}
+              onCheckedChange={setOwnerFlag}
+              data-testid="access-owner-toggle"
+            />
+          </div>
+          {!ownerFlag && (
+            <>
+              <div>
+                <Label>Custom role</Label>
+                <Select
+                  value={roleId || "full"}
+                  onValueChange={(v) => setRoleId(v === "full" ? "" : v)}
+                >
+                  <SelectTrigger data-testid="access-role-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full access (no role)</SelectItem>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex-1">
+                  <Label htmlFor="access-override" className="text-sm font-medium cursor-pointer">
+                    Per-user override
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Picks an exact tab set for this user — it fully replaces the role's tabs.
+                  </p>
+                </div>
+                <Switch
+                  id="access-override"
+                  checked={overrideOn}
+                  onCheckedChange={setOverrideOn}
+                  data-testid="access-override-toggle"
+                />
+              </div>
+              {overrideOn && <TabChecklist value={overrideTabs} onChange={setOverrideTabs} />}
+            </>
+          )}
+          <Button
+            onClick={() => void save()}
+            disabled={saving}
+            data-testid="save-admin-access"
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {saving ? "Saving…" : "Save access"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
