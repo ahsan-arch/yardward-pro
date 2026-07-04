@@ -23,7 +23,7 @@ import { offlineQueue } from "@/lib/offline-queue";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useData } from "@/contexts/DataContext";
 import { useMemo } from "react";
-import { clearDriverTokenSession } from "@/hooks/use-driver-token-scope";
+import { clearDriverTokenSession, readDriverTokenSession } from "@/hooks/use-driver-token-scope";
 
 export const Route = createFileRoute("/driver/work-order")({
   head: () => ({ meta: [{ title: "New work order — Engage Hydrovac CRM" }] }),
@@ -35,7 +35,17 @@ function Page() {
   const { user } = useAuth();
   const { isOnline } = useOffline();
   const { jobs } = useData();
-  const currentJob = jobs.find((j) => j.id === "JOB-041");
+  // Real drivers(id) uuid. A /t/<token> session carries it in sessionStorage;
+  // a password-logged-in driver has profiles.id === drivers.id so user.id works.
+  // AuthContext leaves user.id at the mock "A-01" for token sessions, so don't
+  // trust it blindly.
+  const driverId = readDriverTokenSession()?.driverId ?? user.id;
+  // File against a job that actually exists in the DB. The old hardcoded
+  // "JOB-041" is mockData-only and absent from the Supabase jobs table, so it
+  // violated work_orders_job_id_fkey on every submit.
+  const currentJob = jobs.find(
+    (j) => j.driverId === driverId && (j.status === "scheduled" || j.status === "active"),
+  );
   const fallback = useMemo(() => {
     if (currentJob?.location.lat != null && currentJob.location.lng != null) {
       return {
@@ -110,14 +120,23 @@ function Page() {
     if (!weight || isNaN(+weight)) errs.weight = "Enter valid weight";
     if (!dump.trim()) errs.dump = "Required";
     if (!hasSig) errs.sig = "Signature required";
+    // Fail closed client-side: never send a work order with a missing/mock
+    // job_id or driver_id (both are NOT NULL FKs to jobs / drivers).
+    if (!currentJob) errs.job = "No active job assigned to you — contact dispatch";
     setErr(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      if (errs.job) toast.error(errs.job);
+      return;
+    }
+    // Redundant past the guard above, but narrows currentJob to non-null for
+    // the payload below.
+    if (!currentJob) return;
     setLoading(true);
     try {
       const sig = canvasRef.current?.toDataURL("image/png") ?? "";
       const payload = {
-        jobId: "JOB-041",
-        driverId: user.id,
+        jobId: currentJob.id,
+        driverId,
         workPerformed: work,
         loadType: load,
         weightTonnes: +weight,
@@ -158,7 +177,7 @@ function Page() {
           try {
             await offlineQueue.enqueue({
               kind: "ticketPhoto",
-              payload: { driverId: user.id, jobId: payload.jobId, dataUrl: ticketPhoto },
+              payload: { driverId, jobId: payload.jobId, dataUrl: ticketPhoto },
             });
           } catch (err) {
             photoFailed = true;
@@ -182,7 +201,7 @@ function Page() {
           // gets surfaced via api.ts -> reportErrorToServer.
           try {
             await api.uploadTicketPhoto({
-              driverId: user.id,
+              driverId,
               jobId: payload.jobId,
               dataUrl: ticketPhoto,
             });

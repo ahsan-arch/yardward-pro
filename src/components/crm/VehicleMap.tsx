@@ -106,10 +106,18 @@ function FitToPins({ coords }: { coords: LiveCoord[] }) {
     if (coords.length === 0) return;
     if (coords.length === 1) {
       map.setView([coords[0].lat, coords[0].lng], 14, { animate: true });
-      return;
+    } else {
+      const bounds = L.latLngBounds(coords.map((c) => [c.lat, c.lng] as [number, number]));
+      map.fitBounds(bounds, { padding: [40, 40], animate: true });
     }
-    const bounds = L.latLngBounds(coords.map((c) => [c.lat, c.lng] as [number, number]));
-    map.fitBounds(bounds, { padding: [40, 40], animate: true });
+    // Cancel any in-flight pan/zoom animation before this effect re-runs or the
+    // map is torn down. Child effect cleanups run before MapContainer's
+    // map.remove(), so the animation is stopped while the map is still alive —
+    // otherwise an orphaned animation frame reads _leaflet_pos off a removed
+    // pane and throws.
+    return () => {
+      map.stop();
+    };
   }, [JSON.stringify(coords.map((c) => [c.lat, c.lng])), map]);
   return null;
 }
@@ -128,6 +136,11 @@ function FocusOnVehicle({
     const c = coords[focusVehicleId];
     if (!c) return;
     map.flyTo([c.lat, c.lng], 15, { animate: true, duration: 0.6 });
+    // Cancel the in-flight flyTo on cleanup/unmount so its animation frame
+    // never touches a removed map pane (_leaflet_pos undefined crash).
+    return () => {
+      map.stop();
+    };
   }, [focusVehicleId, coords, map]);
   return null;
 }
