@@ -123,6 +123,10 @@ function Page() {
       const res = await api.publishJob(jobId);
       if ("alreadyPublished" in res && res.alreadyPublished) {
         toast.info(`${jobId} is already published`);
+      } else if ("smsSkipped" in res && res.smsSkipped) {
+        toast.warning(`${jobId} published · SMS not sent (driver has no valid phone)`);
+      } else if ("smsFailed" in res && res.smsFailed) {
+        toast.warning(`${jobId} published · SMS failed to send`);
       } else {
         toast.success(`${jobId} published · SMS sent to driver`);
       }

@@ -181,18 +181,33 @@ function Page() {
       });
       const driver = drivers.find((d) => d.id === form.driverId);
       if (target === "publish") {
-        const sms = await api.sendSms(
-          form.driverId,
-          `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`,
-          job.id,
-        );
-        toast.success(`${job.id} created · SMS ${sms.id} sent to ${driver?.name ?? "driver"}`, {
-          action: {
-            label: "View SMS log",
-            onClick: () => nav({ to: "/admin/sms-log" }),
-          },
-          duration: 8000,
-        });
+        // The job is already created. SMS is best-effort — it returns null when
+        // the driver has no valid phone, and any error is swallowed here so a
+        // notification hiccup never makes a saved job look failed.
+        let sms: Awaited<ReturnType<typeof api.sendSms>> = null;
+        try {
+          sms = await api.sendSms(
+            form.driverId,
+            `${job.id} assigned · ${form.address || "TBD"} · ${form.time}`,
+            job.id,
+          );
+        } catch {
+          sms = null;
+        }
+        if (sms) {
+          toast.success(`${job.id} created · SMS ${sms.id} sent to ${driver?.name ?? "driver"}`, {
+            action: {
+              label: "View SMS log",
+              onClick: () => nav({ to: "/admin/sms-log" }),
+            },
+            duration: 8000,
+          });
+        } else {
+          toast.warning(
+            `${job.id} created · SMS not sent (${driver?.name ?? "driver"} has no valid phone)`,
+            { duration: 8000 },
+          );
+        }
       } else {
         toast.success(`${job.id} saved as draft · no SMS sent`, { duration: 6000 });
       }
@@ -216,6 +231,12 @@ function Page() {
       const res = await api.publishJob(jobId);
       if ("alreadyPublished" in res && res.alreadyPublished) {
         toast.info(`${jobId} is already published`);
+      } else if ("smsSkipped" in res && res.smsSkipped) {
+        toast.warning(`${jobId} published · SMS not sent (driver has no valid phone)`, {
+          duration: 6000,
+        });
+      } else if ("smsFailed" in res && res.smsFailed) {
+        toast.warning(`${jobId} published · SMS failed to send`, { duration: 6000 });
       } else {
         toast.success(`${jobId} published · SMS sent to driver`, {
           action: { label: "View SMS log", onClick: () => nav({ to: "/admin/sms-log" }) },

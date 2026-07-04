@@ -291,6 +291,33 @@ function serializeInventoryCheckResult(
   return JSON.parse(JSON.stringify(snap)) as import("./database.types").Json;
 }
 
+/**
+ * Resolve the real actor uuid for a driver/mechanic mutation.
+ * 1. Driver-token (/t/<token>) sessions never call supabase.auth — the
+ *    t.$token bridge only writes sessionStorage. The real driver uuid lives
+ *    under "fo:driver-token-driver-id". AuthContext keeps user.id at the mock
+ *    seed ("A-01") for these sessions, so trusting the route-supplied id would
+ *    write "A-01" into a uuid column.
+ * 2. Otherwise fall back to the signed-in Supabase user (same fix as createJob).
+ * Returns null when neither is available; callers writing NOT NULL uuid columns
+ * must throw a clear error rather than send a mock/empty id.
+ */
+async function currentActorId(): Promise<string | null> {
+  if (typeof window !== "undefined") {
+    try {
+      const tokenDriverId = window.sessionStorage.getItem("fo:driver-token-driver-id");
+      if (tokenDriverId) return tokenDriverId;
+    } catch {
+      /* sessionStorage blocked (private-mode webview) — fall through */
+    }
+  }
+  if (USE_SUPABASE && supabase) {
+    const { data } = await supabase.auth.getUser();
+    return data.user?.id ?? null;
+  }
+  return null;
+}
+
 export const api = {
   // Auth
   login: async (_email: string, _password: string) => {
@@ -370,7 +397,19 @@ export const api = {
     }
     const driver = driverById(driverId);
     const body = `${jobId} assigned · ${j?.location.address ?? ""} · ${j?.scheduledAt.slice(11, 16) ?? ""}`;
-    await api.sendSms(driver?.id ?? driverId, body, jobId);
+    // SMS is best-effort — a notification failure (no phone, Twilio hiccup)
+    // must never fail the assignment itself.
+    try {
+      await api.sendSms(driver?.id ?? driverId, body, jobId);
+    } catch (err) {
+      void reportErrorToServer({
+        severity: "warn",
+        errorCode: "ASSIGN_JOB_SMS",
+        message: `assign_job_sms: ${err instanceof Error ? err.message : String(err)}`,
+        context: { jobId, driverId },
+      });
+      return { ok: true, smsFailed: true as const };
+    }
     return { ok: true };
   },
   // Flips a draft → scheduled and fires the normal assignment SMS that the
@@ -388,8 +427,21 @@ export const api = {
     if (existing.driverId) {
       const driver = driverById(existing.driverId);
       const body = `${jobId} assigned · ${existing.location.address ?? ""} · ${existing.scheduledAt.slice(11, 16) ?? ""}`;
-      const sms = await api.sendSms(driver?.id ?? existing.driverId, body, jobId);
-      return { ok: true, sms };
+      // Best-effort SMS: the job IS published regardless. sendSms returns null
+      // when the driver has no valid phone (intentionally skipped), and any
+      // thrown error is downgraded to a soft warning so publish never fails.
+      try {
+        const sms = await api.sendSms(driver?.id ?? existing.driverId, body, jobId);
+        return sms ? { ok: true, sms } : { ok: true, smsSkipped: true as const };
+      } catch (err) {
+        void reportErrorToServer({
+          severity: "warn",
+          errorCode: "PUBLISH_JOB_SMS",
+          message: `publish_job_sms: ${err instanceof Error ? err.message : String(err)}`,
+          context: { jobId, driverId: existing.driverId },
+        });
+        return { ok: true, smsFailed: true as const };
+      }
     }
     return { ok: true };
   },
@@ -877,19 +929,26 @@ export const api = {
     idempotencyKey?: string;
   }) => {
     const store = getStore();
+    // Resolve the REAL driver uuid. A /t/<token> session leaves useAuth().user
+    // (and thus p.driverId) at the mock "A-01"; the real uuid lives in
+    // sessionStorage. In mock mode currentActorId() returns null and we keep
+    // the caller-supplied id. The USE_SUPABASE branch below hard-requires a
+    // real actor so "A-01" never reaches the uuid driver_id column.
+    const resolvedActor = await currentActorId();
+    const driverId = resolvedActor ?? p.driverId;
     // Tie the shift back to the passing pre-trip that authorised it. The
     // lockout screen in driver.start-of-day.tsx blocks submission until a
     // fresh circle-check exists for the driver's assigned vehicle, so this
     // lookup is just recording the audit trail (and stays null only for
     // drivers without a vehicle assignment).
-    const driver = store.drivers.find((d) => d.id === p.driverId);
+    const driver = store.drivers.find((d) => d.id === driverId);
     const vehicleId = driver?.vehicleAssignmentId ?? null;
     const pretripInspectionId = vehicleId
-      ? mostRecentPassingInspectionId(store.vehicleInspections, p.driverId, vehicleId)
+      ? mostRecentPassingInspectionId(store.vehicleInspections, driverId, vehicleId)
       : null;
     const entry: TimeEntry = {
       id: uid("TE"),
-      driverId: p.driverId,
+      driverId,
       clockIn: new Date().toISOString(),
       clockOut: null,
       gpsClockIn: p.gps,
@@ -900,6 +959,7 @@ export const api = {
       pretripInspectionId,
     };
     if (USE_SUPABASE && supabase) {
+      if (!resolvedActor) throw new Error("submitStartOfDay: no authenticated actor");
       // Persist the open shift row so payroll/QBO sees real hours. Previously
       // this only mutated useFleetStore and the entry vanished on reload —
       // the time-entries-never-persisted bug. Bubble any DB error so the
@@ -948,20 +1008,25 @@ export const api = {
     idempotencyKey?: string;
   }) => {
     if (USE_SUPABASE && supabase) {
+      // Resolve the REAL driver uuid — a /t/<token> session carries it in
+      // sessionStorage; AuthContext otherwise leaves user.id at the mock "A-01",
+      // which is not a valid uuid and 500s the driver_id filter below.
+      const driverId = await currentActorId();
+      if (!driverId) throw new Error("submitEndOfDay: no authenticated actor");
       // Find the driver's open shift (clock_out IS NULL). Most-recent wins so
       // a stale row from a forgotten clock-out doesn't get re-closed in front
       // of today's row.
       const { data: open, error: selErr } = await supabase
         .from("time_entries")
         .select("*")
-        .eq("driver_id", p.driverId)
+        .eq("driver_id", driverId)
         .is("clock_out", null)
         .order("clock_in", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (selErr)
         throw new Error(
-          `submitEndOfDay.select: ${reportApiError("SUBMIT_END_OF_DAY_SELECT", selErr, { driverId: p.driverId })}`,
+          `submitEndOfDay.select: ${reportApiError("SUBMIT_END_OF_DAY_SELECT", selErr, { driverId })}`,
         );
       if (!open) {
         // Surface as an error so the offline-queue can move it to dead-letter
@@ -979,7 +1044,7 @@ export const api = {
         .eq("id", open.id);
       if (updErr)
         throw new Error(
-          `submitEndOfDay.update: ${reportApiError("SUBMIT_END_OF_DAY_UPDATE", updErr, { driverId: p.driverId, entryId: open.id, idempotencyKey: p.idempotencyKey ?? null })}`,
+          `submitEndOfDay.update: ${reportApiError("SUBMIT_END_OF_DAY_UPDATE", updErr, { driverId, entryId: open.id, idempotencyKey: p.idempotencyKey ?? null })}`,
         );
       getStore().submitEndOfDay(open.id, { clockOut: clockOutIso, gpsClockOut: p.gps });
     } else {
@@ -1006,6 +1071,10 @@ export const api = {
       submittedAt: new Date().toISOString(),
     };
     if (USE_SUPABASE && supabase) {
+      // Override the (possibly mock "A-01") driver id with the real actor uuid.
+      const actorId = await currentActorId();
+      if (!actorId) throw new Error("submitToolChecklist: no authenticated actor");
+      s.driverId = actorId; // keep the local-store mirror consistent too
       try {
         await insertWithIdempotency("tool_checklist_submissions", {
           id: s.id,
@@ -1132,6 +1201,10 @@ export const api = {
     };
 
     if (USE_SUPABASE && supabase) {
+      // Override the (possibly mock "A-01") driver id with the real actor uuid.
+      const actorId = await currentActorId();
+      if (!actorId) throw new Error("submitVehicleInspection: no authenticated actor");
+      inspection.driverId = actorId; // keep the local-store mirror consistent too
       let dedupedToExisting = false;
       let effectiveInspectionId = inspection.id;
       try {
@@ -1224,6 +1297,10 @@ export const api = {
       status: "pending",
     };
     if (USE_SUPABASE && supabase) {
+      // Override the (possibly mock "A-01") mechanic id with the real actor uuid.
+      const actorId = await currentActorId();
+      if (!actorId) throw new Error("submitPurchaseRequest: no authenticated actor");
+      pr.mechanicId = actorId; // keep the local-store mirror consistent too
       try {
         await insertWithIdempotency("purchase_requests", {
           id: pr.id,
@@ -1393,9 +1470,21 @@ export const api = {
   },
 
   // Integrations
-  sendSms: async (driverId: string, body: string, jobId?: string) => {
+  sendSms: async (driverId: string, body: string, jobId?: string): Promise<SmsLog | null> => {
+    // Never invoke the edge function with an empty/invalid number: it just
+    // returns 400 "Missing required field: to" (or a Twilio 400), which
+    // supabase-js surfaces as the opaque "Edge Function returned a non-2xx
+    // status code" and would hard-fail the caller. A missing driver phone is a
+    // data gap, not an error — return null so callers can skip cleanly.
+    const driverPhone = getStore()
+      .drivers.find((d) => d.id === driverId)
+      ?.phone?.trim();
+    const E164 = /^\+[1-9]\d{7,14}$/;
+    if (!driverPhone || !E164.test(driverPhone)) {
+      console.warn(`sendSms: skipping — driver ${driverId} has no valid E.164 phone`);
+      return null;
+    }
     if (USE_SUPABASE && supabase) {
-      const driverPhone = getStore().drivers.find((d) => d.id === driverId)?.phone;
       const { data, error } = await supabase.functions.invoke<{ smsLog: SmsLogRow }>(
         "twilio-send-sms",
         {
