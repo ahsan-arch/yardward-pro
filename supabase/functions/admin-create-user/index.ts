@@ -40,6 +40,10 @@ interface CreateInput {
   // user sets their password. Defaults to the SITE_URL secret +
   // /reset-password.
   redirectTo?: string;
+  // Optional named custom admin role (admin_roles.id) restricting which
+  // admin tabs the new/reassigned admin can see. Only meaningful when
+  // role === "admin"; ignored otherwise. Owner-only (see auth gate).
+  adminRoleId?: string;
 }
 
 function eqConstTime(a: string, b: string): boolean {
@@ -99,6 +103,11 @@ Deno.serve(async (req) => {
     });
   }
   const isServiceRole = eqConstTime(bearer, SUPABASE_SERVICE_ROLE_KEY);
+  // Owner status of the caller. Creating/reassigning ADMIN users is owner-only
+  // (an admin restricted via the owner/custom-roles feature must not be able
+  // to mint a fresh full-access admin account and log into it). service_role
+  // callers are trusted automation and count as owner.
+  let callerIsOwner = isServiceRole;
   if (!isServiceRole) {
     const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${bearer}`, apikey: SUPABASE_ANON_KEY },
@@ -117,8 +126,11 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
     }
-    const profResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role`,
+    // is_owner may not exist yet in an environment where the owner/custom-
+    // roles SQL hasn't been applied — fall back to a role-only select there
+    // (caller then counts as non-owner, which only blocks admin creation).
+    let profResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role,is_owner`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -126,13 +138,25 @@ Deno.serve(async (req) => {
         },
       },
     );
-    const profRows = (await profResp.json()) as Array<{ role: string }>;
+    if (!profResp.ok) {
+      profResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(uid)}&select=role`,
+        {
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        },
+      );
+    }
+    const profRows = (await profResp.json()) as Array<{ role: string; is_owner?: boolean }>;
     if (!Array.isArray(profRows) || profRows[0]?.role !== "admin") {
       return new Response(JSON.stringify({ error: "admin role required" }), {
         status: 403,
         headers: corsHeaders,
       });
     }
+    callerIsOwner = profRows[0]?.is_owner === true;
   }
 
   // ---- Validate input
@@ -177,6 +201,36 @@ Deno.serve(async (req) => {
       status: 400,
       headers: corsHeaders,
     });
+  }
+  // Creating or reassigning-to ADMIN is owner-only. Driver/mechanic
+  // onboarding stays available to every admin (unchanged behavior).
+  if (role === "admin" && !callerIsOwner) {
+    return new Response(
+      JSON.stringify({ error: "owner admin required to create or reassign admin users" }),
+      { status: 403, headers: corsHeaders },
+    );
+  }
+  // Optional custom-role assignment (admin targets only). Validate it exists
+  // up front so a typo'd id fails the request instead of silently creating a
+  // full-access admin.
+  const adminRoleId = role === "admin" ? (input.adminRoleId ?? "").trim() : "";
+  if (adminRoleId) {
+    const roleResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_roles?id=eq.${encodeURIComponent(adminRoleId)}&select=id`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      },
+    );
+    const roleRows = roleResp.ok ? ((await roleResp.json()) as Array<{ id: string }>) : [];
+    if (!Array.isArray(roleRows) || !roleRows[0]?.id) {
+      return new Response(JSON.stringify({ error: "adminRoleId not found" }), {
+        status: 400,
+        headers: corsHeaders,
+      });
+    }
   }
   if (role === "driver") {
     if (!licenseNumber) {
@@ -262,9 +316,8 @@ Deno.serve(async (req) => {
     userId = newUserId;
 
     // The trigger created profiles(id, email, name, role) but does NOT set
-    // phone — patch that ourselves. Failure here is non-fatal: the user
-    // exists and can sign in; admin can set the phone via /admin/drivers
-    // pencil after the fact. We surface a `warning` field the SPA toasts.
+    // phone. Patching phone is non-fatal: the user exists and can sign in;
+    // admin can set it later. We surface a `warning` field the SPA toasts.
     if (phone) {
       const patchResp = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
@@ -282,6 +335,55 @@ Deno.serve(async (req) => {
       if (!patchResp.ok) {
         const raw = await patchResp.text();
         phoneWarning = `Phone (${phone}) was NOT saved: HTTP ${patchResp.status} — ${raw.slice(0, 150)}. Set it manually via /admin/drivers → pencil. SMS will not deliver until you do.`;
+      }
+    }
+
+    // Make the requested ROLE authoritative, and apply the custom-role
+    // restriction, in one FATAL patch (rollback on failure).
+    //
+    // Role: handle_new_auth_user only trusts raw_app_meta_data->>'role' and
+    // silently defaults anything it can't read to 'driver'. The GoTrue admin
+    // create endpoint does not reliably surface our app_metadata.role to that
+    // trigger, so a role=admin/mechanic create otherwise lands as a driver.
+    // We correct it here (service_role is exempt from the role-change guard).
+    // Skipped for driver — the trigger's default already matches, keeping the
+    // existing /admin/drivers create flow byte-for-byte unchanged.
+    //
+    // admin_role_id: leaving it null resolves to FULL access — the opposite of
+    // the restriction the owner asked for — so a failure here must not silently
+    // mint a full-access admin. Both fields fail toward less privilege by
+    // rolling the just-created auth user back so the owner can retry cleanly.
+    const corePatch: Record<string, unknown> = {};
+    if (role !== "driver") corePatch.role = role;
+    if (adminRoleId) corePatch.admin_role_id = adminRoleId;
+    if (Object.keys(corePatch).length > 0) {
+      const corePatchResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify(corePatch),
+        },
+      );
+      if (!corePatchResp.ok) {
+        const raw = await corePatchResp.text();
+        const rolledBack = await deleteAuthUser(userId);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: `Could not finalize the new ${role}'s role/access: HTTP ${corePatchResp.status} — ${raw.slice(0, 200)}. ${
+              rolledBack
+                ? "The new user was rolled back; retry with the same email."
+                : `WARNING: rollback of auth user ${userId} also failed — they exist but as a plain driver / full-access account. Fix or delete them via the Supabase dashboard / Settings → Users & roles.`
+            }`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
       }
     }
 
@@ -345,9 +447,10 @@ Deno.serve(async (req) => {
     reassigned = true;
 
     // profiles.email is UNIQUE and the signup trigger always creates a
-    // profiles row, so this is the reliable auth-user-id lookup.
+    // profiles row, so this is the reliable auth-user-id lookup. We also read
+    // the target's current role/is_owner to gate the mutation below.
     const lookupResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id`,
+      `${SUPABASE_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id,role,is_owner`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -356,7 +459,7 @@ Deno.serve(async (req) => {
       },
     );
     const lookupRows = lookupResp.ok
-      ? ((await lookupResp.json()) as Array<{ id: string }>)
+      ? ((await lookupResp.json()) as Array<{ id: string; role?: string; is_owner?: boolean }>)
       : [];
     const existingId = Array.isArray(lookupRows) ? lookupRows[0]?.id : undefined;
     if (!existingId) {
@@ -365,6 +468,20 @@ Deno.serve(async (req) => {
           error: `${email} is already registered but no matching profile row was found to reassign. Resolve the orphaned auth user in the Supabase dashboard.`,
         }),
         { status: 409, headers: corsHeaders },
+      );
+    }
+    // Owner-only to touch an existing admin/owner. Without this, a restricted
+    // (non-owner) admin could reassign an existing admin/owner's email to
+    // role=driver/mechanic and, via the service-role PATCH below, clear their
+    // is_owner + change their role — defeating the owner-only role-change
+    // guard (which the edge fn bypasses by running as service_role). The
+    // reassign-TO-admin gate above only covers the other direction.
+    const targetIsAdminOrOwner =
+      lookupRows[0]?.role === "admin" || lookupRows[0]?.is_owner === true;
+    if (targetIsAdminOrOwner && !callerIsOwner) {
+      return new Response(
+        JSON.stringify({ error: "owner admin required to modify an admin or owner user" }),
+        { status: 403, headers: corsHeaders },
       );
     }
     userId = existingId;
@@ -403,6 +520,20 @@ Deno.serve(async (req) => {
     // trigger, so changing role here is permitted.
     const profBody: Record<string, unknown> = { name, role, status: "active" };
     if (phone) profBody.phone = phone;
+    if (role === "admin") {
+      // Reassign-to-admin applies the form's access choice: a picked custom
+      // role, or full access (null) when none was picked. Any per-user
+      // override is left untouched — that's managed via the Access editor.
+      profBody.admin_role_id = adminRoleId || null;
+    } else {
+      // Reassign away from admin: clear admin access flags so a later
+      // re-promotion doesn't silently restore stale owner powers. The DB's
+      // last-owner trigger still blocks demoting the final owner (it has no
+      // service_role exemption) — that error surfaces to the caller.
+      profBody.is_owner = false;
+      profBody.admin_role_id = null;
+      profBody.allowed_tabs_override = null;
+    }
     const profPatch = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
       {

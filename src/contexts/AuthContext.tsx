@@ -3,6 +3,13 @@ import { toast } from "sonner";
 import { supabase, USE_SUPABASE } from "@/lib/supabase";
 import { api } from "@/lib/api";
 import { clearDriverTokenSession, readDriverTokenSession } from "@/hooks/use-driver-token-scope";
+import {
+  clearStoredAdminTabs,
+  readStoredAdminTabs,
+  resolveAllowedTabs,
+  writeStoredAdminTabs,
+  type AllowedTabs,
+} from "@/lib/admin-tabs";
 
 // When the tab returns to the foreground after being hidden longer than this,
 // we re-validate the active driver token against the server. Short blurs (a
@@ -12,6 +19,17 @@ import { clearDriverTokenSession, readDriverTokenSession } from "@/hooks/use-dri
 // since been revoked by an admin.
 const DRIVER_TOKEN_REVALIDATE_HIDDEN_MS = 60_000;
 const EXPIRES_KEY = "fo:driver-token-expires-at";
+
+// Minimum gap between admin-permission refetches on window focus. Same
+// rationale as the driver-token threshold above: keep the round-trip quiet
+// during normal alt-tabbing while still picking up an owner's permission
+// change within a minute of the restricted admin returning to the tab.
+const ADMIN_TABS_REFRESH_MIN_MS = 60_000;
+
+// Enriched profile select: the three access columns + the named role's tab
+// list via the profiles -> admin_roles FK embed (one round-trip).
+const PROFILE_ACCESS_SELECT =
+  "id, name, email, role, is_owner, admin_role_id, allowed_tabs_override, admin_roles(allowed_tabs)";
 
 export type Role = "admin" | "driver" | "mechanic";
 export type Theme = "light" | "dark";
@@ -43,6 +61,13 @@ type Ctx = {
   // UI surfaces that should NOT be available to a token-only session
   // (profile edit, password change, role switcher) read this flag.
   isDriverTokenSession: boolean;
+  // Owner admins keep full access and are the only ones who can manage
+  // which tabs other admins see (Settings -> Users & roles).
+  isOwner: boolean;
+  // Effective admin tab set for the signed-in admin. "all" for owners, for
+  // admins with no role/override assigned, and whenever permission data is
+  // unavailable (fail open — server triggers protect the assignment data).
+  allowedTabs: AllowedTabs;
 };
 
 const AuthCtx = createContext<Ctx | null>(null);
@@ -60,6 +85,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(USE_SUPABASE);
   const [user, setUser] = useState<AppUser>(MOCK_USERS.admin);
   const [isDriverTokenSession, setIsDriverTokenSession] = useState(false);
+  // Seeded synchronously from localStorage so the first client paint of the
+  // admin sidebar is already filtered for restricted admins (no flash of
+  // forbidden tabs), and unchanged ("all") for everyone else.
+  const [isOwner, setIsOwner] = useState(!USE_SUPABASE);
+  const [allowedTabs, setAllowedTabs] = useState<AllowedTabs>(() => readStoredAdminTabs());
 
   // Theme hydration (independent of auth mode)
   useEffect(() => {
@@ -239,6 +269,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isDriverTokenSession]);
 
+  // Admin tab-permission refresh on window focus. If an owner restricts (or
+  // widens) an admin's access while that admin is signed in, the change is
+  // picked up the next time their tab regains focus — throttled to once per
+  // ADMIN_TABS_REFRESH_MIN_MS. Silent on failure: the current (possibly
+  // stale) set stays in effect until the next successful refresh, and the
+  // server-side triggers remain the real authority over the permission data.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!USE_SUPABASE || !supabase) return;
+    if (!authed || role !== "admin" || isDriverTokenSession) return;
+
+    let cancelled = false;
+    let inFlight = false;
+    // Hydration just populated the set — don't refetch on the mount-focus.
+    let lastRunAt = Date.now();
+
+    async function refresh() {
+      if (cancelled || inFlight || !supabase) return;
+      if (Date.now() - lastRunAt < ADMIN_TABS_REFRESH_MIN_MS) return;
+      lastRunAt = Date.now();
+      inFlight = true;
+      try {
+        const { data: p, error } = await supabase
+          .from("profiles")
+          .select("is_owner, allowed_tabs_override, admin_roles(allowed_tabs)")
+          .eq("id", user.id)
+          .single();
+        if (cancelled || error || !p) return;
+        const allowed = resolveAllowedTabs({
+          isOwner: Boolean(p.is_owner),
+          override: p.allowed_tabs_override ?? null,
+          roleTabs: p.admin_roles?.allowed_tabs ?? null,
+        });
+        setIsOwner(Boolean(p.is_owner));
+        setAllowedTabs(allowed);
+        writeStoredAdminTabs(allowed);
+      } catch {
+        /* transient — retry on a later focus */
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    function onFocus() {
+      void refresh();
+    }
+    function onVisibilityChange() {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void refresh();
+      }
+    }
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [authed, role, isDriverTokenSession, user.id]);
+
   // Auth hydration
   useEffect(() => {
     if (!USE_SUPABASE || !supabase) {
@@ -249,6 +340,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRoleState(r);
       setAuthed(a);
       if (a) setUser(MOCK_USERS[r]);
+      // Demo personas always get the full owner experience.
+      setIsOwner(true);
+      setAllowedTabs("all");
       return;
     }
 
@@ -267,22 +361,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch {
             /* ignore */
           }
+          clearStoredAdminTabs();
         }
         return;
       }
-      const { data: profile, error } = await supabase
+      const enriched = await supabase
         .from("profiles")
-        .select("id, name, email, role")
+        .select(PROFILE_ACCESS_SELECT)
         .eq("id", session.user.id)
         .single();
+      let profile: {
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        is_owner?: boolean;
+        allowed_tabs_override?: string[] | null;
+        admin_roles?: { allowed_tabs: string[] } | null;
+      } | null = enriched.data;
+      let error = enriched.error;
+      if (error) {
+        // Fall back to the pre-access-columns select so an environment where
+        // the owner/roles SQL hasn't been applied yet degrades to today's
+        // behavior (full access) instead of mass-logging admins out — an
+        // enriched-select failure would otherwise flip authed=false below.
+        const legacy = await supabase
+          .from("profiles")
+          .select("id, name, email, role")
+          .eq("id", session.user.id)
+          .single();
+        profile = legacy.data;
+        error = legacy.error;
+      }
       if (cancelled) return;
       if (error || !profile) {
         setAuthed(false);
         setLoading(false);
         return;
       }
+      const allowed = resolveAllowedTabs({
+        isOwner: Boolean(profile.is_owner),
+        override: profile.allowed_tabs_override ?? null,
+        roleTabs: profile.admin_roles?.allowed_tabs ?? null,
+      });
       setRoleState(profile.role as Role);
       setUser({ id: profile.id, name: profile.name, email: profile.email });
+      setIsOwner(Boolean(profile.is_owner));
+      setAllowedTabs(allowed);
       setAuthed(true);
       setLoading(false);
       // Bridge the Supabase session to the legacy localStorage flags so the
@@ -294,6 +419,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
+      writeStoredAdminTabs(allowed);
     }
 
     supabase.auth.getSession().then(({ data }) => hydrateFromSession(data.session));
@@ -377,10 +503,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("fo:authed", "1");
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role")
+          .select(PROFILE_ACCESS_SELECT)
           .eq("id", data.user.id)
           .single();
-        if (profile?.role) localStorage.setItem("fo:role", profile.role);
+        if (profile?.role) {
+          localStorage.setItem("fo:role", profile.role);
+          // Eagerly mirror the tab set too, for the same race reason — the
+          // first post-login navigation's beforeLoad must not see a stale
+          // (previous user's) or missing tab set.
+          writeStoredAdminTabs(
+            resolveAllowedTabs({
+              isOwner: Boolean(profile.is_owner),
+              override: profile.allowed_tabs_override ?? null,
+              roleTabs: profile.admin_roles?.allowed_tabs ?? null,
+            }),
+          );
+        } else {
+          // Enriched select failed (e.g. the owner/roles SQL isn't applied in
+          // this environment). Fall back to the legacy role-only select so the
+          // post-login navigation still passes the fo:role guard, and drop any
+          // stale tab set so the tab guard fails open; hydrate backfills.
+          clearStoredAdminTabs();
+          const { data: legacy } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", data.user.id)
+            .single();
+          if (legacy?.role) localStorage.setItem("fo:role", legacy.role);
+        }
       } catch {
         /* non-fatal — hydrateFromSession will retry */
       }
@@ -439,7 +589,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setAuthed(false);
     setIsDriverTokenSession(false);
+    setIsOwner(!USE_SUPABASE);
+    setAllowedTabs("all");
     localStorage.removeItem("fo:authed");
+    clearStoredAdminTabs();
     // Also burn any in-tab driver-token session so logging out via the
     // profile menu doesn't leave the bridge alive for the rest of the tab.
     try {
@@ -469,6 +622,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         login,
         isDriverTokenSession,
+        isOwner,
+        allowedTabs,
       }}
     >
       {children}

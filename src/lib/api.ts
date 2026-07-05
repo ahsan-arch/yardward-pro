@@ -3465,6 +3465,9 @@ ${rows}
     // Optional redirect after the recovery link completes. Defaults to
     // SITE_URL/reset-password on the edge function side.
     redirectTo?: string;
+    // Owner-only: assign a named custom admin role (tab restrictions) at
+    // creation time. Only meaningful when role === "admin".
+    adminRoleId?: string;
   }): Promise<
     | { ok: true; userId: string; tempPassword: string; inviteSent: false; reassigned: boolean; warning?: string }
     | { ok: true; userId: string; inviteSent: true; reassigned: boolean; warning?: string }
@@ -3534,6 +3537,176 @@ ${rows}
       reassigned: data.reassigned === true,
       ...(data.warning ? { warning: data.warning } : {}),
     };
+  },
+
+  // ---- Owner admin access management --------------------------------------
+  // Named custom admin roles (per-tab access) + per-user assignment. Reads
+  // are available to every admin (each client resolves its own tab set);
+  // writes are owner-only — enforced server-side by admin_roles RLS and the
+  // profiles access-column guard trigger. These wrappers only surface those
+  // errors; they are not the authority.
+  listAdminRoles: async (): Promise<
+    { ok: true; roles: import("@/types/domain").AdminRole[] } | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, roles: [] };
+    }
+    const { data, error } = await supabase
+      .from("admin_roles")
+      .select("id, name, allowed_tabs")
+      .order("name");
+    if (error) {
+      return { ok: false, reason: reportApiError("LIST_ADMIN_ROLES", error) };
+    }
+    return {
+      ok: true,
+      roles: (data ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        allowedTabs: r.allowed_tabs ?? [],
+      })),
+    };
+  },
+
+  saveAdminRole: async (input: {
+    id?: string;
+    name: string;
+    allowedTabs: string[];
+  }): Promise<
+    { ok: true; role: import("@/types/domain").AdminRole } | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return {
+        ok: true,
+        role: {
+          id: input.id ?? `MOCK-ROLE-${Math.random().toString(36).slice(2, 10)}`,
+          name: input.name,
+          allowedTabs: input.allowedTabs,
+        },
+      };
+    }
+    const row = {
+      name: input.name.trim(),
+      allowed_tabs: input.allowedTabs,
+      ...(input.id ? { id: input.id } : {}),
+    };
+    const { data, error } = await supabase
+      .from("admin_roles")
+      .upsert(row)
+      .select("id, name, allowed_tabs")
+      .single();
+    if (error) {
+      // 23505 = unique_violation on admin_roles.name — friendlier than the
+      // raw constraint message and not worth an error_log row.
+      if (error.code === "23505") {
+        return { ok: false, reason: `A role named "${input.name.trim()}" already exists` };
+      }
+      return {
+        ok: false,
+        reason: reportApiError("SAVE_ADMIN_ROLE", error, { name: input.name }),
+      };
+    }
+    return {
+      ok: true,
+      role: { id: data.id, name: data.name, allowedTabs: data.allowed_tabs ?? [] },
+    };
+  },
+
+  deleteAdminRole: async (id: string): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const { error } = await supabase.from("admin_roles").delete().eq("id", id);
+    if (error) {
+      // 23503 = the on-delete-restrict FK from profiles.admin_role_id — a
+      // role in use must be unassigned first (never silently deleted, which
+      // would flip its members back to full access).
+      if (error.code === "23503") {
+        return {
+          ok: false,
+          reason: "This role is still assigned to one or more users — reassign them first",
+        };
+      }
+      return { ok: false, reason: reportApiError("DELETE_ADMIN_ROLE", error, { id }) };
+    }
+    return { ok: true };
+  },
+
+  // Access settings for every admin profile, keyed by profile id. Used by
+  // the owner-only Users & roles UI to render the Access column/editor.
+  listAdminAccess: async (): Promise<
+    | {
+        ok: true;
+        access: Record<
+          string,
+          import("@/types/domain").AdminAccess & { roleName: string | null; active: boolean }
+        >;
+      }
+    | { ok: false; reason: string }
+  > => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, access: {} };
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, status, is_owner, admin_role_id, allowed_tabs_override, admin_roles(name)")
+      .eq("role", "admin");
+    if (error) {
+      return { ok: false, reason: reportApiError("LIST_ADMIN_ACCESS", error) };
+    }
+    const access: Record<
+      string,
+      import("@/types/domain").AdminAccess & { roleName: string | null; active: boolean }
+    > = {};
+    for (const p of data ?? []) {
+      access[p.id] = {
+        isOwner: Boolean(p.is_owner),
+        adminRoleId: p.admin_role_id,
+        allowedTabsOverride: p.allowed_tabs_override,
+        roleName: p.admin_roles?.name ?? null,
+        active: p.status === "active",
+      };
+    }
+    return { ok: true, access };
+  },
+
+  updateAdminAccess: async (
+    userId: string,
+    patch: {
+      isOwner?: boolean;
+      adminRoleId?: string | null;
+      allowedTabsOverride?: string[] | null;
+    },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const row: {
+      is_owner?: boolean;
+      admin_role_id?: string | null;
+      allowed_tabs_override?: string[] | null;
+    } = {};
+    if (patch.isOwner !== undefined) row.is_owner = patch.isOwner;
+    if (patch.adminRoleId !== undefined) row.admin_role_id = patch.adminRoleId;
+    if (patch.allowedTabsOverride !== undefined)
+      row.allowed_tabs_override = patch.allowedTabsOverride;
+    const { error } = await supabase.from("profiles").update(row).eq("id", userId);
+    if (error) {
+      // The guard triggers raise insufficient_privilege with human-readable
+      // messages ("Cannot remove the last owner admin", "Only an owner admin
+      // can change admin access settings") — show them as-is instead of
+      // logging an error_log row for an expected authorization denial.
+      if (error.code === "42501" || /owner admin/i.test(error.message)) {
+        return { ok: false, reason: error.message };
+      }
+      return { ok: false, reason: reportApiError("UPDATE_ADMIN_ACCESS", error, { userId }) };
+    }
+    return { ok: true };
   },
 
   // ---- Vehicles ----------------------------------------------------------
