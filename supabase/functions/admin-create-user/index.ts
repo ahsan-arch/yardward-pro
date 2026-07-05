@@ -338,14 +338,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Custom-role restriction, on the other hand, is FATAL if it can't be
-    // saved: leaving admin_role_id null resolves to FULL access — the exact
-    // opposite of the restriction the owner asked for. Fail toward less
-    // privilege by rolling back the just-created auth user so the owner can
-    // retry cleanly, rather than silently minting a full-access admin.
-    // (service_role is exempt from the owner-only access-column trigger.)
-    if (adminRoleId) {
-      const rolePatch = await fetch(
+    // Make the requested ROLE authoritative, and apply the custom-role
+    // restriction, in one FATAL patch (rollback on failure).
+    //
+    // Role: handle_new_auth_user only trusts raw_app_meta_data->>'role' and
+    // silently defaults anything it can't read to 'driver'. The GoTrue admin
+    // create endpoint does not reliably surface our app_metadata.role to that
+    // trigger, so a role=admin/mechanic create otherwise lands as a driver.
+    // We correct it here (service_role is exempt from the role-change guard).
+    // Skipped for driver — the trigger's default already matches, keeping the
+    // existing /admin/drivers create flow byte-for-byte unchanged.
+    //
+    // admin_role_id: leaving it null resolves to FULL access — the opposite of
+    // the restriction the owner asked for — so a failure here must not silently
+    // mint a full-access admin. Both fields fail toward less privilege by
+    // rolling the just-created auth user back so the owner can retry cleanly.
+    const corePatch: Record<string, unknown> = {};
+    if (role !== "driver") corePatch.role = role;
+    if (adminRoleId) corePatch.admin_role_id = adminRoleId;
+    if (Object.keys(corePatch).length > 0) {
+      const corePatchResp = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
         {
           method: "PATCH",
@@ -355,19 +367,19 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
             Prefer: "return=minimal",
           },
-          body: JSON.stringify({ admin_role_id: adminRoleId }),
+          body: JSON.stringify(corePatch),
         },
       );
-      if (!rolePatch.ok) {
-        const raw = await rolePatch.text();
+      if (!corePatchResp.ok) {
+        const raw = await corePatchResp.text();
         const rolledBack = await deleteAuthUser(userId);
         return new Response(
           JSON.stringify({
             ok: false,
-            error: `Could not apply the admin role restriction: HTTP ${rolePatch.status} — ${raw.slice(0, 200)}. ${
+            error: `Could not finalize the new ${role}'s role/access: HTTP ${corePatchResp.status} — ${raw.slice(0, 200)}. ${
               rolledBack
-                ? "The new user was rolled back (leaving them with full access would defeat the restriction); retry with the same email."
-                : `WARNING: rollback of auth user ${userId} also failed — they exist with FULL access. Delete or restrict them via the Supabase dashboard / Settings → Users & roles.`
+                ? "The new user was rolled back; retry with the same email."
+                : `WARNING: rollback of auth user ${userId} also failed — they exist but as a plain driver / full-access account. Fix or delete them via the Supabase dashboard / Settings → Users & roles.`
             }`,
           }),
           { status: 500, headers: corsHeaders },
