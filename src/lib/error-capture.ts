@@ -113,12 +113,19 @@ export type ReportErrorInput = {
 //     "useAuth must be within AuthProvider" that's a build artefact, not a bug.
 //  4. Dev builds (import.meta.env.DEV) — local mock-mode sessions try to
 //     INSERT mock ids like "A-01" into UUID columns; not a real-user path.
+//  5. Leaflet map-teardown race — navigating away from a map page can fire a
+//     "_leaflet_pos" read on an already-removed pane (in an async animation
+//     frame or a react-leaflet commit). It's benign: the user is leaving and
+//     the map re-initializes cleanly on the next mount. VehicleMap already
+//     guards/contains it (mounted-ref + map.stop() + a map-only boundary);
+//     this keeps the residual async frames out of the triage log.
 function shouldSkipReport(input: ReportErrorInput): boolean {
   if (typeof window === "undefined") return false;
   const pathname = window.location?.pathname ?? "";
   if (pathname.startsWith("/debug/")) return true;
   if (typeof navigator !== "undefined" && navigator.webdriver === true) return true;
   if (/must be within \w+Provider/.test(input.message ?? "")) return true;
+  if (/_leaflet_pos/.test(input.message ?? "")) return true;
   if (import.meta.env.DEV) return true;
   return false;
 }

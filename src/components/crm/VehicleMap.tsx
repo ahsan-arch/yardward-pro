@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L, { type DivIcon } from "leaflet";
-import { Locate, RefreshCw, Truck } from "lucide-react";
+import { AlertTriangle, Locate, RefreshCw, Truck } from "lucide-react";
 import { api } from "@/lib/api";
 import { driverById, geotabCoordsForVehicle } from "@/data/mockData";
 import { StatusBadge } from "@/components/crm/StatusBadge";
+import { reportErrorToServer } from "@/lib/error-capture";
 import type { Vehicle } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
@@ -104,11 +105,26 @@ function FitToPins({ coords }: { coords: LiveCoord[] }) {
   const map = useMap();
   useEffect(() => {
     if (coords.length === 0) return;
-    if (coords.length === 1) {
-      map.setView([coords[0].lat, coords[0].lng], 14, { animate: true });
-    } else {
-      const bounds = L.latLngBounds(coords.map((c) => [c.lat, c.lng] as [number, number]));
-      map.fitBounds(bounds, { padding: [40, 40], animate: true });
+    // Wrap the fit in try/catch: during a navigation-away teardown the pane can
+    // be half-removed, and Leaflet reads _leaflet_pos off it and throws. That
+    // error is benign (the user is leaving the page) but would otherwise reach
+    // the app error boundary and render a full-page crash.
+    try {
+      // animate:false on the auto-fit is deliberate. This effect runs on mount
+      // AND on every 30/60s refresh; an animated pan schedules a
+      // requestAnimationFrame that can outlive a navigation-away teardown and
+      // read _leaflet_pos off a removed pane. A non-animated fit is synchronous
+      // (no orphan frame) and reads as an instant snap-to-fit, which is fine
+      // for a passively-refreshing fleet map. (User-initiated focus still
+      // animates — see FocusOnVehicle.)
+      if (coords.length === 1) {
+        map.setView([coords[0].lat, coords[0].lng], 14, { animate: false });
+      } else {
+        const bounds = L.latLngBounds(coords.map((c) => [c.lat, c.lng] as [number, number]));
+        map.fitBounds(bounds, { padding: [40, 40], animate: false });
+      }
+    } catch {
+      /* map torn down mid-update — safe to ignore */
     }
     // Cancel any in-flight pan/zoom animation before this effect re-runs or the
     // map is torn down. Child effect cleanups run before MapContainer's
@@ -116,7 +132,11 @@ function FitToPins({ coords }: { coords: LiveCoord[] }) {
     // otherwise an orphaned animation frame reads _leaflet_pos off a removed
     // pane and throws.
     return () => {
-      map.stop();
+      try {
+        map.stop();
+      } catch {
+        /* already removed */
+      }
     };
   }, [JSON.stringify(coords.map((c) => [c.lat, c.lng])), map]);
   return null;
@@ -135,14 +155,82 @@ function FocusOnVehicle({
     if (!focusVehicleId) return;
     const c = coords[focusVehicleId];
     if (!c) return;
-    map.flyTo([c.lat, c.lng], 15, { animate: true, duration: 0.6 });
+    try {
+      map.flyTo([c.lat, c.lng], 15, { animate: true, duration: 0.6 });
+    } catch {
+      /* map torn down mid-update — safe to ignore */
+    }
     // Cancel the in-flight flyTo on cleanup/unmount so its animation frame
     // never touches a removed map pane (_leaflet_pos undefined crash).
     return () => {
-      map.stop();
+      try {
+        map.stop();
+      } catch {
+        /* already removed */
+      }
     };
   }, [focusVehicleId, coords, map]);
   return null;
+}
+
+/**
+ * Map-only error boundary. Contains any Leaflet render/teardown error to the
+ * map panel instead of letting it bubble to the app-level ErrorBoundary and
+ * blank the whole page. The "_leaflet_pos" teardown race is benign (it fires
+ * as the user navigates away), so we recover silently and do NOT report it;
+ * any other map error is reported once and shows a small retry card.
+ */
+class MapBoundary extends Component<
+  { children: ReactNode; height: string },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  // Bounds the silent auto-recovery so a (hypothetical) persistent
+  // _leaflet_pos throw can't spin render → catch → render forever.
+  private recoveries = 0;
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error) {
+    const benign = /_leaflet_pos/.test(error?.message ?? "");
+    if (benign && this.recoveries < 3) {
+      // Transient teardown race — drop the error state so the map re-renders
+      // cleanly on the next commit rather than sticking on the fallback.
+      this.recoveries += 1;
+      this.setState({ hasError: false });
+      return;
+    }
+    if (benign) return; // exhausted recoveries: leave the fallback up, don't report
+    void reportErrorToServer({
+      severity: "error",
+      errorCode: "MAP_RENDER",
+      message: error?.message || "Map render error",
+      stack: error?.stack ?? null,
+    });
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{ height: this.props.height }}
+          className="grid place-items-center bg-muted text-center p-4"
+        >
+          <div className="text-xs text-muted-foreground">
+            <AlertTriangle className="w-6 h-6 mx-auto mb-2 text-amber-brand" />
+            Map couldn’t render.
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false })}
+              className="block mx-auto mt-2 text-amber-brand hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export type VehicleMapProps = {
@@ -202,9 +290,22 @@ export function VehicleMap({
   const [lastUpdate, setLastUpdate] = useState<string>(new Date().toISOString());
   const [refreshing, setRefreshing] = useState(false);
   const refreshingRef = useRef(false);
+  // Tracks whether the component is still mounted. The async refresh below can
+  // resolve after the user has navigated away; committing its setState then
+  // makes react-leaflet update markers against a map that MapContainer has
+  // already torn down, which throws "reading '_leaflet_pos'" during the commit
+  // and trips the app error boundary. Skipping the setState after unmount
+  // closes that race at the source.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   async function refresh() {
-    if (refreshingRef.current) return;
+    if (refreshingRef.current || !mountedRef.current) return;
     refreshingRef.current = true;
     setRefreshing(true);
     try {
@@ -214,6 +315,7 @@ export function VehicleMap({
           return [v.id, { lat: loc.lat, lng: loc.lng, capturedAt: loc.capturedAt }] as const;
         }),
       );
+      if (!mountedRef.current) return;
       setLiveCoords((prev) => {
         const next = { ...prev };
         for (const [id, c] of entries) next[id] = c;
@@ -222,7 +324,7 @@ export function VehicleMap({
       setLastUpdate(new Date().toISOString());
     } finally {
       refreshingRef.current = false;
-      setRefreshing(false);
+      if (mountedRef.current) setRefreshing(false);
     }
   }
 
@@ -311,6 +413,7 @@ export function VehicleMap({
             "overflow-hidden",
           )}
         >
+          <MapBoundary height={height}>
           <MapContainer
             center={DEFAULT_CENTER}
             zoom={DEFAULT_ZOOM}
@@ -393,6 +496,7 @@ export function VehicleMap({
               </Marker>
             ))}
           </MapContainer>
+          </MapBoundary>
         </div>
 
         {/* Sidebar */}
