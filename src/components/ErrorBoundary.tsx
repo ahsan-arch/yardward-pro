@@ -13,6 +13,18 @@ const RELOAD_ATTEMPTS_MAX = 2;
 // fresh RPC call every time React retries rendering.
 const reportedSignatures = new Set<string>();
 
+// A lazily-imported route chunk failed to load. This happens when a new build
+// is deployed while a tab is open: the old hashed chunk is gone, the SPA
+// server returns index.html for it, and the dynamic import throws a MIME-type
+// (or "failed to fetch dynamically imported module") error. It's benign and
+// self-heals with a reload that pulls the fresh chunk hashes.
+export function isChunkLoadError(error: Error | null | undefined): boolean {
+  const s = `${error?.name ?? ""} ${error?.message ?? ""}`;
+  return /valid JavaScript MIME type|Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Loading chunk [\w-]+ failed|dynamically imported module/i.test(
+    s,
+  );
+}
+
 function readReloadAttempts(): { count: number; firstAt: number } {
   try {
     const raw = sessionStorage.getItem(RELOAD_ATTEMPTS_KEY);
@@ -49,6 +61,17 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack?: string | null }) {
+    // Stale-chunk-after-deploy: reload once to pull the fresh build. Bounded by
+    // the same reload-attempt guard as the manual button, so a genuinely broken
+    // deploy can't reload-loop — after the cap it falls through to the normal
+    // fallback UI below. Not reported: it's a benign, self-healing artifact.
+    if (isChunkLoadError(error)) {
+      if (readReloadAttempts().count < RELOAD_ATTEMPTS_MAX) {
+        bumpReloadAttempts();
+        location.reload();
+      }
+      return;
+    }
     console.error("[ErrorBoundary]", error, info.componentStack);
     const sig = `${error.message}:${(error.stack ?? "").slice(0, 200)}`;
     if (reportedSignatures.has(sig)) return;
@@ -68,6 +91,19 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       const stuck = readReloadAttempts().count >= RELOAD_ATTEMPTS_MAX;
+      // While componentDidCatch triggers the reload for a stale-chunk error,
+      // show a calm "updating" note instead of the alarming crash card — unless
+      // repeated reloads didn't help, in which case fall through to the real
+      // error UI so the user isn't stuck in a silent loop.
+      if (isChunkLoadError(this.state.error) && !stuck) {
+        return (
+          <div className="min-h-[400px] grid place-items-center p-4">
+            <div className="text-center text-sm text-muted-foreground">
+              Updating to the latest version…
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="min-h-[400px] grid place-items-center p-4">
           <div className="max-w-md text-center bg-card border border-danger/30 rounded-lg p-6">
