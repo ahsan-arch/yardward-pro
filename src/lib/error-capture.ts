@@ -126,6 +126,16 @@ function shouldSkipReport(input: ReportErrorInput): boolean {
   if (typeof navigator !== "undefined" && navigator.webdriver === true) return true;
   if (/must be within \w+Provider/.test(input.message ?? "")) return true;
   if (/_leaflet_pos/.test(input.message ?? "")) return true;
+  //  6. Stale-chunk-after-deploy: a lazily-imported route chunk 404s because a
+  //     new build replaced its hash while the tab was open. Benign and
+  //     self-healing (the ErrorBoundary reloads to the fresh build); reporting
+  //     it just adds deploy-time noise to the triage log.
+  if (
+    /valid JavaScript MIME type|Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk [\w-]+ failed|error loading dynamically imported module/i.test(
+      input.message ?? "",
+    )
+  )
+    return true;
   if (import.meta.env.DEV) return true;
   return false;
 }
