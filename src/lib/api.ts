@@ -29,11 +29,16 @@ import type {
   MaintenanceWorkOrderPriority,
   MaintenanceWorkOrderStatus,
   MaintenanceWorkOrderSource,
+  Tool,
+  ToolCondition,
+  CoreReturn,
+  BomComponent,
+  WorkOrderPhoto,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 import { getStore } from "@/contexts/DataContext";
 import { driverById, jobById, clientById, geotabCoordsForVehicle } from "@/data/mockData";
-import { supabase, USE_SUPABASE, type Row } from "./supabase";
+import { supabase, USE_SUPABASE, type Row, type Update } from "./supabase";
 import { reportErrorToServer } from "./error-capture";
 import { fetchAppSettings as fetchAppSettingsFromDb } from "./db-queries";
 
@@ -164,6 +169,81 @@ async function extractFunctionErrorBody(err: unknown): Promise<string | null> {
   }
 }
 
+// Mock-mode notification fan-out to every admin. store.admins is only ever
+// hydrated from a real Supabase fetch (empty in pure mock mode — see
+// DataContext's `useState<Admin[]>([])`), so this falls back to the single
+// demo admin persona ("A-01" / Alex Chen) when the roster is empty, matching
+// the userId convention every seed notification in mockData.ts already uses.
+// Only for the mock-mode branch of a write path — the Supabase branch's
+// equivalent behavior comes from a DB trigger instead (SECURITY DEFINER, so
+// it can insert into notifications despite the caller having no direct
+// write access — see the PPE and low-stock trigger migrations).
+function notifyAllAdminsMock(
+  store: ReturnType<typeof getStore>,
+  type: Notification["type"],
+  body: string,
+  link: string,
+): void {
+  const targets = store.admins.length > 0 ? store.admins.map((a) => a.id) : ["A-01"];
+  for (const adminId of targets) {
+    store.pushNotification({
+      id: uid("NOTIF"),
+      userId: adminId,
+      type,
+      body,
+      link,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+// Mock-mode mirror of trg_jobs_notify_equipment_prep (see
+// 20260718100000_job_additional_equipment.sql) — same "notify every mechanic"
+// fan-out as notifyAllAdminsMock above, targeting the workshop instead.
+function notifyAllMechanicsMock(
+  store: ReturnType<typeof getStore>,
+  type: Notification["type"],
+  body: string,
+  link: string,
+): void {
+  const targets = store.mechanics.length > 0 ? store.mechanics.map((m) => m.id) : ["M-01"];
+  for (const mechanicId of targets) {
+    store.pushNotification({
+      id: uid("NOTIF"),
+      userId: mechanicId,
+      type,
+      body,
+      link,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+// Mock-mode mirror of trg_inventory_items_notify_low_stock (see
+// 20260717130000_low_stock_alerts.sql) — "was it low before, is it low now"
+// on the same crossed-threshold semantics, shared by every mock-mode write
+// path that can move qty_on_hand or reorder_point (admin/mechanic edits,
+// and a mechanic completing a work order with parts used).
+function maybeNotifyLowStockMock(
+  store: ReturnType<typeof getStore>,
+  before: { name: string; sku: string; qtyOnHand: number; reorderPoint: number },
+  newQty: number,
+  newReorder: number,
+): void {
+  const wasLow = before.qtyOnHand <= before.reorderPoint;
+  const isLow = newQty <= newReorder;
+  if (!wasLow && isLow) {
+    notifyAllAdminsMock(
+      store,
+      "alert",
+      `Low stock: ${before.name} (${before.sku}) — ${newQty} on hand, reorder point ${newReorder}.`,
+      "/admin/inventory",
+    );
+  }
+}
+
 // Small helper: log the supabase error to the server and return the message we
 // will throw to callers. Keeps each call site to two lines instead of five.
 function reportApiError(
@@ -204,7 +284,10 @@ import {
   domainWorkOrderToDb,
   domainMaintenanceLogToDb,
   domainFuelLogToDb,
+  domainToolToDb,
   dbMaintenanceWorkOrderToDomain,
+  domainCoreReturnToDb,
+  dbWorkOrderPhotoToDomain,
 } from "./db-mappers";
 
 const wait = (ms = 300) => new Promise((r) => setTimeout(r, ms));
@@ -358,8 +441,17 @@ export const api = {
       const { error } = await supabase.from("jobs").insert(domainJobToDb(job));
       if (error)
         throw new Error(`createJob: ${reportApiError("CREATE_JOB", error, { jobId: job.id })}`);
+      // trg_jobs_notify_equipment_prep handles the mechanic fan-out server-side.
     } else {
       await wait();
+      if (job.additionalEquipment.length > 0) {
+        notifyAllMechanicsMock(
+          getStore(),
+          "job",
+          `Prepare additional equipment for ${job.id} before dispatch: ${job.additionalEquipment.join(", ")}`,
+          "/mechanic",
+        );
+      }
     }
     getStore().createJob(job);
     return job;
@@ -917,6 +1009,12 @@ export const api = {
     odometer: number;
     fuelLevel: string;
     condition: string;
+    /**
+     * Description of the condition issue ("minor"/"major"). Required by the
+     * form when condition !== "ok" — see the maintenance-work-order creation
+     * below, which needs real text to hand the mechanic queue.
+     */
+    conditionNote?: string;
     gps: { lat: number; lng: number } | null;
     /**
      * Optional client-minted key, persisted by the offline-queue and replayed
@@ -927,6 +1025,19 @@ export const api = {
      * that do (work_orders / inspections / etc).
      */
     idempotencyKey?: string;
+    /**
+     * "Any personal PPE missing?" toggle + the required reason, captured on
+     * the start-of-day form. When true, a DB trigger
+     * (trg_time_entries_notify_ppe_missing) fans this out to every admin's
+     * notification inbox — see 20260717090000_ppe_missing_report.sql.
+     */
+    ppeMissing?: boolean;
+    ppeMissingReason?: string;
+    /**
+     * "Passengers in vehicle?" toggle expanded to an actual name manifest —
+     * see 20260717093000_start_of_day_passengers.sql.
+     */
+    passengerNames?: string[];
   }) => {
     const store = getStore();
     // Resolve the REAL driver uuid. A /t/<token> session leaves useAuth().user
@@ -957,6 +1068,9 @@ export const api = {
       flagged: p.condition !== "ok",
       flagReason: p.condition !== "ok" ? `Condition: ${p.condition}` : "",
       pretripInspectionId,
+      ppeMissing: p.ppeMissing ?? false,
+      ppeMissingReason: p.ppeMissing ? (p.ppeMissingReason ?? "") : "",
+      passengerNames: p.passengerNames ?? [],
     };
     if (USE_SUPABASE && supabase) {
       if (!resolvedActor) throw new Error("submitStartOfDay: no authenticated actor");
@@ -974,6 +1088,9 @@ export const api = {
         gps_clock_out_lat: null,
         gps_clock_out_lng: null,
         vehicle_movement_correlation: entry.vehicleMovementCorrelation,
+        ppe_missing: entry.ppeMissing,
+        ppe_missing_reason: entry.ppeMissingReason,
+        passenger_names: entry.passengerNames,
         flagged: entry.flagged,
         flag_reason: entry.flagReason,
         pretrip_inspection_id: entry.pretripInspectionId ?? null,
@@ -995,8 +1112,50 @@ export const api = {
       }
     } else {
       await wait();
+      // Mock mode has no DB trigger to fan this out, so mirror
+      // trg_time_entries_notify_ppe_missing locally.
+      if (entry.ppeMissing) {
+        const driverName = store.drivers.find((d) => d.id === driverId)?.name ?? "A driver";
+        notifyAllAdminsMock(
+          store,
+          "alert",
+          `${driverName} reported missing PPE at start of shift: ${entry.ppeMissingReason}`,
+          "/admin/timesheets",
+        );
+      }
     }
     store.submitStartOfDay(entry);
+    // Vehicle issue reporting destination (Driver item 14): a "minor" or
+    // "major" condition report used to just flag the time_entries row —
+    // nobody downstream ever saw it unless an admin happened to open that
+    // driver's timesheet. This routes it to the same mechanic work-order
+    // queue that failed pre-trip inspections already auto-open into (see
+    // auto_open_wo_from_failed_inspection in
+    // 20260602150128_build_maintenance_wo_and_ticket_uses.sql), giving the
+    // "notify management" promise on the major-issue option something real
+    // to do. reportedFrom: 'driver_note' is a value that migration's CHECK
+    // constraint + RLS already reserved for exactly this — the schema was
+    // ready, only the client wiring was missing. Best-effort: a driver's
+    // shift must never fail to submit because the WO side-effect hiccuped.
+    if (p.condition !== "ok" && vehicleId) {
+      try {
+        await api.createMaintenanceWorkOrder({
+          vehicleId,
+          issueDescription: p.conditionNote?.trim() || `Driver-reported ${p.condition} issue at start of shift`,
+          priority: p.condition === "major" ? "critical" : "medium",
+          reportedBy: driverId,
+          reportedFrom: "driver_note",
+          idempotencyKey: p.idempotencyKey ? `${p.idempotencyKey}-wo` : undefined,
+        });
+      } catch (err) {
+        void reportErrorToServer({
+          severity: "error",
+          errorCode: "SUBMIT_START_OF_DAY_WO",
+          message: err instanceof Error ? err.message : String(err),
+          context: { driverId, vehicleId },
+        });
+      }
+    }
     return entry;
   },
   submitEndOfDay: async (p: {
@@ -1306,6 +1465,7 @@ export const api = {
           id: pr.id,
           mechanic_id: pr.mechanicId,
           item: pr.item,
+          quantity: pr.quantity,
           reason: pr.reason,
           estimated_cost: pr.estimatedCost,
           urgency: pr.urgency,
@@ -1342,10 +1502,12 @@ export const api = {
   },
   /**
    * Approve a purchase request AND, when the requested item exists in stock
-   * with at least one free unit, reserve one against it. The PR row stores
-   * the reservation quantity (`inventory_decrement_qty`) so the admin sheet
-   * can render "We reserved 1 of N in stock at SHOP-01" — and so the later
-   * markPurchaseRequestOrdered call knows not to double-debit.
+   * with at least one free unit, reserve against it — up to `pr.quantity`,
+   * capped by what's actually free (qty_on_hand - qty_reserved). A request
+   * for 4 against 2 free units reserves 2 (partial coverage), not a flat 1.
+   * The PR row stores the reservation quantity (`inventory_decrement_qty`)
+   * so the admin sheet can render "Reserved 2 of 4 requested" — and so the
+   * later markPurchaseRequestOrdered call knows not to double-debit.
    *
    * Match strategy mirrors the mechanic-side `inventory_check_result` lookup:
    * case-insensitive substring on either `name` or `sku`. Best match by
@@ -1400,17 +1562,20 @@ export const api = {
     const candidates = needle
       ? store.inventoryItems.filter(
           (it) =>
-            it.name.toLowerCase().includes(needle) ||
-            needle.includes(it.name.toLowerCase()) ||
-            it.sku.toLowerCase().includes(needle) ||
-            needle.includes(it.sku.toLowerCase()),
+            !it.archived &&
+            (it.name.toLowerCase().includes(needle) ||
+              needle.includes(it.name.toLowerCase()) ||
+              it.sku.toLowerCase().includes(needle) ||
+              needle.includes(it.sku.toLowerCase())),
         )
       : [];
     const matched =
       candidates
         .filter((it) => it.qtyOnHand - it.qtyReserved >= 1)
         .sort((a, b) => a.name.length - b.name.length)[0] ?? null;
-    const reservation = matched ? { itemId: matched.id, qty: 1 } : null;
+    const reservation = matched
+      ? { itemId: matched.id, qty: Math.min(matched.qtyOnHand - matched.qtyReserved, pr.quantity) }
+      : null;
     await wait();
     if (reservation) store.adjustInventoryReservation(reservation.itemId, reservation.qty);
     store.approvePurchaseRequest(id, approverId, reservation);
@@ -1635,6 +1800,59 @@ export const api = {
     return log;
   },
 
+  // ---- Vehicle tools ------------------------------------------------------
+  // Client feedback: the vehicle detail page could only display the tool
+  // roster assigned via seed data — there was no way to add, edit, reassign,
+  // or retire one. RLS already lets admin and mechanic write this table (see
+  // tools_admin_all / tools_mechanic_all in 20260601180203_rls_policies.sql);
+  // this was purely a missing UI + API surface, no schema/policy change
+  // needed.
+  createTool: async (input: {
+    name: string;
+    condition: ToolCondition;
+    vehicleId: string | null;
+  }): Promise<Tool> => {
+    const tool: Tool = { ...input, id: uid("TL") };
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase.from("tools").insert(domainToolToDb(tool));
+      if (error)
+        throw new Error(
+          `createTool: ${reportApiError("CREATE_TOOL", error, { toolId: tool.id })}`,
+        );
+    } else {
+      await wait();
+    }
+    getStore().addTool(tool);
+    return tool;
+  },
+  updateTool: async (
+    id: string,
+    patch: Partial<Pick<Tool, "name" | "condition" | "vehicleId">>,
+  ): Promise<void> => {
+    if (USE_SUPABASE && supabase) {
+      const dbPatch: Update<"tools"> = {};
+      if (patch.name !== undefined) dbPatch.name = patch.name;
+      if (patch.condition !== undefined) dbPatch.condition = patch.condition;
+      if (patch.vehicleId !== undefined) dbPatch.vehicle_id = patch.vehicleId;
+      const { error } = await supabase.from("tools").update(dbPatch).eq("id", id);
+      if (error)
+        throw new Error(`updateTool: ${reportApiError("UPDATE_TOOL", error, { toolId: id })}`);
+    } else {
+      await wait();
+    }
+    getStore().patchTool(id, patch);
+  },
+  deleteTool: async (id: string): Promise<void> => {
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase.from("tools").delete().eq("id", id);
+      if (error)
+        throw new Error(`deleteTool: ${reportApiError("DELETE_TOOL", error, { toolId: id })}`);
+    } else {
+      await wait();
+    }
+    getStore().removeTool(id);
+  },
+
   // ---- Maintenance work orders (mechanic queue) ------------------------
   //
   // Surface backed by public.maintenance_work_orders. DataContext keeps the
@@ -1827,6 +2045,105 @@ export const api = {
     };
     store.upsertMaintenanceWorkOrder(next);
     return { ok: true as const };
+  },
+
+  /**
+   * Terminal WO completion — separate from updateMaintenanceWorkOrder's
+   * generic progress-save patch because this one has a side effect that
+   * must happen EXACTLY once: consuming qty_on_hand for every part recorded
+   * against the job. Delegates to the SECURITY DEFINER
+   * complete_maintenance_work_order RPC (row-locks + an idempotent
+   * status-check), same pattern as claim/release — see
+   * 20260717150000_complete_wo_consumes_parts.sql. A retried call (network
+   * blip, double-tap) sees the already-completed row and does not
+   * double-decrement stock.
+   */
+  completeMaintenanceWorkOrder: async (
+    id: string,
+    mechanicId: string,
+    patch: {
+      laborHours: number;
+      laborNotes: string;
+      partsUsed: MaintenanceWorkOrderPart[];
+      finalCost: number | null;
+      completionNotes: string | null;
+    },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (USE_SUPABASE && supabase) {
+      const { data, error } = await supabase.rpc("complete_maintenance_work_order", {
+        p_id: id,
+        p_mechanic_id: mechanicId,
+        p_labor_hours: patch.laborHours,
+        p_labor_notes: patch.laborNotes,
+        p_parts_used: patch.partsUsed as unknown as import("./database.types").Json,
+        p_final_cost: patch.finalCost,
+        p_completion_notes: patch.completionNotes,
+      });
+      if (error) {
+        return {
+          ok: false,
+          reason: reportApiError("COMPLETE_MAINTENANCE_WO", error, { id, mechanicId }),
+        };
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { ok: boolean; status: string }
+        | undefined;
+      if (!row?.ok) {
+        return { ok: false, reason: "Work order is not assigned to you" };
+      }
+      // The RPC doesn't hand back the full row — re-fetch the one we just
+      // touched (a single-row select, not a refetch of the whole queue) so
+      // the local mirror reflects the server's final state exactly.
+      const { data: fresh } = await supabase
+        .from("maintenance_work_orders")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (fresh) getStore().upsertMaintenanceWorkOrder(dbMaintenanceWorkOrderToDomain(fresh));
+      return { ok: true };
+    }
+    // Mock mode: mirror the RPC's side effects locally.
+    await wait();
+    const store = getStore();
+    const existing = store.maintenanceWorkOrders.find((w) => w.id === id);
+    if (!existing) return { ok: false, reason: "Work order not found" };
+    if (existing.assignedMechanicId !== mechanicId) {
+      return { ok: false, reason: "Work order is not assigned to you" };
+    }
+    if (existing.status === "completed") return { ok: true };
+    // BOM-aware, mirroring complete_maintenance_work_order's SQL: a part
+    // flagged isBom carries no real stock of its own — decrement its
+    // components (scaled by qty_per * qty used) instead of the BOM row.
+    for (const part of patch.partsUsed) {
+      const item = store.inventoryItems.find((i) => i.id === part.inventoryItemId);
+      if (!item) continue;
+      if (item.isBom) {
+        const recipe = store.bomComponents.filter((c) => c.parentItemId === item.id);
+        for (const comp of recipe) {
+          const compItem = store.inventoryItems.find((i) => i.id === comp.componentItemId);
+          if (!compItem) continue;
+          const newQty = Math.max(0, compItem.qtyOnHand - comp.qtyPer * part.qty);
+          maybeNotifyLowStockMock(store, compItem, newQty, compItem.reorderPoint);
+          store.applyInventoryItem({ ...compItem, qtyOnHand: newQty });
+        }
+      } else {
+        const newQty = Math.max(0, item.qtyOnHand - part.qty);
+        maybeNotifyLowStockMock(store, item, newQty, item.reorderPoint);
+        store.applyInventoryItem({ ...item, qtyOnHand: newQty });
+      }
+    }
+    store.upsertMaintenanceWorkOrder({
+      ...existing,
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      laborHours: patch.laborHours,
+      laborNotes: patch.laborNotes,
+      partsUsed: patch.partsUsed,
+      finalCost: patch.finalCost,
+      completionNotes: patch.completionNotes,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
   },
 
   /**
@@ -3027,6 +3344,52 @@ export const api = {
     return { ok: true, status: row.status };
   },
 
+  // Admin-only: self-service "ask for more vehicles" ping — never a hard cap.
+  // Stamps a timestamp+note via the SECDEF RPC and notifies every admin
+  // profile (handled server-side). vehiclesLimit is never enforced as a
+  // technical block on creating a vehicle.
+  requestMoreVehicleCapacity: async (
+    requestedCount: number,
+    note: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    const requestedAt = new Date().toISOString();
+    const trimmedNote = note.trim() || null;
+    if (!USE_SUPABASE || !supabase) {
+      const current = getStore().appSettings;
+      getStore().setAppSettings({
+        ...current,
+        billing: {
+          ...current.billing,
+          vehicleCapacityRequestedAt: requestedAt,
+          vehicleCapacityRequestNote: trimmedNote,
+        },
+      });
+      return { ok: true };
+    }
+    const { data, error } = await supabase.rpc("request_more_vehicle_capacity", {
+      p_requested_count: requestedCount,
+      p_note: note,
+    });
+    if (error) {
+      reportApiError("REQUEST_MORE_VEHICLE_CAPACITY", error, { requestedCount, note });
+      return { ok: false, reason: error.message };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.ok) {
+      return { ok: false, reason: row?.error ?? "Request failed" };
+    }
+    const current = getStore().appSettings;
+    getStore().setAppSettings({
+      ...current,
+      billing: {
+        ...current.billing,
+        vehicleCapacityRequestedAt: requestedAt,
+        vehicleCapacityRequestNote: trimmedNote,
+      },
+    });
+    return { ok: true };
+  },
+
   // ---- Per-user notification preferences --------------------------------
   // Reads the auth.uid()'s profile.notification_preferences. Returns the
   // safe default in mock mode or if Supabase is unreachable.
@@ -3182,10 +3545,44 @@ export const api = {
   // step without a refetch.
   updateInventoryItem: async (
     id: string,
-    patch: { name?: string; qtyOnHand?: number; reorderPoint?: number },
+    patch: {
+      name?: string;
+      qtyOnHand?: number;
+      reorderPoint?: number;
+      supplierId?: string;
+      location?: string;
+      category?: string;
+      manufacturer?: string;
+      manufacturerPartNumber?: string;
+      alternativePartNumber?: string;
+      alternativeSupplierId?: string;
+      /** Vehicle assignment. Pass null to clear (move to spare pool). */
+      assignedVehicleId?: string | null;
+      /** Person assignment. Pass null to clear. Mutually exclusive with
+       *  assignedVehicleId — the DB CHECK constraint enforces this, so
+       *  assigning to a person should always clear the vehicle side (and
+       *  vice versa) from the caller, not rely on the constraint to reject
+       *  a bad combination after the fact. */
+      assignedUserId?: string | null;
+      /** Soft-hide (see 20260717170000_archived_parts.sql) — never a delete. */
+      archived?: boolean;
+    },
   ): Promise<{ ok: true } | { ok: false; reason: string }> => {
     if (!USE_SUPABASE || !supabase) {
       await wait();
+      // Mock mode has no DB trigger to fan this out, so mirror
+      // trg_inventory_items_notify_low_stock locally. Read the CURRENT store
+      // state before the caller's applyInventoryItem() overwrites it — that's
+      // the "before" snapshot the crossed-threshold check needs.
+      const before = getStore().inventoryItems.find((i) => i.id === id);
+      if (before) {
+        maybeNotifyLowStockMock(
+          getStore(),
+          before,
+          patch.qtyOnHand ?? before.qtyOnHand,
+          patch.reorderPoint ?? before.reorderPoint,
+        );
+      }
       return { ok: true };
     }
     const dbPatch: Record<string, unknown> = {};
@@ -3196,6 +3593,20 @@ export const api = {
       dbPatch.reorder_point = Math.max(0, Math.round(patch.reorderPoint));
     if (patch.qtyOnHand !== undefined)
       dbPatch.last_restocked = new Date().toISOString().slice(0, 10);
+    if (patch.supplierId !== undefined) dbPatch.supplier_id = patch.supplierId.trim() || null;
+    if (patch.location !== undefined) dbPatch.location = patch.location.trim();
+    if (patch.category !== undefined) dbPatch.category = patch.category.trim();
+    if (patch.manufacturer !== undefined) dbPatch.manufacturer = patch.manufacturer.trim();
+    if (patch.manufacturerPartNumber !== undefined)
+      dbPatch.manufacturer_part_number = patch.manufacturerPartNumber.trim();
+    if (patch.alternativePartNumber !== undefined)
+      dbPatch.alternative_part_number = patch.alternativePartNumber.trim();
+    if (patch.alternativeSupplierId !== undefined)
+      dbPatch.alternative_supplier_id = patch.alternativeSupplierId.trim() || null;
+    if (patch.assignedVehicleId !== undefined)
+      dbPatch.assigned_vehicle_id = patch.assignedVehicleId;
+    if (patch.assignedUserId !== undefined) dbPatch.assigned_user_id = patch.assignedUserId;
+    if (patch.archived !== undefined) dbPatch.archived = patch.archived;
     const { error } = await supabase
       .from("inventory_items")
       .update(dbPatch as never)
@@ -3211,10 +3622,28 @@ export const api = {
     sku: string;
     qtyOnHand: number;
     reorderPoint: number;
+    supplierId?: string;
+    location?: string;
+    category?: string;
+    manufacturer?: string;
+    manufacturerPartNumber?: string;
+    alternativePartNumber?: string;
+    alternativeSupplierId?: string;
   }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> => {
     const id = uid("INV");
     if (!USE_SUPABASE || !supabase) {
       await wait();
+      // A new part created already at/below its reorder point (e.g. logging
+      // a part that's already out of stock) is just as "low" as one that
+      // dropped there — same mirror as updateInventoryItem's mock branch.
+      if (input.qtyOnHand <= input.reorderPoint) {
+        notifyAllAdminsMock(
+          getStore(),
+          "alert",
+          `Low stock: ${input.name.trim()} (${input.sku.trim()}) — ${input.qtyOnHand} on hand, reorder point ${input.reorderPoint}.`,
+          "/admin/inventory",
+        );
+      }
       return { ok: true, id };
     }
     const { error } = await supabase.from("inventory_items").insert({
@@ -3225,6 +3654,13 @@ export const api = {
       qty_reserved: 0,
       reorder_point: Math.max(0, Math.round(input.reorderPoint)),
       last_restocked: new Date().toISOString().slice(0, 10),
+      supplier_id: input.supplierId?.trim() || null,
+      location: input.location?.trim() ?? "",
+      category: input.category?.trim() ?? "",
+      manufacturer: input.manufacturer?.trim() ?? "",
+      manufacturer_part_number: input.manufacturerPartNumber?.trim() ?? "",
+      alternative_part_number: input.alternativePartNumber?.trim() ?? "",
+      alternative_supplier_id: input.alternativeSupplierId?.trim() || null,
     } as never);
     if (error) {
       const reason =
@@ -3234,6 +3670,194 @@ export const api = {
       return { ok: false, reason };
     }
     return { ok: true, id };
+  },
+
+  // Mints a fresh signed URL for a part-photos storage path. Mirrors
+  // signTicketPhotoUrl — the DB column stores a PATH, not a baked URL, so a
+  // signed link never sits around long enough to 403 mid-session.
+  signInventoryPhotoUrl: async (path: string, ttlSeconds = 3600): Promise<string | null> => {
+    if (!USE_SUPABASE || !supabase) return null;
+    if (path.startsWith("data:") || path.startsWith("http")) return path;
+    const { data, error } = await supabase.storage
+      .from("part-photos")
+      .createSignedUrl(path, ttlSeconds);
+    if (error || !data?.signedUrl) {
+      console.warn("signInventoryPhotoUrl failed:", error?.message);
+      return null;
+    }
+    return data.signedUrl;
+  },
+
+  /**
+   * Upload a part photo (data URL from a file input) to the `part-photos`
+   * bucket under <itemId>/<random>.jpg and persist the storage path onto
+   * inventory_items.photo_url. Mock mode just echoes the data URL back —
+   * same convention as uploadTicketPhoto.
+   */
+  uploadInventoryPhoto: async (input: {
+    itemId: string;
+    dataUrl: string;
+  }): Promise<{ ok: true; photoUrl: string } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true, photoUrl: input.dataUrl };
+    }
+    const blob = await fetch(input.dataUrl).then((r) => r.blob());
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const path = `${input.itemId}/${suffix}.jpg`;
+    const { error: upErr } = await supabase.storage
+      .from("part-photos")
+      .upload(path, blob, { contentType: "image/jpeg" });
+    if (upErr) {
+      return {
+        ok: false,
+        reason: reportApiError("UPLOAD_INVENTORY_PHOTO_STORAGE", upErr, { itemId: input.itemId }),
+      };
+    }
+    const { error: updErr } = await supabase
+      .from("inventory_items")
+      .update({ photo_url: path } as never)
+      .eq("id", input.itemId);
+    if (updErr) {
+      return {
+        ok: false,
+        reason: reportApiError("UPLOAD_INVENTORY_PHOTO_UPDATE", updErr, { itemId: input.itemId }),
+      };
+    }
+    return { ok: true, photoUrl: path };
+  },
+
+  // ---- Core returns / surcharge credit audit trail -------------------------
+  // Client feedback: "A customer returns a pump. It has a core value. The
+  // pump is returned to the supplier. The supplier issues a credit. I need
+  // the system to track every stage automatically until the credit is
+  // received and applied." Three-stage lifecycle (received ->
+  // returned_to_supplier -> credited) on public.core_returns — see
+  // 20260717190000_core_returns.sql. Deliberately never touches
+  // inventory_items.qty_on_hand; this is a financial/paper trail, not a
+  // stock movement.
+  createCoreReturn: async (input: {
+    partDescription: string;
+    inventoryItemId: string | null;
+    coreValue: number;
+    customerName: string;
+    receivedAt: string;
+    supplierId: string | null;
+    notes: string;
+  }): Promise<CoreReturn> => {
+    const actorId = await currentActorId();
+    const r: CoreReturn = {
+      id: uid("CR"),
+      partDescription: input.partDescription,
+      inventoryItemId: input.inventoryItemId,
+      coreValue: input.coreValue,
+      customerName: input.customerName,
+      status: "received",
+      receivedAt: input.receivedAt,
+      supplierId: input.supplierId,
+      rtsReference: "",
+      rtsAt: null,
+      creditAmount: null,
+      creditedAt: null,
+      notes: input.notes,
+      createdBy: actorId,
+      createdAt: new Date().toISOString(),
+    };
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase.from("core_returns").insert(domainCoreReturnToDb(r));
+      if (error)
+        throw new Error(
+          `createCoreReturn: ${reportApiError("CREATE_CORE_RETURN", error, { id: r.id })}`,
+        );
+    } else {
+      await wait();
+    }
+    // Unlike submitStartOfDay/uploadTicketPhoto, this does NOT mirror into
+    // the store itself — CoreReturnsPanel's onSaved already calls
+    // addCoreReturn with the returned row. Doing both would double-insert.
+    return r;
+  },
+
+  /**
+   * Advance a core return to its next stage, or edit an in-flight one.
+   * Simple direct UPDATE (no RPC) — unlike the WO-completion / PR-approval
+   * flows, nothing here touches stock or races against another actor, so
+   * there's no atomicity concern to guard against.
+   */
+  updateCoreReturn: async (
+    id: string,
+    patch: {
+      status?: CoreReturn["status"];
+      supplierId?: string | null;
+      rtsReference?: string;
+      rtsAt?: string | null;
+      creditAmount?: number | null;
+      creditedAt?: string | null;
+      notes?: string;
+    },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (USE_SUPABASE && supabase) {
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.status !== undefined) dbPatch.status = patch.status;
+      if (patch.supplierId !== undefined) dbPatch.supplier_id = patch.supplierId;
+      if (patch.rtsReference !== undefined) dbPatch.rts_reference = patch.rtsReference;
+      if (patch.rtsAt !== undefined) dbPatch.rts_at = patch.rtsAt;
+      if (patch.creditAmount !== undefined) dbPatch.credit_amount = patch.creditAmount;
+      if (patch.creditedAt !== undefined) dbPatch.credited_at = patch.creditedAt;
+      if (patch.notes !== undefined) dbPatch.notes = patch.notes;
+      const { error } = await supabase
+        .from("core_returns")
+        .update(dbPatch as never)
+        .eq("id", id);
+      if (error) {
+        return { ok: false, reason: reportApiError("UPDATE_CORE_RETURN", error, { id }) };
+      }
+    } else {
+      await wait();
+    }
+    // Caller (CoreReturnDetail's onPatched) mirrors this into the store —
+    // see the note on createCoreReturn above.
+    return { ok: true };
+  },
+
+  // ---- Multi-Part / Bill of Materials --------------------------------------
+  // Client feedback: "one part number that represents many part numbers...
+  // when the part number is allocated the full list of parts are allocated
+  // and the stock is automatically adjusted." Wholesale delete+insert of a
+  // BOM part's component list — same pattern as upsertRateTable — via the
+  // SECURITY DEFINER set_bom_components RPC so a network blip mid-edit
+  // rolls back instead of leaving the recipe half-defined. Stock
+  // consumption itself happens inside complete_maintenance_work_order (see
+  // 20260717200000_bom_multi_part.sql), not here — this only edits the
+  // recipe.
+  setBomComponents: async (
+    parentItemId: string,
+    isBom: boolean,
+    components: { componentItemId: string; qtyPer: number }[],
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (USE_SUPABASE && supabase) {
+      const { error } = await supabase.rpc("set_bom_components", {
+        p_parent_id: parentItemId,
+        p_is_bom: isBom,
+        p_components: components as unknown as import("./database.types").Json,
+      });
+      if (error) {
+        return {
+          ok: false,
+          reason: reportApiError("SET_BOM_COMPONENTS", error, { parentItemId }),
+        };
+      }
+    } else {
+      await wait();
+    }
+    const domainComponents: BomComponent[] = components.map((c) => ({
+      id: uid("BOM"),
+      parentItemId,
+      componentItemId: c.componentItemId,
+      qtyPer: c.qtyPer,
+    }));
+    getStore().replaceBomComponents(parentItemId, isBom, isBom ? domainComponents : []);
+    return { ok: true };
   },
 
   // ---- Standalone invoicing (QuickBooks-optional operation) ---------------
@@ -3705,6 +4329,26 @@ ${rows}
         return { ok: false, reason: error.message };
       }
       return { ok: false, reason: reportApiError("UPDATE_ADMIN_ACCESS", error, { userId }) };
+    }
+    return { ok: true };
+  },
+
+  // Mechanic-tier flag (not owner-gated — see the migration comment on
+  // profiles.is_workshop_manager — any admin can promote/demote a mechanic).
+  setWorkshopManager: async (
+    mechanicId: string,
+    isWorkshopManager: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    if (!USE_SUPABASE || !supabase) {
+      await wait();
+      return { ok: true };
+    }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_workshop_manager: isWorkshopManager })
+      .eq("id", mechanicId);
+    if (error) {
+      return { ok: false, reason: reportApiError("SET_WORKSHOP_MANAGER", error, { mechanicId }) };
     }
     return { ok: true };
   },
@@ -4609,6 +5253,82 @@ ${rows}
       uploadedAt: new Date().toISOString(),
     };
     getStore().addTicketPhoto(photo);
+    return photo;
+  },
+
+  // ---- Work order photos --------------------------------------------------
+
+  /**
+   * Mint a fresh signed URL for a work order photo stored under `path`.
+   * Mirrors signTicketPhotoUrl — returns null in mock mode (the photoUrl is
+   * then the raw data URL already usable as an <img> src).
+   */
+  signWorkOrderPhotoUrl: async (path: string, ttlSeconds = 3600): Promise<string | null> => {
+    if (!USE_SUPABASE || !supabase) return null;
+    if (path.startsWith("data:") || path.startsWith("http")) return path;
+    const { data, error } = await supabase.storage
+      .from("wo-photos")
+      .createSignedUrl(path, ttlSeconds);
+    if (error || !data?.signedUrl) {
+      console.warn("signWorkOrderPhotoUrl failed:", error?.message);
+      return null;
+    }
+    return data.signedUrl;
+  },
+
+  /**
+   * Mechanic-side: convert the captured data URL to a Blob, upload to the
+   * `wo-photos` Storage bucket under <workOrderId>/<random>.jpg, and insert a
+   * `maintenance_work_order_photos` row. Mirrors uploadTicketPhoto — the
+   * storage PATH is persisted, not a baked signed URL (which would 403 after
+   * expiry). Mock mode synthesizes a row with the data URL directly.
+   */
+  uploadWorkOrderPhoto: async (input: {
+    workOrderId: string;
+    mechanicId: string;
+    dataUrl: string;
+  }): Promise<WorkOrderPhoto> => {
+    const id = uid("WOP");
+    if (USE_SUPABASE && supabase) {
+      const blob = await fetch(input.dataUrl).then((r) => r.blob());
+      const suffix = crypto.randomUUID().slice(0, 8);
+      const path = `${input.workOrderId}/${suffix}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("wo-photos")
+        .upload(path, blob, { contentType: "image/jpeg" });
+      if (upErr)
+        throw new Error(
+          `uploadWorkOrderPhoto.storage: ${reportApiError("UPLOAD_WO_PHOTO_STORAGE", upErr, { workOrderId: input.workOrderId })}`,
+        );
+      const uploadedAt = new Date().toISOString();
+      const { data, error: insErr } = await supabase
+        .from("maintenance_work_order_photos")
+        .insert({
+          id,
+          work_order_id: input.workOrderId,
+          mechanic_id: input.mechanicId,
+          photo_url: path,
+          uploaded_at: uploadedAt,
+        })
+        .select()
+        .single();
+      if (insErr)
+        throw new Error(
+          `uploadWorkOrderPhoto.insert: ${reportApiError("UPLOAD_WO_PHOTO_INSERT", insErr, { id })}`,
+        );
+      const photo = dbWorkOrderPhotoToDomain(data);
+      getStore().addWorkOrderPhoto(photo);
+      return photo;
+    }
+    await wait();
+    const photo: WorkOrderPhoto = {
+      id,
+      workOrderId: input.workOrderId,
+      mechanicId: input.mechanicId,
+      photoUrl: input.dataUrl,
+      uploadedAt: new Date().toISOString(),
+    };
+    getStore().addWorkOrderPhoto(photo);
     return photo;
   },
 

@@ -85,7 +85,7 @@ async function openSheetRowByStatus(page: Page, status: string): Promise<boolean
 }
 
 // ---------------------------------------------------------------------------
-// /mechanic — dashboard surface (Start work card button, PR form, urgency)
+// /mechanic — dashboard surface (Start work card button)
 // ---------------------------------------------------------------------------
 
 test.describe("Mechanic dashboard buttons", () => {
@@ -102,9 +102,21 @@ test.describe("Mechanic dashboard buttons", () => {
     // Click is a no-op handler — dashboard URL should remain.
     await expect(page).toHaveURL(/\/mechanic\/?$/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// /mechanic/purchase-requests — New request sheet (urgency, PR form)
+// ---------------------------------------------------------------------------
+
+test.describe("Mechanic new-request sheet buttons", () => {
+  async function openNewRequestSheet(page: Page) {
+    await gotoAs(page, "/mechanic/purchase-requests");
+    await page.getByRole("button", { name: /new request/i }).click();
+    await expect(page.getByText(/^new purchase request$/i)).toBeVisible();
+  }
 
   test("Urgency low toggles selection", async ({ page }) => {
-    await gotoAs(page, "/mechanic");
+    await openNewRequestSheet(page);
     const low = page.locator("button[type='button']", { hasText: /^low$/i }).first();
     await expect(low).toBeVisible();
     await low.click();
@@ -114,7 +126,7 @@ test.describe("Mechanic dashboard buttons", () => {
   });
 
   test("Urgency medium toggles selection", async ({ page }) => {
-    await gotoAs(page, "/mechanic");
+    await openNewRequestSheet(page);
     const medium = page.locator("button[type='button']", { hasText: /^medium$/i }).first();
     await expect(medium).toBeVisible();
     await medium.click();
@@ -122,7 +134,7 @@ test.describe("Mechanic dashboard buttons", () => {
   });
 
   test("Urgency high toggles selection", async ({ page }) => {
-    await gotoAs(page, "/mechanic");
+    await openNewRequestSheet(page);
     const high = page.locator("button[type='button']", { hasText: /^high$/i }).first();
     await expect(high).toBeVisible();
     await high.click();
@@ -130,18 +142,18 @@ test.describe("Mechanic dashboard buttons", () => {
   });
 
   test("Submit for approval (PR form) blocks on empty required fields", async ({ page }) => {
-    await gotoAs(page, "/mechanic");
+    await openNewRequestSheet(page);
     const submit = page.getByRole("button", { name: /submit for approval/i });
     await expect(submit).toBeVisible();
     await submit.click();
     // Either the toast.error fires ("Fill all required fields") or the form
     // stays mounted (browser-native required validation). Both are pass.
-    const stillThere = await page.getByText(/new purchase request/i).first().isVisible();
+    const stillThere = await page.getByText(/^new purchase request$/i).first().isVisible();
     expect(stillThere).toBeTruthy();
   });
 
   test("Submit for approval (PR form) happy path emits success toast", async ({ page }) => {
-    await gotoAs(page, "/mechanic");
+    await openNewRequestSheet(page);
     // Fill all three required inputs with values that won't trip the
     // inventory-stock override gate (use a clearly non-stock string).
     await page.locator('input[placeholder*="Brake pad set"]').fill("Custom adapter plate XJ-9");
@@ -428,14 +440,14 @@ test.describe("Mechanic inventory buttons", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Mechanic purchase-requests buttons", () => {
-  test("New request navigates back to /mechanic (PR form)", async ({ page }) => {
+  test("New request opens the create-request sheet", async ({ page }) => {
     await gotoAs(page, "/mechanic/purchase-requests");
-    const link = page.getByRole("link", { name: /new request/i });
-    await expect(link).toBeVisible();
-    await link.click();
-    await page.waitForURL(/\/mechanic\/?$/, { timeout: 5_000 });
-    // Confirm we landed on the PR form surface.
-    await expect(page.getByText(/new purchase request/i)).toBeVisible();
+    const btn = page.getByRole("button", { name: /new request/i });
+    await expect(btn).toBeVisible();
+    await btn.click();
+    await expect(page).toHaveURL(/\/mechanic\/purchase-requests$/);
+    // Confirm the create sheet opened in place.
+    await expect(page.getByText(/^new purchase request$/i)).toBeVisible();
   });
 
   test("Tab: My requests is the default selected tab", async ({ page }) => {

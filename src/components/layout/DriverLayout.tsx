@@ -11,6 +11,11 @@ import {
   Wrench,
   Ticket,
   MessagesSquare,
+  ClipboardCheck,
+  ClipboardList,
+  Notebook,
+  Package,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -39,6 +44,35 @@ const tabs = [
   { to: "/driver/profile", label: "Profile", icon: User },
 ];
 
+// The hamburger drawer surfaces everything that ISN'T already one tap away
+// on the bottom bar — historically it opened nothing at all (dead button,
+// no onClick). Client feedback: "No clear inspection menu (MTO, Equipment
+// although Tools are mentioned but no access to edit)" — a driver had no
+// named place to find the pre-trip circle-check (MTO regulatory term) or
+// the tool/equipment checklist except by stumbling into the clock-in
+// lockout screen. Grouped as "Inspections" here so both have one obvious
+// home, mirroring the Operators > Inspections > Vehicle Equipment /
+// Checklists grouping the client sketched for the admin nav.
+const menuGroups: { label: string; items: { to: string; label: string; icon: typeof Home }[] }[] =
+  [
+    {
+      label: "Inspections",
+      items: [
+        { to: "/driver/inspection", label: "Vehicle inspection (MTO)", icon: ClipboardCheck },
+        { to: "/driver/tool-checklist", label: "Tool / equipment checklist", icon: Wrench },
+      ],
+    },
+    {
+      label: "Shift forms",
+      items: [
+        { to: "/driver/start-of-day", label: "Start-of-day form", icon: ClipboardList },
+        { to: "/driver/end-of-day", label: "End-of-day form", icon: ClipboardList },
+        { to: "/driver/job-log", label: "Job log", icon: Notebook },
+        { to: "/driver/work-order", label: "Dump / load form", icon: Package },
+      ],
+    },
+  ];
+
 export function DriverShell({ children }: { children?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = useNavigate();
@@ -51,6 +85,7 @@ export function DriverShell({ children }: { children?: ReactNode }) {
     return c ? { lat: c.lat, lng: c.lng, label: "Vehicle last known location" } : null;
   }, [me?.vehicleAssignmentId]);
   const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [odo, setOdo] = useState("");
   const [busy, setBusy] = useState(false);
   const gps = useGpsCapture(fallback, open);
@@ -153,7 +188,11 @@ export function DriverShell({ children }: { children?: ReactNode }) {
     <div className="min-h-[calc(100vh-44px)] bg-muted/30 flex justify-center">
       <div className="w-full max-w-[480px] bg-background min-h-[calc(100vh-44px)] flex flex-col shadow-xl">
         <header className="h-14 bg-navy text-navy-foreground flex items-center justify-between px-3 sticky top-11 z-20">
-          <button className="p-2 rounded-md hover:bg-sidebar-accent">
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="p-2 rounded-md hover:bg-sidebar-accent"
+            aria-label="Open menu"
+          >
             <Menu className="w-5 h-5" />
           </button>
           <div className="font-bold tracking-tight inline-flex items-center gap-2">
@@ -266,6 +305,49 @@ export function DriverShell({ children }: { children?: ReactNode }) {
               )}
             </Button>
           </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-[280px] p-0">
+          <SheetHeader className="p-4 border-b border-border flex-row items-center justify-between space-y-0">
+            <SheetTitle>Menu</SheetTitle>
+            <button
+              onClick={() => setMenuOpen(false)}
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"
+              aria-label="Close menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </SheetHeader>
+          <nav className="p-3 overflow-y-auto">
+            {menuGroups.map((group) => (
+              <div key={group.label} className="mb-4 last:mb-0">
+                <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.label}
+                </div>
+                {group.items.map((item) => {
+                  const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setMenuOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 px-2 py-2.5 rounded-md text-sm mb-0.5 transition-colors",
+                        active
+                          ? "bg-amber-brand/10 text-amber-brand font-medium"
+                          : "text-foreground hover:bg-muted",
+                      )}
+                    >
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
         </SheetContent>
       </Sheet>
     </div>

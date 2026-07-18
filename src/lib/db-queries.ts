@@ -27,6 +27,7 @@ import {
   dbFuelLogToDomain,
   dbTicketPhotoToDomain,
   dbMaintenanceWorkOrderToDomain,
+  dbWorkOrderPhotoToDomain,
   dbProfileToMechanic,
   dbProfileToAdmin,
   dbDriverToDomain,
@@ -35,6 +36,7 @@ import {
   dbConversationToDomain,
   dbConversationParticipantToDomain,
   dbMessageToDomain,
+  dbCoreReturnToDomain,
 } from "./db-mappers";
 import type {
   Client,
@@ -57,6 +59,7 @@ import type {
   MaintenanceLog,
   FuelLog,
   MaintenanceWorkOrder,
+  WorkOrderPhoto,
   Mechanic,
   Driver,
   Tool,
@@ -66,6 +69,8 @@ import type {
   Message,
   Admin,
   InventoryItem,
+  CoreReturn,
+  BomComponent,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -88,6 +93,7 @@ export type HydratedData = {
   maintenanceLogs: MaintenanceLog[];
   fuelLogs: FuelLog[];
   maintenanceWorkOrders: MaintenanceWorkOrder[];
+  workOrderPhotos: WorkOrderPhoto[];
   appSettings: AppSettings;
   rateTables: RateTable[];
   mechanics: Mechanic[];
@@ -99,6 +105,8 @@ export type HydratedData = {
   messages: Message[];
   admins: Admin[];
   inventoryItems: InventoryItem[];
+  coreReturns: CoreReturn[];
+  bomComponents: BomComponent[];
 };
 
 // Standalone fetch for app_settings — used both during hydration and on demand
@@ -138,6 +146,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     maintenanceLogs,
     fuelLogs,
     maintenanceWorkOrders,
+    workOrderPhotos,
     appSettings,
     rateTables,
     rateLineItems,
@@ -151,6 +160,8 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     recentMessages,
     adminProfiles,
     inventoryRows,
+    coreReturnRows,
+    bomComponentRows,
   ] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("vehicles").select("*"),
@@ -176,6 +187,10 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     // happen to sort the wrong direction — see the route-level sort which
     // weights critical>high>medium>low. The fetch order is only a tie-break).
     supabase.from("maintenance_work_orders").select("*").order("created_at", { ascending: false }),
+    supabase
+      .from("maintenance_work_order_photos")
+      .select("*")
+      .order("uploaded_at", { ascending: false }),
     supabase.from("app_settings").select("*").eq("id", "default").maybeSingle(),
     supabase.from("rate_tables").select("*"),
     supabase.from("rate_line_items").select("*"),
@@ -185,7 +200,9 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     // filled in by the seed/blank defaults in the mapper.
     supabase
       .from("profiles")
-      .select("id, email, name, phone, role, status, created_at, notification_preferences")
+      .select(
+        "id, email, name, phone, role, status, created_at, notification_preferences, is_workshop_manager",
+      )
       .eq("role", "mechanic"),
     // Drivers: the driver-specific fields (license, initials, vehicle
     // assignment) live on public.drivers; the user-facing display fields
@@ -220,6 +237,8 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     // the Fleetio parts import; capped well above that so a silently
     // truncated catalog can't make the stock check lie.
     supabase.from("inventory_items").select("*").order("sku").limit(10000),
+    supabase.from("core_returns").select("*").order("created_at", { ascending: false }),
+    supabase.from("bom_components").select("*"),
   ]);
 
   type LineItem = NonNullable<typeof invoiceLineItems.data>[number];
@@ -269,6 +288,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
     maintenanceLogs: (maintenanceLogs.data ?? []).map(dbMaintenanceLogToDomain),
     fuelLogs: (fuelLogs.data ?? []).map(dbFuelLogToDomain),
     maintenanceWorkOrders: (maintenanceWorkOrders.data ?? []).map(dbMaintenanceWorkOrderToDomain),
+    workOrderPhotos: (workOrderPhotos.data ?? []).map(dbWorkOrderPhotoToDomain),
     appSettings: appSettings.data ? dbAppSettingsToDomain(appSettings.data) : DEFAULT_APP_SETTINGS,
     rateTables: (rateTables.data ?? []).map((rt) =>
       dbRateTableToDomain(rt, rateLineItemsByTable.get(rt.id) ?? []),
@@ -295,6 +315,24 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       reorderPoint: r.reorder_point,
       supplierId: r.supplier_id ?? "",
       lastRestocked: r.last_restocked ?? "",
+      location: r.location ?? "",
+      category: r.category ?? "",
+      manufacturer: r.manufacturer ?? "",
+      manufacturerPartNumber: r.manufacturer_part_number ?? "",
+      alternativePartNumber: r.alternative_part_number ?? "",
+      alternativeSupplierId: r.alternative_supplier_id ?? "",
+      photoUrl: r.photo_url ?? "",
+      assignedVehicleId: r.assigned_vehicle_id ?? null,
+      assignedUserId: r.assigned_user_id ?? null,
+      archived: r.archived ?? false,
+      isBom: r.is_bom ?? false,
+    })),
+    coreReturns: (coreReturnRows.data ?? []).map(dbCoreReturnToDomain),
+    bomComponents: (bomComponentRows.data ?? []).map((r) => ({
+      id: r.id,
+      parentItemId: r.parent_item_id,
+      componentItemId: r.component_item_id,
+      qtyPer: r.qty_per,
     })),
   };
 }

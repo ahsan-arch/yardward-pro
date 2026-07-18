@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { toCsv, downloadCsv } from "@/lib/csv";
-import { Check, Flag, MapPin, ShieldCheck, Send } from "lucide-react";
+import { Check, Flag, MapPin, ShieldCheck, Send, HardHat, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type {
@@ -653,6 +653,8 @@ function Page() {
                 "GPS correlation",
                 "Start checklist",
                 "End checklist",
+                "PPE",
+                "Passengers",
                 "Status",
                 "Actions",
               ].map((h) => (
@@ -728,6 +730,30 @@ function Page() {
                     />
                   </td>
                   <td className="px-4 py-3">
+                    {t.ppeMissing ? (
+                      <span
+                        title={t.ppeMissingReason || "PPE reported missing"}
+                        className="inline-flex items-center gap-1 text-danger text-xs"
+                      >
+                        <HardHat className="w-3 h-3" /> Missing
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {t.passengerNames && t.passengerNames.length > 0 ? (
+                      <span
+                        title={t.passengerNames.join(", ")}
+                        className="inline-flex items-center gap-1 text-xs"
+                      >
+                        <Users className="w-3 h-3 text-muted-foreground" /> {t.passengerNames.length}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     {t._flagged ? (
                       <span title={t._reason}>
                         <StatusBadge status="Flagged" />
@@ -770,7 +796,7 @@ function Page() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={12} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No timesheets in this view.
                 </td>
               </tr>

@@ -14,7 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, Plus, Wrench } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AlertTriangle, Paperclip, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -28,6 +29,7 @@ function Page() {
   const { vehicles, maintenanceLogs } = useData();
   const { user } = useAuth();
   const [vehicleId, setVehicleId] = useState<string>(vehicles[0]?.id ?? "");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -39,6 +41,7 @@ function Page() {
   const alerts = vehicles.filter(
     (v) => v.status === "maintenance" || v.nextServiceDue.toLowerCase().includes("overdue"),
   );
+  const openLog = openId ? maintenanceLogs.find((l) => l.id === openId) : null;
 
   function resetForm() {
     setType("");
@@ -132,7 +135,11 @@ function Page() {
           </thead>
           <tbody>
             {logs.map((l) => (
-              <tr key={l.id} className="border-t border-border">
+              <tr
+                key={l.id}
+                className="border-t border-border hover:bg-muted/30 cursor-pointer"
+                onClick={() => setOpenId(l.id)}
+              >
                 <td className="px-4 py-3 font-mono text-xs">{l.date}</td>
                 <td className="px-4 py-3 font-medium flex items-center gap-2">
                   <Wrench className="w-3.5 h-3.5 text-muted-foreground" />
@@ -154,6 +161,47 @@ function Page() {
           </tbody>
         </table>
       </div>
+
+      <Sheet open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          {openLog && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4" /> {openLog.type}
+                </SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 mt-6">
+                <Field k="Vehicle" v={openLog.vehicleId} />
+                <Field k="Date" v={openLog.date} />
+                <Field k="Mileage" v={`${openLog.mileage.toLocaleString()} mi`} />
+                <Field k="Performed by" v={openLog.performedBy} />
+                <Field k="Cost" v={`$${openLog.cost}`} />
+                <Field k="Notes" v={openLog.notes || "—"} />
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+                    Attachments
+                  </div>
+                  {openLog.attachments.length === 0 ? (
+                    <div className="mt-0.5 text-sm text-muted-foreground">
+                      No attachments recorded.
+                    </div>
+                  ) : (
+                    <div className="mt-1 space-y-1">
+                      {openLog.attachments.map((a) => (
+                        <div key={a} className="flex items-center gap-2 text-sm">
+                          <Paperclip className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -221,5 +269,16 @@ function Page() {
         </DialogContent>
       </Dialog>
     </MechanicShell>
+  );
+}
+
+function Field({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+        {k}
+      </div>
+      <div className="mt-0.5 text-sm">{v}</div>
+    </div>
   );
 }

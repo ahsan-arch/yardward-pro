@@ -30,6 +30,7 @@ const EMPTY_NEW_JOB_FORM = {
   driverId: "",
   vehicleId: "",
   notes: "",
+  additionalEquipment: "",
 };
 
 export const Route = createFileRoute("/admin/jobs")({
@@ -96,6 +97,10 @@ function Page() {
         newJobForm.date && newJobForm.time
           ? new Date(`${newJobForm.date}T${newJobForm.time}:00Z`).toISOString()
           : new Date().toISOString();
+      const additionalEquipment = newJobForm.additionalEquipment
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       const job = await api.createJob({
         clientId: newJobForm.clientId,
         location: { address: newJobForm.address || "TBD", lat: null, lng: null },
@@ -105,9 +110,14 @@ function Page() {
         vehicleId: newJobForm.vehicleId,
         status: "draft",
         notes: newJobForm.notes,
+        additionalEquipment,
         createdBy: "A-01",
       });
-      toast.success(`${job.id} saved as draft`);
+      if (additionalEquipment.length > 0) {
+        toast.success(`${job.id} saved as draft · workshop notified to prep equipment`);
+      } else {
+        toast.success(`${job.id} saved as draft`);
+      }
       setNewJobOpen(false);
       setNewJobForm(EMPTY_NEW_JOB_FORM);
     } catch (e) {
@@ -263,6 +273,21 @@ function Page() {
                   </SelectContent>
                 </Select>
               )}
+            </div>
+            <div>
+              <Label>Additional equipment</Label>
+              <Input
+                value={newJobForm.additionalEquipment}
+                onChange={(e) =>
+                  setNewJobForm((f) => ({ ...f, additionalEquipment: e.target.value }))
+                }
+                placeholder="e.g. 300ft hose reel, extra jetting nozzle"
+                data-testid="new-job-additional-equipment"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Comma-separated. The workshop is notified to prep this equipment before the
+                truck leaves the yard.
+              </p>
             </div>
             <Button
               onClick={submitNewJob}

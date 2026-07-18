@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Search, AlertTriangle, Package, ShoppingCart, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { InventoryItem } from "@/types/domain";
 
 export const Route = createFileRoute("/mechanic/inventory")({
   head: () => ({ meta: [{ title: "Parts inventory — Engage Hydrovac CRM" }] }),
@@ -16,10 +17,18 @@ export const Route = createFileRoute("/mechanic/inventory")({
 });
 
 function Page() {
-  const { inventoryItems, applyInventoryItem } = useData();
+  const { inventoryItems: allInventoryItems, applyInventoryItem } = useData();
   const [search, setSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
-  const [adjusting, setAdjusting] = useState<(typeof inventoryItems)[number] | null>(null);
+  const [adjusting, setAdjusting] = useState<(typeof allInventoryItems)[number] | null>(null);
+
+  // Archived parts are retired/superseded — a mechanic picking a part to
+  // adjust or use shouldn't see them at all (this view has no restore
+  // action; that's an admin-only capability on /admin/inventory).
+  const inventoryItems = useMemo(
+    () => allInventoryItems.filter((i) => !i.archived),
+    [allInventoryItems],
+  );
 
   const filtered = useMemo(
     () =>
@@ -65,6 +74,7 @@ function Page() {
               {[
                 "SKU",
                 "Name",
+                "Location",
                 "On hand",
                 "Reserved",
                 "Available",
@@ -91,6 +101,9 @@ function Page() {
                   <td className="px-4 py-3 font-medium flex items-center gap-2">
                     <Package className="w-3.5 h-3.5 text-muted-foreground" />
                     {i.name}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                    {i.location || "—"}
                   </td>
                   <td className="px-4 py-3 font-mono">{i.qtyOnHand}</td>
                   <td className="px-4 py-3 font-mono text-muted-foreground">{i.qtyReserved}</td>
@@ -130,7 +143,7 @@ function Page() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No parts match your filters.
                 </td>
               </tr>
@@ -165,17 +178,8 @@ function AdjustForm({
   item,
   onSaved,
 }: {
-  item: {
-    id: string;
-    sku: string;
-    name: string;
-    qtyOnHand: number;
-    qtyReserved: number;
-    reorderPoint: number;
-    supplierId: string;
-    lastRestocked: string;
-  };
-  onSaved: (i: typeof item) => void;
+  item: InventoryItem;
+  onSaved: (i: InventoryItem) => void;
 }) {
   const [qty, setQty] = useState(String(item.qtyOnHand));
   const [saving, setSaving] = useState(false);

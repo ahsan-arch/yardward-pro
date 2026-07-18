@@ -16,6 +16,8 @@ import {
   AlertOctagon,
   ClipboardCheck,
   Lock,
+  Plus,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -87,9 +89,35 @@ function Page() {
   const [cond, setCond] = useState("ok");
   const [note, setNote] = useState("");
   const [pax, setPax] = useState(false);
+  const [passengerNames, setPassengerNames] = useState<string[]>([]);
+  const [passengerInput, setPassengerInput] = useState("");
   const [ppe, setPpe] = useState(false);
+  const [ppeReason, setPpeReason] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<{ odo?: string; note?: string }>({});
+  const [err, setErr] = useState<{
+    odo?: string;
+    note?: string;
+    ppeReason?: string;
+    passengers?: string;
+  }>({});
+
+  function addPassenger() {
+    const name = passengerInput.trim();
+    if (!name) return;
+    // Case-insensitive de-dupe — a driver double-tapping "Add" (or re-typing
+    // the same name after a fumbled keystroke) shouldn't produce two chips
+    // for one person on the manifest.
+    if (passengerNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
+      setPassengerInput("");
+      return;
+    }
+    setPassengerNames((names) => [...names, name]);
+    setPassengerInput("");
+    setErr((e) => ({ ...e, passengers: undefined }));
+  }
+  function removePassenger(name: string) {
+    setPassengerNames((names) => names.filter((n) => n !== name));
+  }
   // Form-scoped idempotency key — minted once when the form mounts and reused
   // by both the online and offline submit paths so the partial unique index
   // on time_entries (clock_in_idempotency_key) can dedupe a retried replay.
@@ -145,7 +173,10 @@ function Page() {
     }
     const errs: typeof err = {};
     if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
-    if (cond === "minor" && !note.trim()) errs.note = "Describe the issue";
+    if ((cond === "minor" || cond === "major") && !note.trim()) errs.note = "Describe the issue";
+    if (ppe && !ppeReason.trim()) errs.ppeReason = "Say which PPE is missing";
+    if (pax && passengerNames.length === 0)
+      errs.passengers = "Add at least one passenger name (or turn the toggle off)";
     setErr(errs);
     if (Object.keys(errs).length) return;
     setLoading(true);
@@ -155,8 +186,12 @@ function Page() {
         odometer: +odo,
         fuelLevel: fuel,
         condition: cond,
+        conditionNote: cond !== "ok" ? note.trim() : "",
         gps: gps.coords,
         idempotencyKey,
+        ppeMissing: ppe,
+        ppeMissingReason: ppe ? ppeReason.trim() : "",
+        passengerNames: pax ? passengerNames : [],
       };
       // Single-use enforcement for scope='forms' tokens: this is the entry
       // point the dispatcher hands a driver who only needs to file paperwork
@@ -319,7 +354,7 @@ function Page() {
             </div>
           </div>
 
-          {cond === "minor" && (
+          {(cond === "minor" || cond === "major") && (
             <div>
               <Label className="text-base">Describe the issue</Label>
               <Textarea
@@ -329,16 +364,114 @@ function Page() {
                 className={cn("mt-2 text-base", err.note && "border-danger")}
               />
               {err.note && <p className="text-xs text-danger mt-1">{err.note}</p>}
+              <p className="text-xs text-muted-foreground mt-1.5">
+                This opens a work order in the mechanic queue
+                {cond === "major" && " and is flagged for immediate attention"}.
+              </p>
             </div>
           )}
 
-          <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
-            <Label className="text-base">Passengers in vehicle?</Label>
-            <Switch checked={pax} onCheckedChange={setPax} />
+          <div className="p-4 bg-muted/40 rounded-lg border border-border">
+            <div className="flex items-center justify-between">
+              <Label className="text-base">Passengers in vehicle?</Label>
+              <Switch
+                checked={pax}
+                onCheckedChange={(v) => {
+                  setPax(v);
+                  // Same reasoning as the PPE toggle: a manifest left over
+                  // from flipping this on, then off, then back on shouldn't
+                  // silently resubmit without a fresh confirm.
+                  if (!v) {
+                    setPassengerNames([]);
+                    setPassengerInput("");
+                    setErr((e) => ({ ...e, passengers: undefined }));
+                  }
+                }}
+              />
+            </div>
+            {pax && (
+              <div className="mt-3">
+                <Label className="text-sm">Who's riding along?</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={passengerInput}
+                    onChange={(e) => setPassengerInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addPassenger();
+                      }
+                    }}
+                    placeholder="Passenger name"
+                    className={cn("text-base", err.passengers && "border-danger")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 h-10 w-10 p-0"
+                    onClick={addPassenger}
+                    aria-label="Add passenger"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                {passengerNames.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {passengerNames.map((name) => (
+                      <span
+                        key={name}
+                        className="inline-flex items-center gap-1 rounded-full bg-card border border-border pl-3 pr-1.5 py-1 text-sm"
+                      >
+                        {name}
+                        <button
+                          type="button"
+                          onClick={() => removePassenger(name)}
+                          className="p-0.5 rounded-full hover:bg-muted text-muted-foreground"
+                          aria-label={`Remove ${name}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {err.passengers && <p className="text-xs text-danger mt-1.5">{err.passengers}</p>}
+              </div>
+            )}
           </div>
-          <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
-            <Label className="text-base">Any personal PPE missing?</Label>
-            <Switch checked={ppe} onCheckedChange={setPpe} />
+          <div className="p-4 bg-muted/40 rounded-lg border border-border">
+            <div className="flex items-center justify-between">
+              <Label className="text-base">Any personal PPE missing?</Label>
+              <Switch
+                checked={ppe}
+                onCheckedChange={(v) => {
+                  setPpe(v);
+                  // Clear a stale reason (and its error) once the toggle
+                  // flips back off — otherwise re-enabling it later would
+                  // silently resubmit old text the driver never re-confirmed.
+                  if (!v) {
+                    setPpeReason("");
+                    setErr((e) => ({ ...e, ppeReason: undefined }));
+                  }
+                }}
+              />
+            </div>
+            {ppe && (
+              <div className="mt-3">
+                <Label className="text-sm">Which PPE is missing?</Label>
+                <Textarea
+                  value={ppeReason}
+                  onChange={(e) => setPpeReason(e.target.value)}
+                  placeholder="e.g. Hi-vis vest, hard hat"
+                  rows={2}
+                  className={cn("mt-2 text-base", err.ppeReason && "border-danger")}
+                />
+                {err.ppeReason && <p className="text-xs text-danger mt-1">{err.ppeReason}</p>}
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  This notifies management immediately so replacement gear can be arranged.
+                </p>
+              </div>
+            )}
           </div>
 
           <Button

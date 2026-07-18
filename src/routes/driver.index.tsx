@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
-import { ClipboardList, Wrench, Notebook, Package, Play } from "lucide-react";
+import { ClipboardCheck, ClipboardList, Wrench, Notebook, Package, Play } from "lucide-react";
 import { useMemo } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,24 +13,35 @@ export const Route = createFileRoute("/driver/")({
 });
 
 const tiles = [
+  // First tile, not last — the pre-trip circle-check gates start-of-day
+  // (see the lockout screen in driver.start-of-day.tsx) but previously had
+  // no link anywhere on this dashboard; a driver could only reach it by
+  // getting bounced off start-of-day first. Client feedback: "No clear
+  // inspection menu (MTO, Equipment...)".
+  {
+    label: "Vehicle inspection",
+    icon: ClipboardCheck,
+    to: "/driver/inspection",
+    bg: "bg-navy text-navy-foreground",
+  },
   {
     label: "Start-of-day form",
     icon: ClipboardList,
     to: "/driver/start-of-day",
-    bg: "bg-navy text-navy-foreground",
+    bg: "bg-muted text-foreground",
   },
   {
     label: "Tool checklist",
     icon: Wrench,
     to: "/driver/tool-checklist",
-    bg: "bg-muted text-foreground",
+    bg: "bg-navy text-navy-foreground",
   },
-  { label: "Job log", icon: Notebook, to: "/driver/forms", bg: "bg-navy text-navy-foreground" },
+  { label: "Job log", icon: Notebook, to: "/driver/forms", bg: "bg-muted text-foreground" },
   {
     label: "Dump / load form",
     icon: Package,
     to: "/driver/work-order",
-    bg: "bg-muted text-foreground",
+    bg: "bg-navy text-navy-foreground",
   },
 ];
 

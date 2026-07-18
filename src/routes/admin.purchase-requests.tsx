@@ -8,10 +8,32 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, X, Package, ShoppingCart, Truck } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Check,
+  X,
+  Package,
+  ShoppingCart,
+  Truck,
+  Plus,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { InventoryItem, PurchaseRequest } from "@/types/domain";
+import type { InventoryCheckSnapshot, InventoryItem, PurchaseRequest } from "@/types/domain";
+
+const urgencies: ("low" | "medium" | "high")[] = ["low", "medium", "high"];
 
 export const Route = createFileRoute("/admin/purchase-requests")({
   head: () => ({ meta: [{ title: "Purchase requests — Engage Hydrovac CRM" }] }),
@@ -56,6 +78,7 @@ function Page() {
   // ordered (which is always the one in the open sheet).
   const [orderRef, setOrderRef] = useState("");
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(
     () => purchaseRequests.filter((p) => (tab === "all" ? true : p.status === tab)),
@@ -71,7 +94,7 @@ function Page() {
     try {
       const res = await api.approvePurchaseRequest(id, user.id);
       if (res.reservedInventory) {
-        toast.success(`${id} approved · reserved 1 from stock`);
+        toast.success(`${id} approved · reserved ${res.reservedInventory.qty} from stock`);
       } else {
         toast.success(`${id} approved · no stock match, place supplier order`);
       }
@@ -110,6 +133,15 @@ function Page() {
 
   return (
     <AdminShell title="Purchase requests">
+      <div className="flex justify-end mb-3">
+        <Button
+          onClick={() => setCreating(true)}
+          data-testid="open-new-purchase-request"
+          className="bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+        >
+          <Plus className="w-4 h-4" /> New purchase request
+        </Button>
+      </div>
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="mb-4">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="pending">
@@ -130,7 +162,7 @@ function Page() {
         <table className="w-full text-sm min-w-[800px]">
           <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
-              {["PR #", "Mechanic", "Item", "Cost", "Urgency", "Created", "Status", "Actions"].map(
+              {["PR #", "Mechanic", "Item", "Qty", "Cost", "Urgency", "Created", "Status", "Actions"].map(
                 (h) => (
                   <th key={h} className="text-left font-medium px-4 py-3">
                     {h}
@@ -153,6 +185,7 @@ function Page() {
                   </td>
                   <td className="px-4 py-3">{m?.name ?? "—"}</td>
                   <td className="px-4 py-3 font-medium">{p.item}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{p.quantity}</td>
                   <td className="px-4 py-3 font-mono">${p.estimatedCost}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={p.urgency.charAt(0).toUpperCase() + p.urgency.slice(1)} />
@@ -211,7 +244,7 @@ function Page() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No requests in this view.
                 </td>
               </tr>
@@ -244,6 +277,7 @@ function Page() {
               </SheetHeader>
               <div className="space-y-4 mt-6">
                 <Field k="Item" v={open.item} />
+                <Field k="Quantity" v={String(open.quantity)} />
                 <Field k="Reason" v={open.reason} />
                 <Field k="Estimated cost" v={`$${open.estimatedCost}`} />
                 <Field k="Urgency" v={open.urgency.toUpperCase()} />
@@ -324,25 +358,36 @@ function Page() {
                 </div>
 
                 {/* Post-approval reservation summary — appears once the PR is
-                    approved (or beyond). When inventoryDecrementQty > 0 the
-                    approval reserved 1 unit against the matched item; render
-                    "Reserved X of N on hand at <sku>". When 0 (no stock at
-                    approval) we tell the admin a supplier order is still
-                    needed. Hidden for pending/rejected — nothing to show. */}
+                    approved (or beyond). inventoryDecrementQty is now
+                    min(available, requested) rather than a flat 1, so a PR
+                    for 4 against 2 free units shows "Reserved 2 of 4
+                    requested" plus a shortfall callout — the correlation the
+                    client asked for ("stock says 2 but I need 4"). When
+                    inventoryDecrementQty is 0 (no stock at approval) we tell
+                    the admin a supplier order is still needed. Hidden for
+                    pending/rejected — nothing to show. */}
                 {(open.status === "approved" || open.status === "ordered") && (
                   <div className="border border-border rounded-md p-3 bg-success/5">
                     <div className="text-[10px] uppercase tracking-wider font-mono text-success mb-1.5">
                       Approval result
                     </div>
                     {open.inventoryDecrementQty && open.inventoryDecrementQty > 0 && inventoryMatch ? (
-                      <div className="text-sm flex items-center gap-2">
-                        <Package className="w-3.5 h-3.5 shrink-0 text-success" />
-                        <span>
-                          Reserved <b>{open.inventoryDecrementQty}</b> of{" "}
-                          <b>{inventoryMatch.qtyOnHand}</b> on hand at{" "}
-                          <span className="font-mono">{inventoryMatch.sku}</span>
-                        </span>
-                      </div>
+                      <>
+                        <div className="text-sm flex items-center gap-2">
+                          <Package className="w-3.5 h-3.5 shrink-0 text-success" />
+                          <span>
+                            Reserved <b>{open.inventoryDecrementQty}</b> of{" "}
+                            <b>{open.quantity}</b> requested ({inventoryMatch.qtyOnHand} on hand
+                            at <span className="font-mono">{inventoryMatch.sku}</span>)
+                          </span>
+                        </div>
+                        {open.inventoryDecrementQty < open.quantity && (
+                          <div className="text-xs text-warning mt-1.5 pl-5">
+                            Short by {open.quantity - open.inventoryDecrementQty} — supplier
+                            order still needed for the remainder.
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="text-sm text-muted-foreground">
                         No stock matched — supplier order required.
@@ -417,7 +462,308 @@ function Page() {
           )}
         </SheetContent>
       </Sheet>
+
+      <NewRequestDialog open={creating} onOpenChange={setCreating} mechanics={mechanics} />
     </AdminShell>
+  );
+}
+
+// Admin-side purchase request creation. Client feedback (Admin Login):
+// "Purchase Orders: Cannot see any way to create a Purchase Order" — admins
+// could only review/approve, never file one directly. purchase_requests.
+// mechanic_id is a hard FK to `mechanics` (not any profile), so an admin
+// files this on behalf of a specific mechanic/workshop rather than under
+// their own id — mirrors NewRequestSheet in mechanic.purchase-requests.tsx.
+function NewRequestDialog({
+  open,
+  onOpenChange,
+  mechanics,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  mechanics: { id: string; name: string }[];
+}) {
+  const { inventoryItems } = useData();
+  const [mechanicId, setMechanicId] = useState(mechanics[0]?.id ?? "");
+  const [urgency, setUrgency] = useState<"low" | "medium" | "high">("medium");
+  const [checkInv, setCheckInv] = useState(true);
+  const [item, setItem] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [reason, setReason] = useState("");
+  const [cost, setCost] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [overrodeStock, setOverrodeStock] = useState(false);
+
+  const matches: InventoryItem[] = useMemo(() => {
+    if (!checkInv) return [];
+    const q = item.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return inventoryItems.filter(
+      (i) => !i.archived && (i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)),
+    );
+  }, [checkInv, item, inventoryItems]);
+
+  const qtyNumLive = Math.max(1, Math.floor(Number(quantity) || 1));
+  const coveringMatch = matches.find((m) => m.qtyOnHand - m.qtyReserved >= qtyNumLive);
+  const hasStock = coveringMatch !== undefined;
+
+  function reset() {
+    setItem("");
+    setQuantity("1");
+    setReason("");
+    setCost("");
+    setOverrodeStock(false);
+    setMechanicId(mechanics[0]?.id ?? "");
+  }
+
+  function handleItemChange(next: string) {
+    setItem(next);
+    if (overrodeStock) setOverrodeStock(false);
+  }
+  function handleQuantityChange(next: string) {
+    setQuantity(next);
+    if (overrodeStock) setOverrodeStock(false);
+  }
+
+  async function submit() {
+    if (!mechanicId) {
+      toast.error("Add a mechanic first — a request needs a workshop owner");
+      return;
+    }
+    if (!item || !reason || !cost) {
+      toast.error("Fill all required fields");
+      return;
+    }
+    const costNum = Number(cost);
+    if (!Number.isFinite(costNum) || costNum < 0) {
+      toast.error("Estimated cost must be a non-negative number");
+      return;
+    }
+    const qtyNum = Math.floor(Number(quantity));
+    if (!Number.isFinite(qtyNum) || qtyNum < 1) {
+      toast.error("Quantity must be a whole number of 1 or more");
+      return;
+    }
+    if (checkInv && hasStock && !overrodeStock) {
+      toast.error("Inventory has matching stock — confirm override below to continue");
+      return;
+    }
+    setLoading(true);
+    try {
+      const inventoryCheckResult: InventoryCheckSnapshot[] | null = checkInv
+        ? matches.map((m) => ({
+            inventoryItemId: m.id,
+            name: m.name,
+            sku: m.sku,
+            qtyOnHand: m.qtyOnHand,
+            supplierId: m.supplierId,
+          }))
+        : null;
+      await api.submitPurchaseRequest({
+        mechanicId,
+        item,
+        quantity: qtyNum,
+        reason,
+        estimatedCost: costNum,
+        urgency,
+        inventoryCheckedAt: checkInv ? new Date().toISOString() : null,
+        inventoryCheckResult,
+        approvedBy: null,
+        supplierId: null,
+        inventoryDecrementQty: null,
+        orderedAt: null,
+        orderedBy: null,
+        supplierOrderRef: null,
+      });
+      toast.success("Purchase request created");
+      reset();
+      onOpenChange(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Create failed: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) reset();
+      }}
+    >
+      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>New purchase request</SheetTitle>
+        </SheetHeader>
+        <div className="space-y-3 mt-6">
+          <div>
+            <Label>Requesting mechanic</Label>
+            {mechanics.length === 0 ? (
+              <div className="text-sm text-muted-foreground border border-dashed border-border rounded-md p-3 mt-1.5">
+                No mechanics available — add one first.
+              </div>
+            ) : (
+              <Select value={mechanicId} onValueChange={setMechanicId}>
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Choose mechanic" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mechanics.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <div>
+            <Label>Item needed</Label>
+            <Input
+              value={item}
+              onChange={(e) => handleItemChange(e.target.value)}
+              placeholder="e.g. Brake pad set"
+              className="mt-1.5"
+              data-testid="new-pr-item"
+            />
+            {checkInv && item.trim().length >= 2 && (
+              <div className="mt-2 space-y-1">
+                {matches.length === 0 ? (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5 px-1">
+                    <Package className="w-3 h-3" /> No inventory matches — supplier order will be
+                    needed.
+                  </div>
+                ) : (
+                  matches.map((m) => (
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "flex items-center gap-2 text-xs rounded-md px-2 py-1.5 border",
+                        m.qtyOnHand > 0
+                          ? "bg-warning/10 border-warning/40 text-warning-foreground"
+                          : "bg-muted/40 border-border text-muted-foreground",
+                      )}
+                    >
+                      <Package className="w-3 h-3 shrink-0" />
+                      <span className="flex-1 truncate">
+                        We have <strong>{m.qtyOnHand}</strong> of{" "}
+                        <span className="italic">&apos;{m.name}&apos;</span> in stock at{" "}
+                        <span className="font-mono">{m.supplierId}</span>
+                      </span>
+                      <span className="font-mono shrink-0">{m.sku}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          <div>
+            <Label>Quantity</Label>
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              value={quantity}
+              onChange={(e) => handleQuantityChange(e.target.value)}
+              className="mt-1.5 font-mono w-24"
+              data-testid="new-pr-quantity"
+            />
+          </div>
+          <div>
+            <Label>Reason / job reference</Label>
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              className="mt-1.5"
+              data-testid="new-pr-reason"
+            />
+          </div>
+          <div>
+            <Label>Estimated cost</Label>
+            <Input
+              inputMode="decimal"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              placeholder="0.00"
+              className="mt-1.5 font-mono"
+              data-testid="new-pr-cost"
+            />
+          </div>
+          <div>
+            <Label>Urgency</Label>
+            <div className="grid grid-cols-3 gap-1 mt-1.5 bg-muted rounded-md p-1">
+              {urgencies.map((u) => (
+                <button
+                  type="button"
+                  key={u}
+                  onClick={() => setUrgency(u)}
+                  className={cn(
+                    "h-10 rounded text-sm font-medium capitalize",
+                    urgency === u
+                      ? "bg-amber-brand text-amber-brand-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-start justify-between gap-3 p-3 bg-muted/40 rounded-lg border border-border">
+            <div className="flex-1">
+              <Label className="cursor-pointer">Check inventory first</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                System will check existing stock before routing for approval
+              </p>
+            </div>
+            <Switch checked={checkInv} onCheckedChange={setCheckInv} />
+          </div>
+          {checkInv && hasStock && (
+            <div className="rounded-lg border border-warning/50 bg-warning/10 p-3 space-y-2">
+              <div className="flex items-start gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium text-warning-foreground">
+                    Are you sure? We have stock.
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    One or more matching items show qty on hand &gt; 0. Confirm an override if you
+                    still need a fresh order.
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs cursor-pointer pl-6">
+                <input
+                  type="checkbox"
+                  checked={overrodeStock}
+                  onChange={(e) => setOverrodeStock(e.target.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Override — submit anyway
+              </label>
+            </div>
+          )}
+          <Button
+            onClick={submit}
+            disabled={loading || mechanics.length === 0 || (checkInv && hasStock && !overrodeStock)}
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold h-11"
+            data-testid="submit-new-purchase-request"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Creating…
+              </>
+            ) : (
+              "Create purchase request"
+            )}
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

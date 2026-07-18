@@ -72,6 +72,8 @@ export type Database = {
           billing_renewal_date: string | null
           billing_seats_limit: number
           billing_status: string
+          billing_vehicle_capacity_request_note: string | null
+          billing_vehicle_capacity_requested_at: string | null
           billing_vehicles_limit: number
           business_name: string
           currency: string
@@ -97,6 +99,8 @@ export type Database = {
           billing_renewal_date?: string | null
           billing_seats_limit?: number
           billing_status?: string
+          billing_vehicle_capacity_request_note?: string | null
+          billing_vehicle_capacity_requested_at?: string | null
           billing_vehicles_limit?: number
           business_name?: string
           currency?: string
@@ -122,6 +126,8 @@ export type Database = {
           billing_renewal_date?: string | null
           billing_seats_limit?: number
           billing_status?: string
+          billing_vehicle_capacity_request_note?: string | null
+          billing_vehicle_capacity_requested_at?: string | null
           billing_vehicles_limit?: number
           business_name?: string
           currency?: string
@@ -140,6 +146,45 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      bom_components: {
+        Row: {
+          component_item_id: string
+          created_at: string
+          id: string
+          parent_item_id: string
+          qty_per: number
+        }
+        Insert: {
+          component_item_id: string
+          created_at?: string
+          id?: string
+          parent_item_id: string
+          qty_per: number
+        }
+        Update: {
+          component_item_id?: string
+          created_at?: string
+          id?: string
+          parent_item_id?: string
+          qty_per?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bom_components_parent_item_id_fkey"
+            columns: ["parent_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bom_components_component_item_id_fkey"
+            columns: ["component_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clients: {
         Row: {
@@ -313,6 +358,75 @@ export type Database = {
           },
           {
             foreignKeyName: "conversations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      core_returns: {
+        Row: {
+          core_value: number
+          created_at: string
+          created_by: string | null
+          credit_amount: number | null
+          credited_at: string | null
+          customer_name: string
+          id: string
+          inventory_item_id: string | null
+          notes: string
+          part_description: string
+          received_at: string
+          rts_at: string | null
+          rts_reference: string
+          status: Database["public"]["Enums"]["core_return_status"]
+          supplier_id: string | null
+        }
+        Insert: {
+          core_value?: number
+          created_at?: string
+          created_by?: string | null
+          credit_amount?: number | null
+          credited_at?: string | null
+          customer_name?: string
+          id: string
+          inventory_item_id?: string | null
+          notes?: string
+          part_description: string
+          received_at?: string
+          rts_at?: string | null
+          rts_reference?: string
+          status?: Database["public"]["Enums"]["core_return_status"]
+          supplier_id?: string | null
+        }
+        Update: {
+          core_value?: number
+          created_at?: string
+          created_by?: string | null
+          credit_amount?: number | null
+          credited_at?: string | null
+          customer_name?: string
+          id?: string
+          inventory_item_id?: string | null
+          notes?: string
+          part_description?: string
+          received_at?: string
+          rts_at?: string | null
+          rts_reference?: string
+          status?: Database["public"]["Enums"]["core_return_status"]
+          supplier_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "core_returns_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "core_returns_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -669,10 +783,21 @@ export type Database = {
       }
       inventory_items: {
         Row: {
+          alternative_part_number: string
+          alternative_supplier_id: string | null
+          archived: boolean
+          assigned_user_id: string | null
+          assigned_vehicle_id: string | null
+          category: string
           id: string
+          is_bom: boolean
           last_restocked: string | null
           last_updated_at: string
+          location: string
+          manufacturer: string
+          manufacturer_part_number: string
           name: string
+          photo_url: string
           qty_on_hand: number
           qty_reserved: number
           reorder_point: number
@@ -680,10 +805,21 @@ export type Database = {
           supplier_id: string | null
         }
         Insert: {
+          alternative_part_number?: string
+          alternative_supplier_id?: string | null
+          archived?: boolean
+          assigned_user_id?: string | null
+          assigned_vehicle_id?: string | null
+          category?: string
           id: string
+          is_bom?: boolean
           last_restocked?: string | null
           last_updated_at?: string
+          location?: string
+          manufacturer?: string
+          manufacturer_part_number?: string
           name: string
+          photo_url?: string
           qty_on_hand?: number
           qty_reserved?: number
           reorder_point?: number
@@ -691,10 +827,21 @@ export type Database = {
           supplier_id?: string | null
         }
         Update: {
+          alternative_part_number?: string
+          alternative_supplier_id?: string | null
+          archived?: boolean
+          assigned_user_id?: string | null
+          assigned_vehicle_id?: string | null
+          category?: string
           id?: string
+          is_bom?: boolean
           last_restocked?: string | null
           last_updated_at?: string
+          location?: string
+          manufacturer?: string
+          manufacturer_part_number?: string
           name?: string
+          photo_url?: string
           qty_on_hand?: number
           qty_reserved?: number
           reorder_point?: number
@@ -852,6 +999,7 @@ export type Database = {
       }
       jobs: {
         Row: {
+          additional_equipment: string[]
           client_id: string
           created_at: string
           created_by: string | null
@@ -867,6 +1015,7 @@ export type Database = {
           vehicle_id: string | null
         }
         Insert: {
+          additional_equipment?: string[]
           client_id: string
           created_at?: string
           created_by?: string | null
@@ -882,6 +1031,7 @@ export type Database = {
           vehicle_id?: string | null
         }
         Update: {
+          additional_equipment?: string[]
           client_id?: string
           created_at?: string
           created_by?: string | null
@@ -1072,6 +1222,45 @@ export type Database = {
           },
         ]
       }
+      maintenance_work_order_photos: {
+        Row: {
+          id: string
+          mechanic_id: string | null
+          photo_url: string
+          uploaded_at: string
+          work_order_id: string
+        }
+        Insert: {
+          id: string
+          mechanic_id?: string | null
+          photo_url: string
+          uploaded_at?: string
+          work_order_id: string
+        }
+        Update: {
+          id?: string
+          mechanic_id?: string | null
+          photo_url?: string
+          uploaded_at?: string
+          work_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_work_order_photos_mechanic_id_fkey"
+            columns: ["mechanic_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_work_order_photos_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_work_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mechanics: {
         Row: {
           id: string
@@ -1210,6 +1399,7 @@ export type Database = {
           email: string
           id: string
           is_owner: boolean
+          is_workshop_manager: boolean
           name: string
           notification_preferences: Json
           phone: string
@@ -1223,6 +1413,7 @@ export type Database = {
           email: string
           id: string
           is_owner?: boolean
+          is_workshop_manager?: boolean
           name: string
           notification_preferences?: Json
           phone?: string
@@ -1236,6 +1427,7 @@ export type Database = {
           email?: string
           id?: string
           is_owner?: boolean
+          is_workshop_manager?: boolean
           name?: string
           notification_preferences?: Json
           phone?: string
@@ -1266,6 +1458,7 @@ export type Database = {
           mechanic_id: string
           ordered_at: string | null
           ordered_by: string | null
+          quantity: number
           reason: string
           status: Database["public"]["Enums"]["purchase_request_status"]
           supplier_id: string | null
@@ -1286,6 +1479,7 @@ export type Database = {
           mechanic_id: string
           ordered_at?: string | null
           ordered_by?: string | null
+          quantity?: number
           reason: string
           status?: Database["public"]["Enums"]["purchase_request_status"]
           supplier_id?: string | null
@@ -1306,6 +1500,7 @@ export type Database = {
           mechanic_id?: string
           ordered_at?: string | null
           ordered_by?: string | null
+          quantity?: number
           reason?: string
           status?: Database["public"]["Enums"]["purchase_request_status"]
           supplier_id?: string | null
@@ -1909,6 +2104,9 @@ export type Database = {
           gps_clock_out_lat: number | null
           gps_clock_out_lng: number | null
           id: string
+          passenger_names: string[]
+          ppe_missing: boolean
+          ppe_missing_reason: string
           pretrip_inspection_id: string | null
           vehicle_movement_correlation: Database["public"]["Enums"]["movement_correlation"]
         }
@@ -1924,6 +2122,9 @@ export type Database = {
           gps_clock_out_lat?: number | null
           gps_clock_out_lng?: number | null
           id: string
+          passenger_names?: string[]
+          ppe_missing?: boolean
+          ppe_missing_reason?: string
           pretrip_inspection_id?: string | null
           vehicle_movement_correlation?: Database["public"]["Enums"]["movement_correlation"]
         }
@@ -1939,6 +2140,9 @@ export type Database = {
           gps_clock_out_lat?: number | null
           gps_clock_out_lng?: number | null
           id?: string
+          passenger_names?: string[]
+          ppe_missing?: boolean
+          ppe_missing_reason?: string
           pretrip_inspection_id?: string | null
           vehicle_movement_correlation?: Database["public"]["Enums"]["movement_correlation"]
         }
@@ -2490,6 +2694,21 @@ export type Database = {
           status: string
         }[]
       }
+      complete_maintenance_work_order: {
+        Args: {
+          p_completion_notes: string | null
+          p_final_cost: number | null
+          p_id: string
+          p_labor_hours: number
+          p_labor_notes: string
+          p_mechanic_id: string
+          p_parts_used: Json
+        }
+        Returns: {
+          ok: boolean
+          status: string
+        }[]
+      }
       close_conversation: {
         Args: { p_conversation_id: string; p_resolution_notes: string }
         Returns: {
@@ -2699,6 +2918,17 @@ export type Database = {
           status: string
         }[]
       }
+      request_more_vehicle_capacity: {
+        Args: { p_note: string; p_requested_count: number }
+        Returns: {
+          error: string
+          ok: boolean
+        }[]
+      }
+      set_bom_components: {
+        Args: { p_components: Json; p_is_bom: boolean; p_parent_id: string }
+        Returns: undefined
+      }
       tag_admins: {
         Args: { p_admin_ids?: string[]; p_conversation_id: string }
         Returns: {
@@ -2755,6 +2985,7 @@ export type Database = {
       }
     }
     Enums: {
+      core_return_status: "received" | "returned_to_supplier" | "credited"
       inspection_item_status: "ok" | "issue"
       invoice_kind: "work-order" | "ticket-replenishment"
       job_status:
@@ -2910,6 +3141,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      core_return_status: ["received", "returned_to_supplier", "credited"],
       inspection_item_status: ["ok", "issue"],
       invoice_kind: ["work-order", "ticket-replenishment"],
       job_status: [

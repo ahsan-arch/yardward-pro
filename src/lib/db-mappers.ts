@@ -32,6 +32,7 @@ import type {
   MaintenanceWorkOrderPriority,
   MaintenanceWorkOrderStatus,
   MaintenanceWorkOrderSource,
+  WorkOrderPhoto,
   Mechanic,
   Driver,
   Tool,
@@ -48,6 +49,8 @@ import type {
   MessageDeliveryStatus,
   MessageSenderKind,
   ParticipantRole,
+  CoreReturn,
+  CoreReturnStatus,
 } from "@/types/domain";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -76,6 +79,8 @@ export function dbAppSettingsToDomain(r: Row<"app_settings">): AppSettings {
     status: (r.billing_status ?? "active") as BillingStatus,
     cancelRequestedAt: r.billing_cancel_requested_at ?? null,
     cancelReason: r.billing_cancel_reason ?? null,
+    vehicleCapacityRequestedAt: r.billing_vehicle_capacity_requested_at ?? null,
+    vehicleCapacityRequestNote: r.billing_vehicle_capacity_request_note ?? null,
   };
   return {
     gpsToleranceMinutes: r.gps_tolerance_minutes,
@@ -111,7 +116,9 @@ type ProfileUserRow = Pick<
   "id" | "email" | "name" | "phone" | "status" | "created_at"
 >;
 
-export function dbProfileToMechanic(r: ProfileUserRow): Mechanic {
+export function dbProfileToMechanic(
+  r: ProfileUserRow & { is_workshop_manager?: boolean | null },
+): Mechanic {
   return {
     id: r.id,
     email: r.email,
@@ -122,6 +129,7 @@ export function dbProfileToMechanic(r: ProfileUserRow): Mechanic {
     createdAt: r.created_at,
     specialty: "",
     shopId: "",
+    isWorkshopManager: Boolean(r.is_workshop_manager),
   };
 }
 
@@ -172,6 +180,15 @@ export function dbToolToDomain(r: Row<"tools">): Tool {
     name: r.name,
     condition: r.condition as ToolCondition,
     vehicleId: r.vehicle_id,
+  };
+}
+
+export function domainToolToDb(t: Tool): Insert<"tools"> {
+  return {
+    id: t.id,
+    name: t.name,
+    condition: t.condition,
+    vehicle_id: t.vehicleId,
   };
 }
 
@@ -283,6 +300,7 @@ export function dbJobToDomain(r: Row<"jobs">): Job {
     vehicleId: r.vehicle_id,
     status: r.status,
     notes: r.notes,
+    additionalEquipment: r.additional_equipment ?? [],
     createdBy: r.created_by ?? "",
     createdAt: r.created_at,
   };
@@ -301,6 +319,7 @@ export function domainJobToDb(j: Job): Insert<"jobs"> {
     vehicle_id: j.vehicleId,
     status: j.status,
     notes: j.notes,
+    additional_equipment: j.additionalEquipment,
     created_by: j.createdBy || null,
   };
 }
@@ -394,6 +413,47 @@ export function dbInvoiceToDomain(
   };
 }
 
+// ---------- core returns ----------
+export function dbCoreReturnToDomain(r: Row<"core_returns">): CoreReturn {
+  return {
+    id: r.id,
+    partDescription: r.part_description,
+    inventoryItemId: r.inventory_item_id,
+    coreValue: Number(r.core_value),
+    customerName: r.customer_name,
+    status: r.status as CoreReturnStatus,
+    receivedAt: r.received_at,
+    supplierId: r.supplier_id,
+    rtsReference: r.rts_reference,
+    rtsAt: r.rts_at,
+    creditAmount: r.credit_amount != null ? Number(r.credit_amount) : null,
+    creditedAt: r.credited_at,
+    notes: r.notes,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  };
+}
+
+export function domainCoreReturnToDb(c: CoreReturn): Insert<"core_returns"> {
+  return {
+    id: c.id,
+    part_description: c.partDescription,
+    inventory_item_id: c.inventoryItemId,
+    core_value: c.coreValue,
+    customer_name: c.customerName,
+    status: c.status,
+    received_at: c.receivedAt,
+    supplier_id: c.supplierId,
+    rts_reference: c.rtsReference,
+    rts_at: c.rtsAt,
+    credit_amount: c.creditAmount,
+    credited_at: c.creditedAt,
+    notes: c.notes,
+    created_by: c.createdBy,
+    created_at: c.createdAt,
+  };
+}
+
 // ---------- time entries ----------
 export function dbTimeEntryToDomain(r: Row<"time_entries">): TimeEntry {
   return {
@@ -413,6 +473,9 @@ export function dbTimeEntryToDomain(r: Row<"time_entries">): TimeEntry {
     flagged: r.flagged,
     flagReason: r.flag_reason,
     pretripInspectionId: r.pretrip_inspection_id ?? null,
+    ppeMissing: r.ppe_missing,
+    ppeMissingReason: r.ppe_missing_reason,
+    passengerNames: r.passenger_names,
   };
 }
 
@@ -453,6 +516,7 @@ export function dbPurchaseRequestToDomain(r: Row<"purchase_requests">): Purchase
     id: r.id,
     mechanicId: r.mechanic_id,
     item: r.item,
+    quantity: r.quantity,
     reason: r.reason,
     estimatedCost: Number(r.estimated_cost),
     urgency: r.urgency,
@@ -729,6 +793,18 @@ export function dbTicketPhotoToDomain(r: Row<"ticket_photos">): TicketPhoto {
     location: r.location,
     enteredBy: r.entered_by,
     status: r.status,
+    uploadedAt: r.uploaded_at,
+  };
+}
+
+export function dbWorkOrderPhotoToDomain(
+  r: Row<"maintenance_work_order_photos">,
+): WorkOrderPhoto {
+  return {
+    id: r.id,
+    workOrderId: r.work_order_id,
+    mechanicId: r.mechanic_id,
+    photoUrl: r.photo_url,
     uploadedAt: r.uploaded_at,
   };
 }

@@ -29,7 +29,7 @@ const ADMIN_TABS_REFRESH_MIN_MS = 60_000;
 // Enriched profile select: the three access columns + the named role's tab
 // list via the profiles -> admin_roles FK embed (one round-trip).
 const PROFILE_ACCESS_SELECT =
-  "id, name, email, role, is_owner, admin_role_id, allowed_tabs_override, admin_roles(allowed_tabs)";
+  "id, name, email, role, is_owner, admin_role_id, allowed_tabs_override, admin_roles(allowed_tabs), is_workshop_manager";
 
 export type Role = "admin" | "driver" | "mechanic";
 export type Theme = "light" | "dark";
@@ -68,6 +68,10 @@ type Ctx = {
   // admins with no role/override assigned, and whenever permission data is
   // unavailable (fail open — server triggers protect the assignment data).
   allowedTabs: AllowedTabs;
+  // Mechanic-tier flag: gates the "All work orders" overview tab on
+  // /mechanic/work-orders (client feedback — the assigned-to-me queue has no
+  // shop-wide view). Meaningless for admin/driver sessions.
+  isWorkshopManager: boolean;
 };
 
 const AuthCtx = createContext<Ctx | null>(null);
@@ -90,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // forbidden tabs), and unchanged ("all") for everyone else.
   const [isOwner, setIsOwner] = useState(!USE_SUPABASE);
   const [allowedTabs, setAllowedTabs] = useState<AllowedTabs>(() => readStoredAdminTabs());
+  const [isWorkshopManager, setIsWorkshopManager] = useState(!USE_SUPABASE);
 
   // Theme hydration (independent of auth mode)
   useEffect(() => {
@@ -343,6 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Demo personas always get the full owner experience.
       setIsOwner(true);
       setAllowedTabs("all");
+      setIsWorkshopManager(true);
       return;
     }
 
@@ -378,6 +384,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_owner?: boolean;
         allowed_tabs_override?: string[] | null;
         admin_roles?: { allowed_tabs: string[] } | null;
+        is_workshop_manager?: boolean;
       } | null = enriched.data;
       let error = enriched.error;
       if (error) {
@@ -407,6 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRoleState(profile.role as Role);
       setUser({ id: profile.id, name: profile.name, email: profile.email });
       setIsOwner(Boolean(profile.is_owner));
+      setIsWorkshopManager(Boolean(profile.is_workshop_manager));
       setAllowedTabs(allowed);
       setAuthed(true);
       setLoading(false);
@@ -591,6 +599,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsDriverTokenSession(false);
     setIsOwner(!USE_SUPABASE);
     setAllowedTabs("all");
+    setIsWorkshopManager(!USE_SUPABASE);
     localStorage.removeItem("fo:authed");
     clearStoredAdminTabs();
     // Also burn any in-tab driver-token session so logging out via the
@@ -624,6 +633,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDriverTokenSession,
         isOwner,
         allowedTabs,
+        isWorkshopManager,
       }}
     >
       {children}

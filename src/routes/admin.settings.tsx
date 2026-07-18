@@ -467,10 +467,30 @@ const EMPTY_INVITE_FORM = {
 };
 
 function UsersTab() {
-  const { drivers, mechanics, admins } = useData();
+  const { drivers, mechanics, admins, setMechanicWorkshopManager } = useData();
   const { isOwner } = useAuth();
+  const [wmBusyId, setWmBusyId] = useState<string | null>(null);
+
+  async function toggleWorkshopManager(mechanicId: string, next: boolean) {
+    setWmBusyId(mechanicId);
+    try {
+      const res = await api.setWorkshopManager(mechanicId, next);
+      if (!res.ok) {
+        toast.error(res.reason);
+        return;
+      }
+      setMechanicWorkshopManager(mechanicId, next);
+      toast.success(next ? "Promoted to Workshop Manager" : "Reverted to Mechanic");
+    } finally {
+      setWmBusyId(null);
+    }
+  }
   // Real roster from Supabase — admins, mechanics, drivers all from profiles.
   const all = [...admins, ...mechanics, ...drivers];
+  // Spreading into `all` widens each row to the common User type, dropping
+  // Mechanic-only fields — look isWorkshopManager back up by id from the
+  // original typed array instead of narrowing `all` by role.
+  const mechanicById = new Map(mechanics.map((m) => [m.id, m]));
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [creating, setCreating] = useState(false);
@@ -866,6 +886,7 @@ function UsersTab() {
             <th className="text-left font-medium px-3 py-2">Email</th>
             <th className="text-left font-medium px-3 py-2">Role</th>
             {isOwner && <th className="text-left font-medium px-3 py-2">Access</th>}
+            <th className="text-left font-medium px-3 py-2">Tier</th>
             <th className="text-left font-medium px-3 py-2">Status</th>
           </tr>
         </thead>
@@ -907,6 +928,30 @@ function UsersTab() {
                   )}
                 </td>
               )}
+              <td className="px-3 py-2">
+                {u.role === "mechanic" && mechanicById.has(u.id) ? (
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "text-xs px-1.5 py-0.5 rounded",
+                        mechanicById.get(u.id)!.isWorkshopManager
+                          ? "bg-amber-brand/15 text-amber-brand font-medium"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {mechanicById.get(u.id)!.isWorkshopManager ? "Workshop Manager" : "Mechanic"}
+                    </span>
+                    <Switch
+                      checked={mechanicById.get(u.id)!.isWorkshopManager}
+                      disabled={wmBusyId === u.id}
+                      onCheckedChange={(v) => void toggleWorkshopManager(u.id, v)}
+                      data-testid={`workshop-manager-toggle-${u.id}`}
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </td>
               <td className="px-3 py-2">
                 <StatusBadge status="Active" />
               </td>
@@ -2174,6 +2219,10 @@ function BillingTab() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [capacityOpen, setCapacityOpen] = useState(false);
+  const [capacityCount, setCapacityCount] = useState("");
+  const [capacityNote, setCapacityNote] = useState("");
+  const [requestingCapacity, setRequestingCapacity] = useState(false);
 
   // Live seats/vehicles usage — counted from the same arrays that drive the
   // admin UI, so the headcount auto-updates when an admin adds a driver.
@@ -2182,6 +2231,8 @@ function BillingTab() {
   const isCancelRequested = billing.status === "cancel-requested";
   const isCancelled = billing.status === "cancelled";
   const isPastDue = billing.status === "past-due";
+  const isOverVehicleLimit = vehiclesActive >= billing.vehiclesLimit;
+  const isCapacityRequested = Boolean(billing.vehicleCapacityRequestedAt);
 
   async function confirmCancel() {
     setCancelling(true);
@@ -2198,6 +2249,29 @@ function BillingTab() {
       toast.error(err instanceof Error ? err.message : "Cancel failed");
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function confirmCapacityRequest() {
+    setRequestingCapacity(true);
+    try {
+      const parsed = parseInt(capacityCount, 10);
+      const result = await api.requestMoreVehicleCapacity(
+        Number.isFinite(parsed) && parsed > 0 ? parsed : billing.vehiclesLimit,
+        capacityNote.trim(),
+      );
+      if (result.ok) {
+        toast.success("Capacity request sent — our team will reach out");
+        setCapacityOpen(false);
+        setCapacityCount("");
+        setCapacityNote("");
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setRequestingCapacity(false);
     }
   }
 
@@ -2227,6 +2301,39 @@ function BillingTab() {
         <div className="bg-danger/10 border border-danger/30 rounded-md p-3 mb-4 flex items-center gap-2 text-sm">
           <AlertCircle className="w-4 h-4 text-danger" />
           Past due. Please contact support to restore service.
+        </div>
+      )}
+      {isOverVehicleLimit && !isCapacityRequested && (
+        <div
+          className="bg-amber-brand/10 border border-amber-brand/30 rounded-md p-3 mb-4 flex items-start gap-2 text-sm"
+          data-testid="vehicle-capacity-warning"
+        >
+          <AlertCircle className="w-4 h-4 text-amber-brand mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">You&apos;ve reached your vehicle plan limit</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {vehiclesActive} of {billing.vehiclesLimit} vehicles are in use. This never blocks
+              adding more vehicles — request more capacity below and our team will follow up.
+            </p>
+          </div>
+        </div>
+      )}
+      {isCapacityRequested && (
+        <div
+          className="bg-blue-500/10 border border-blue-500/30 rounded-md p-3 mb-4 flex items-start gap-2 text-sm"
+          data-testid="vehicle-capacity-pending"
+        >
+          <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">Additional vehicle capacity requested</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {billing.vehicleCapacityRequestedAt &&
+                `Submitted ${new Date(billing.vehicleCapacityRequestedAt).toLocaleString()}.`}
+              {billing.vehicleCapacityRequestNote &&
+                ` Note: ${billing.vehicleCapacityRequestNote}.`}{" "}
+              Our team will be in touch.
+            </p>
+          </div>
         </div>
       )}
       <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
@@ -2308,6 +2415,69 @@ function BillingTab() {
               className="flex-1"
             >
               {cancelling ? "Requesting…" : "Request cancellation"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={capacityOpen}
+        onOpenChange={(o) => {
+          setCapacityOpen(o);
+          if (!o) {
+            setCapacityCount("");
+            setCapacityNote("");
+          }
+        }}
+      >
+        <Button
+          variant="outline"
+          className="mt-3"
+          onClick={() => setCapacityOpen(true)}
+          data-testid="open-request-vehicle-capacity"
+        >
+          {isCapacityRequested ? "Request submitted" : "Request more vehicle capacity"}
+        </Button>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request more vehicle capacity</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Adding vehicles is never blocked by your plan limit — this just lets our team know
+            you&apos;ve outgrown it so we can update your plan.
+          </p>
+          <div className="mt-3">
+            <Label htmlFor="capacity-count">How many vehicles do you need in total?</Label>
+            <Input
+              id="capacity-count"
+              type="number"
+              min={billing.vehiclesLimit + 1}
+              placeholder={String(billing.vehiclesLimit + 10)}
+              value={capacityCount}
+              onChange={(e) => setCapacityCount(e.target.value)}
+              data-testid="capacity-count"
+            />
+          </div>
+          <div className="mt-3">
+            <Label htmlFor="capacity-note">Note (optional)</Label>
+            <Textarea
+              id="capacity-note"
+              rows={3}
+              value={capacityNote}
+              onChange={(e) => setCapacityNote(e.target.value)}
+              data-testid="capacity-note"
+            />
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button variant="outline" onClick={() => setCapacityOpen(false)} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              disabled={requestingCapacity}
+              onClick={() => void confirmCapacityRequest()}
+              data-testid="confirm-request-vehicle-capacity"
+              className="flex-1"
+            >
+              {requestingCapacity ? "Sending…" : "Send request"}
             </Button>
           </div>
         </DialogContent>

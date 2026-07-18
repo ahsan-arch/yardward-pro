@@ -4,8 +4,9 @@
 // API (the only place that can do that — direct INSERT bypasses password
 // hashing + the handle_new_auth_user trigger flow), then patches the
 // profiles row for the fields the trigger doesn't set (phone), and inserts
-// the role-specific side row (drivers for role='driver', no extra needed
-// for mechanic/admin since the trigger covers everything).
+// the role-specific side row (drivers for role='driver', mechanics for
+// role='mechanic' — handle_new_auth_user only writes public.profiles, so
+// both side tables need an explicit insert here; no extra needed for admin).
 //
 // REASSIGN: if the submitted email already has an auth user, we do NOT error
 // with "already registered". Instead we treat the submit as a reassignment —
@@ -416,6 +417,41 @@ Deno.serve(async (req) => {
           JSON.stringify({
             ok: false,
             error: `Drivers row insert failed: HTTP ${driverInsResp.status} — ${raw.slice(0, 200)}. ${
+              rolledBack
+                ? "Auth user was rolled back; you can retry with the same email."
+                : `WARNING: rollback of auth user ${userId} also failed. Manually delete via Supabase dashboard before retrying.`
+            }`,
+          }),
+          { status: 500, headers: corsHeaders },
+        );
+      }
+    }
+
+    // Mechanics side row is required for the mechanic to function: without
+    // it, purchase_requests.mechanic_id (which FKs to mechanics.id, not
+    // profiles.id) rejects every insert with a foreign-key violation the
+    // instant this mechanic tries to submit a purchase request — the
+    // "tried to submit but got errors" bug. Same rollback contract as the
+    // drivers row above: a half-created mechanic (auth user but no side
+    // row) is worse than no mechanic at all.
+    if (role === "mechanic") {
+      const mechanicInsResp = await fetch(`${SUPABASE_URL}/rest/v1/mechanics`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ id: userId }),
+      });
+      if (!mechanicInsResp.ok) {
+        const raw = await mechanicInsResp.text();
+        const rolledBack = await deleteAuthUser(userId);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: `Mechanics row insert failed: HTTP ${mechanicInsResp.status} — ${raw.slice(0, 200)}. ${
               rolledBack
                 ? "Auth user was rolled back; you can retry with the same email."
                 : `WARNING: rollback of auth user ${userId} also failed. Manually delete via Supabase dashboard before retrying.`

@@ -21,59 +21,110 @@ import {
   MapPin,
   Ticket,
   Bug,
+  ChevronDown,
+  ListChecks,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/crm/BrandMark";
 import { useApp } from "@/contexts/AppContext";
 import { NotificationsBell } from "@/components/crm/NotificationsBell";
-import type { AdminTabKey } from "@/lib/admin-tabs";
+import { ADMIN_TABS, type AdminTabGroup, type AdminTabKey } from "@/lib/admin-tabs";
 
-const navItems = [
-  { to: "/admin", label: "Dashboard", icon: Home, exact: true, tab: "dashboard" },
-  { to: "/admin/schedule", label: "Schedule", icon: Calendar, tab: "schedule" },
-  { to: "/admin/jobs", label: "Jobs", icon: Briefcase, tab: "jobs" },
-  { to: "/admin/drivers", label: "Drivers", icon: Users, tab: "drivers" },
-  { to: "/admin/vehicles", label: "Vehicles", icon: Truck, tab: "vehicles" },
-  { to: "/admin/map", label: "Live map", icon: MapPin, tab: "map" },
-  { to: "/admin/work-orders", label: "Work Orders", icon: ClipboardCheck, tab: "work-orders" },
-  { to: "/admin/communications", label: "Communications", icon: MessagesSquare, tab: "communications" },
-  { to: "/admin/timesheets", label: "Timesheets", icon: Clock, tab: "timesheets" },
-  { to: "/admin/sms-log", label: "SMS log", icon: MessageSquare, tab: "sms-log" },
-  { to: "/admin/purchase-requests", label: "Purchase Orders", icon: ShoppingCart, tab: "purchase-orders" },
-  { to: "/admin/inventory", label: "Inventory", icon: Package, tab: "inventory" },
-  { to: "/admin/prepaid-tickets", label: "Prepaid tickets", icon: Ticket, tab: "prepaid-tickets" },
-  { to: "/admin/clients", label: "Clients", icon: Building2, tab: "clients" },
-  { to: "/admin/receivables", label: "Receivables", icon: BarChart2, tab: "receivables" },
-  { to: "/admin/forms", label: "Forms & Submissions", icon: FileText, tab: "forms" },
-  { to: "/admin/hauling-records", label: "Hauling records", icon: FileSpreadsheet, tab: "hauling-records" },
-  { to: "/admin/form-templates", label: "Form templates", icon: ClipboardCheck, tab: "form-templates" },
-  { to: "/admin/errors", label: "Error log", icon: Bug, tab: "errors" },
-  { to: "/admin/reports", label: "Reports", icon: BarChart2, tab: "reports" },
-  { to: "/admin/settings", label: "Settings", icon: Settings, tab: "settings" },
-] satisfies ReadonlyArray<{
-  to: string;
-  label: string;
-  icon: typeof Home;
-  exact?: boolean;
-  tab: AdminTabKey;
-}>;
+// Icons keyed by the canonical tab list in admin-tabs.ts, which is also the
+// source of truth for labels/paths/grouping (shared with the role-permission
+// editor in admin.settings.tsx) — one place to add a tab instead of two.
+const TAB_ICONS: Record<AdminTabKey, typeof Home> = {
+  dashboard: Home,
+  schedule: Calendar,
+  jobs: Briefcase,
+  drivers: Users,
+  vehicles: Truck,
+  inspections: ListChecks,
+  map: MapPin,
+  "work-orders": ClipboardCheck,
+  communications: MessagesSquare,
+  timesheets: Clock,
+  "sms-log": MessageSquare,
+  "purchase-orders": ShoppingCart,
+  inventory: Package,
+  "prepaid-tickets": Ticket,
+  clients: Building2,
+  receivables: BarChart2,
+  forms: FileText,
+  "hauling-records": FileSpreadsheet,
+  "form-templates": ClipboardCheck,
+  errors: Bug,
+  reports: BarChart2,
+  settings: Settings,
+};
+
+// Same group order as the TabChecklist in admin.settings.tsx, so the sidebar
+// and the permission editor agree on what "grouped like the sidebar" means.
+const NAV_GROUPS: AdminTabGroup[] = ["Operations", "Financial", "Admin"];
+
+const navItems = ADMIN_TABS.map((t) => ({
+  to: t.path,
+  label: t.label,
+  icon: TAB_ICONS[t.key],
+  exact: t.path === "/admin",
+  tab: t.key,
+  group: t.group,
+}));
+
+// Collapsed-group prefs persist per browser (not per-admin — this is just a
+// UI convenience, same trust level as theme). Client feedback asked for
+// "sub-menus", not just visual grouping — collapsing/expanding a section is
+// what makes the group header actually behave like a sub-menu trigger
+// rather than a static label.
+const NAV_COLLAPSE_STORAGE_KEY = "fo:admin-nav-collapsed";
+
+function readCollapsedGroups(): Set<AdminTabGroup> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((g): g is AdminTabGroup => NAV_GROUPS.includes(g)));
+  } catch {
+    return new Set();
+  }
+}
 
 export function AdminShell({ children, title }: { children?: ReactNode; title?: string }) {
   const [open, setOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<AdminTabGroup>>(readCollapsedGroups);
   const { user, allowedTabs } = useApp();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Owner/custom-roles tab filtering. "all" (owners, unrestricted admins,
   // and any state where permission data is unavailable) keeps every item.
   const visibleItems =
     allowedTabs === "all" ? navItems : navItems.filter((item) => allowedTabs.includes(item.tab));
+  const activeGroup = visibleItems.find((item) =>
+    item.exact ? pathname === item.to : pathname.startsWith(item.to),
+  )?.group;
+
+  function toggleGroup(group: AdminTabGroup) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      try {
+        window.localStorage.setItem(NAV_COLLAPSE_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore — collapse state just won't persist across reloads */
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-44px)] bg-background">
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed lg:static inset-y-0 left-0 top-11 lg:top-0 z-40 w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-transform",
+          "fixed lg:sticky left-0 top-11 bottom-0 lg:bottom-auto lg:h-[calc(100vh-44px)] lg:self-start z-40 w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-transform",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
@@ -85,26 +136,51 @@ export function AdminShell({ children, title }: { children?: ReactNode; title?: 
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-3 px-2">
-          {visibleItems.map((item) => {
-            const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
+          {NAV_GROUPS.map((group) => {
+            const items = visibleItems.filter((item) => item.group === group);
+            if (items.length === 0) return null;
+            // A group holding the current page always renders expanded,
+            // regardless of stored collapse state — navigating must never
+            // hide the link you're already on.
+            const expanded = group === activeGroup || !collapsedGroups.has(group);
             return (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "relative flex items-center gap-3 px-3 py-2.5 rounded-md text-sm mb-0.5 transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-amber-brand font-medium"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                )}
-              >
-                {active && (
-                  <span className="absolute left-0 top-1 bottom-1 w-1 rounded-r bg-amber-brand" />
-                )}
-                <item.icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </Link>
+              <div key={group} className="mb-3 last:mb-0">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group)}
+                  className="w-full flex items-center justify-between px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
+                >
+                  <span>{group}</span>
+                  <ChevronDown
+                    className={cn("w-3 h-3 transition-transform", !expanded && "-rotate-90")}
+                  />
+                </button>
+                {expanded &&
+                  items.map((item) => {
+                    const active = item.exact
+                      ? pathname === item.to
+                      : pathname.startsWith(item.to);
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "relative flex items-center gap-3 px-3 py-2.5 rounded-md text-sm mb-0.5 transition-colors",
+                          active
+                            ? "bg-sidebar-accent text-amber-brand font-medium"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                        )}
+                      >
+                        {active && (
+                          <span className="absolute left-0 top-1 bottom-1 w-1 rounded-r bg-amber-brand" />
+                        )}
+                        <item.icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+              </div>
             );
           })}
         </nav>

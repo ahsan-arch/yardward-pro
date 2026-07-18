@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -31,11 +32,19 @@ import {
   Activity,
   ClipboardCheck,
   Plus,
+  Paperclip,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { VehicleMap } from "@/components/crm/VehicleMap";
+import type { Tool, ToolCondition } from "@/types/domain";
+
+// Radix Select rejects an empty-string item value, so the "unassigned" pool
+// needs a sentinel — same pattern as NONE_JOB in driver.dump-log.tsx.
+const UNASSIGNED = "__unassigned__";
 
 export const Route = createFileRoute("/admin/vehicles/$id")({
   head: () => ({ meta: [{ title: "Vehicle detail — Engage Hydrovac CRM" }] }),
@@ -50,6 +59,10 @@ function Page() {
   const [tele, setTele] = useState<{ lat: number; lng: number; capturedAt: string } | null>(null);
   const [maintOpen, setMaintOpen] = useState(false);
   const [fuelOpen, setFuelOpen] = useState(false);
+  const [openLogId, setOpenLogId] = useState<string | null>(null);
+  const [toolDialogOpen, setToolDialogOpen] = useState(false);
+  const [editingTool, setEditingTool] = useState<Tool | null>(null);
+  const [deletingToolId, setDeletingToolId] = useState<string | null>(null);
 
   useEffect(() => {
     // Swallow telematics fetch failures so the rest of the page still
@@ -80,6 +93,7 @@ function Page() {
   const fuel = fuelLogs.filter((f) => f.vehicleId === v.id);
   const assignedTools = tools.filter((t) => t.vehicleId === v.id);
   const driver = driverById(v.driverId);
+  const openLog = openLogId ? logs.find((l) => l.id === openLogId) : null;
 
   return (
     <AdminShell title={`${v.id} — ${v.name}`}>
@@ -154,18 +168,52 @@ function Page() {
         </Card>
 
         <Card>
-          <SectionLabel icon={Wrench}>Tools assigned</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel icon={Wrench}>Tools assigned</SectionLabel>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                setEditingTool(null);
+                setToolDialogOpen(true);
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add
+            </Button>
+          </div>
           {assignedTools.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">No tools assigned.</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
               {assignedTools.map((t) => (
-                <li key={t.id} className="flex items-center justify-between">
-                  <span>{t.name}</span>
-                  <span
-                    className={`text-xs font-mono uppercase ${t.condition === "ok" ? "text-success" : t.condition === "damaged" ? "text-amber-brand" : "text-danger"}`}
-                  >
-                    {t.condition}
+                <li key={t.id} className="flex items-center justify-between group">
+                  <span className="truncate">{t.name}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-xs font-mono uppercase ${t.condition === "ok" ? "text-success" : t.condition === "damaged" ? "text-amber-brand" : "text-danger"}`}
+                    >
+                      {t.condition}
+                    </span>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-muted text-muted-foreground opacity-0 group-hover:opacity-100"
+                      onClick={() => {
+                        setEditingTool(t);
+                        setToolDialogOpen(true);
+                      }}
+                      aria-label={`Edit ${t.name}`}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1 rounded hover:bg-danger/10 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100"
+                      onClick={() => setDeletingToolId(t.id)}
+                      aria-label={`Remove ${t.name}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </span>
                 </li>
               ))}
@@ -200,7 +248,11 @@ function Page() {
             </thead>
             <tbody>
               {logs.map((l) => (
-                <tr key={l.id} className="border-t border-border">
+                <tr
+                  key={l.id}
+                  className="border-t border-border hover:bg-muted/30 cursor-pointer"
+                  onClick={() => setOpenLogId(l.id)}
+                >
                   <td className="px-3 py-2 font-mono text-xs">
                     <Calendar className="w-3 h-3 inline -mt-0.5 mr-1" />
                     {l.date}
@@ -215,6 +267,46 @@ function Page() {
           </table>
         )}
       </Card>
+
+      <Sheet open={!!openLogId} onOpenChange={(o) => !o && setOpenLogId(null)}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          {openLog && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4" /> {openLog.type}
+                </SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 mt-6">
+                <Field k="Date" v={openLog.date} />
+                <Field k="Mileage" v={`${openLog.mileage.toLocaleString()} mi`} />
+                <Field k="Performed by" v={openLog.performedBy} />
+                <Field k="Cost" v={`$${openLog.cost}`} />
+                <Field k="Notes" v={openLog.notes || "—"} />
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+                    Attachments
+                  </div>
+                  {openLog.attachments.length === 0 ? (
+                    <div className="mt-0.5 text-sm text-muted-foreground">
+                      No attachments recorded.
+                    </div>
+                  ) : (
+                    <div className="mt-1 space-y-1">
+                      {openLog.attachments.map((a) => (
+                        <div key={a} className="flex items-center gap-2 text-sm">
+                          <Paperclip className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       <div className="mt-4">
         <Card>
@@ -272,6 +364,43 @@ function Page() {
         defaultDriverId={v.driverId ?? drivers[0]?.id ?? ""}
         drivers={drivers}
       />
+      <ToolDialog
+        open={toolDialogOpen}
+        onOpenChange={setToolDialogOpen}
+        vehicleId={v.id}
+        tool={editingTool}
+      />
+      <Dialog open={!!deletingToolId} onOpenChange={(o) => !o && setDeletingToolId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove tool?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This deletes the tool record entirely — it will no longer appear on{" "}
+            {v.id}&apos;s driver tool checklist. This can&apos;t be undone.
+          </p>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" onClick={() => setDeletingToolId(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-danger text-danger-foreground hover:bg-danger/90"
+              onClick={async () => {
+                const id = deletingToolId!;
+                setDeletingToolId(null);
+                try {
+                  await api.deleteTool(id);
+                  toast.success("Tool removed");
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not remove tool");
+                }
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }
@@ -280,6 +409,16 @@ function Card({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] p-4">
       {children}
+    </div>
+  );
+}
+function Field({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
+        {k}
+      </div>
+      <div className="mt-0.5 text-sm">{v}</div>
     </div>
   );
 }
@@ -579,6 +718,124 @@ function AddFuelDialog({
             className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
           >
             {saving ? "Saving…" : "Add fuel entry"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Add/edit a tool. Same dialog handles both — `tool` null means "new tool
+// for this vehicle", non-null means editing an existing row (including
+// reassigning it to a different vehicle or back to the unassigned pool,
+// which is what lets an admin move gear between trucks instead of only
+// ever deleting + recreating it).
+function ToolDialog({
+  open,
+  onOpenChange,
+  vehicleId,
+  tool,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  vehicleId: string;
+  tool: Tool | null;
+}) {
+  const { vehicles } = useData();
+  const [name, setName] = useState("");
+  const [condition, setCondition] = useState<ToolCondition>("ok");
+  const [assignedVehicleId, setAssignedVehicleId] = useState<string>(vehicleId);
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed every time the dialog opens rather than via a plain useState
+  // initializer — this one Dialog instance is reused for both "Add" (tool =
+  // null) and every row's "Edit" click, so the fields must reset to match
+  // whichever tool (or blank form) triggered this open.
+  useEffect(() => {
+    if (!open) return;
+    setName(tool?.name ?? "");
+    setCondition(tool?.condition ?? "ok");
+    setAssignedVehicleId(tool ? (tool.vehicleId ?? UNASSIGNED) : vehicleId);
+  }, [open, tool, vehicleId]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Tool name is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const patch = {
+        name: name.trim(),
+        condition,
+        vehicleId: assignedVehicleId === UNASSIGNED ? null : assignedVehicleId,
+      };
+      if (tool) {
+        await api.updateTool(tool.id, patch);
+        toast.success("Tool updated");
+      } else {
+        await api.createTool(patch);
+        toast.success("Tool added");
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save tool");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{tool ? `Edit tool — ${tool.name}` : "Add tool"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+          <div>
+            <Label>Name</Label>
+            <Input
+              placeholder="e.g. Fire extinguisher"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Condition</Label>
+            <Select value={condition} onValueChange={(v) => setCondition(v as ToolCondition)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ok">OK</SelectItem>
+                <SelectItem value="missing">Missing</SelectItem>
+                <SelectItem value="damaged">Damaged</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Assigned vehicle</Label>
+            <Select value={assignedVehicleId} onValueChange={setAssignedVehicleId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Unassigned (spare pool)</SelectItem>
+                {vehicles.map((veh) => (
+                  <SelectItem key={veh.id} value={veh.id}>
+                    {veh.id} — {veh.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90"
+          >
+            {saving ? "Saving…" : tool ? "Save changes" : "Add tool"}
           </Button>
         </form>
       </DialogContent>

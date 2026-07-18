@@ -7,16 +7,33 @@ test.describe("Mechanic dashboard", () => {
     await page.goto("/mechanic");
   });
 
-  test("welcome card + active work orders + PO form render", async ({ page }) => {
+  test("welcome card + KPI tiles + active work orders render", async ({ page }) => {
     await expect(page.locator("text=/Welcome back, /i")).toBeVisible();
     await expect(page.locator("text=/active work orders/i").first()).toBeVisible();
-    await expect(page.locator("text=/purchase request/i").first()).toBeVisible();
+    await expect(page.getByTestId("stat-my-active-work-orders")).toBeVisible();
+    await expect(page.getByTestId("stat-my-pos-pending-approval")).toBeVisible();
+    await expect(page.getByTestId("stat-open-work-orders-workshop")).toBeVisible();
+    await expect(page.getByTestId("stat-parts-at-below-reorder-point")).toBeVisible();
+  });
+
+  test("PO approval status and restock panels render", async ({ page }) => {
+    await expect(page.locator("text=/PO approval status/i")).toBeVisible();
+    await expect(page.locator("text=/Parts needing restock/i")).toBeVisible();
+  });
+});
+
+test.describe("Mechanic purchase request form", () => {
+  test.beforeEach(async ({ page }) => {
+    await authedAs(page, "mechanic");
+    await page.goto("/mechanic/purchase-requests");
+    await page.getByRole("button", { name: /new request/i }).click();
+    await expect(page.locator("text=/^New purchase request$/i")).toBeVisible();
   });
 
   test("PO form submit blocks when required fields empty", async ({ page }) => {
     await page.getByRole("button", { name: /submit for approval/i }).click();
     // Browser native validation OR the toast — either way the form shouldn't submit
-    const stillThere = await page.locator("text=/purchase request/i").first().isVisible();
+    const stillThere = await page.locator("text=/^New purchase request$/i").isVisible();
     expect(stillThere).toBeTruthy();
   });
 

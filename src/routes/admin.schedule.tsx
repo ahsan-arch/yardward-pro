@@ -177,6 +177,7 @@ function Page() {
         vehicleId: form.vehicleId,
         status,
         notes: form.notes,
+        additionalEquipment: [],
         createdBy: "A-01",
       });
       const driver = drivers.find((d) => d.id === form.driverId);

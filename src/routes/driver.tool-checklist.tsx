@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Check, AlertTriangle, Loader2, Wrench, Sun, Moon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -50,14 +50,44 @@ function Page() {
     return c ? { lat: c.lat, lng: c.lng, label: `Vehicle ${vehicleId} last known` } : null;
   }, [vehicleId]);
   const gps = useGpsCapture(fallback);
-  const [items, setItems] = useState(
-    tools.map((t) => ({
-      toolId: t.id,
-      name: t.name,
-      status: t.condition as ToolCondition,
-      notes: "",
-    })),
+  // Scope to THIS vehicle's tools only. Unfiltered, every driver saw the
+  // org's entire tool roster mixed together regardless of what truck they
+  // actually drive — the demo never surfaced it because every seed tool
+  // happens to belong to TRK-07, the same id the vehicleId fallback above
+  // uses. Client feedback: "the tools inventory check doesn't work."
+  const vehicleTools = useMemo(
+    () => tools.filter((t) => t.vehicleId === vehicleId),
+    [tools, vehicleId],
   );
+  const [items, setItems] = useState<
+    { toolId: string; name: string; status: ToolCondition; notes: string }[]
+  >([]);
+  // Seed once per resolved vehicleId rather than via useState's one-time
+  // initializer. AuthContext's mock `user` starts as the admin preset and
+  // only flips to the real driver in an effect after mount, so on the very
+  // first render `me` is unresolved and vehicleId falls back to the
+  // hardcoded default — a useState initializer would freeze `items` from
+  // the WRONG vehicle forever once the real id resolves a tick later. This
+  // re-seeds whenever vehicleId settles to a new value, and vehicleId is
+  // stable for the rest of the page's life once resolved, so it won't
+  // clobber in-progress edits.
+  const seededVehicleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (seededVehicleRef.current === vehicleId) return;
+    seededVehicleRef.current = vehicleId;
+    setItems(
+      vehicleTools.map((t) => ({
+        toolId: t.id,
+        name: t.name,
+        status: t.condition as ToolCondition,
+        notes: "",
+      })),
+    );
+    // vehicleTools is intentionally omitted: it's a derived array that gets a
+    // new reference on every render, and re-running only on vehicleId is the
+    // whole point of the ref guard above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleId]);
   const [loading, setLoading] = useState(false);
   // Form-scoped idempotency key — minted once at mount so a retried submit
   // (online flake, fail-then-Resubmit, or offline replay) carries the same
@@ -152,7 +182,7 @@ function Page() {
         </div>
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold">Tool checklist — TRK-07</h1>
+            <h1 className="text-xl font-bold">Tool checklist — {vehicleId}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {kind === "end_of_shift"
                 ? "Confirm every tool is back on the truck before clocking out."
@@ -163,16 +193,19 @@ function Page() {
         </div>
 
         {items.length === 0 && (
-          // Empty-state guard: if the tool roster didn't load (Supabase fetch
-          // failed or the truck has no assigned tools yet) we still need to
-          // render the chrome + Back link instead of a blank body. The submit
-          // button stays disabled because there's nothing to attest to.
+          // Empty-state: this vehicle has no tools registered against it yet
+          // (or the roster hasn't hydrated). Either way the driver must not
+          // be stuck here — Submit stays enabled below so they can confirm
+          // "nothing to check" and continue their shift; blocking them
+          // entirely was the client-reported bug ("no tools present but
+          // won't bypass it" / "could not get past the driver initial
+          // screen").
           <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center">
             <Wrench className="w-6 h-6 mx-auto text-muted-foreground" />
-            <div className="mt-2 text-sm font-medium">No tools loaded</div>
+            <div className="mt-2 text-sm font-medium">No tools assigned to this vehicle</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              The tool roster for this vehicle hasn't loaded yet. Check back in
-              a moment, or contact dispatch if this persists.
+              Nothing to check. Confirm below to continue — an admin can add
+              this vehicle's tools from Vehicles → Tools at any time.
             </p>
           </div>
         )}
@@ -261,13 +294,15 @@ function Page() {
 
         <Button
           onClick={submit}
-          disabled={loading || items.length === 0}
+          disabled={loading}
           className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold disabled:opacity-60"
         >
           {loading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" /> Submitting…
             </>
+          ) : items.length === 0 ? (
+            "Confirm — no tools to check"
           ) : (
             "Submit checklist"
           )}

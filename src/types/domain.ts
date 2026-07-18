@@ -22,6 +22,7 @@ export interface Driver extends User {
 export interface Mechanic extends User {
   specialty: string;
   shopId: string;
+  isWorkshopManager: boolean;
 }
 
 // Plain admin profile — no side-table fields. Used by the Users tab to list
@@ -209,6 +210,16 @@ export interface Job {
   vehicleId: string | null;
   status: JobStatus;
   notes: string;
+  /**
+   * Free-text equipment names dispatch attaches to this job beyond the
+   * assigned vehicle (e.g. "300ft hose reel", "extra jetting nozzle"). Client
+   * feedback: "Job Menu doesn't have any way to assign additional equipment
+   * or to trigger other departments" / "When dispatch selects additional
+   * equipment, the responsible department must automatically receive a task
+   * to prepare that equipment before the truck leaves the yard." Setting this
+   * on create fires a notification to every mechanic (see createJob).
+   */
+  additionalEquipment: string[];
   createdBy: string;
   createdAt: string;
 }
@@ -317,6 +328,21 @@ export interface TimeEntry {
    * legacy/seed entries that pre-date the lockout.
    */
   pretripInspectionId?: string | null;
+  /**
+   * Start-of-day "Any personal PPE missing?" toggle + the required reason
+   * text. Optional for the same reason pretripInspectionId is: the quick
+   * clockIn/clockOut path and legacy/seed rows never went through the
+   * start-of-day form that captures it.
+   */
+  ppeMissing?: boolean;
+  ppeMissingReason?: string;
+  /**
+   * "Passengers in vehicle?" toggle from the start-of-day form, expanded to
+   * an actual name manifest — a safety-relevant boolean with no names behind
+   * it is useless if dispatch ever needs to know who was on board. Optional
+   * for the same legacy/seed reason as pretripInspectionId.
+   */
+  passengerNames?: string[];
 }
 
 export type PurchaseRequestStatus = "pending" | "approved" | "rejected" | "ordered";
@@ -339,6 +365,7 @@ export interface PurchaseRequest {
   id: string;
   mechanicId: string;
   item: string;
+  quantity: number;
   reason: string;
   estimatedCost: number;
   urgency: "low" | "medium" | "high";
@@ -380,6 +407,95 @@ export interface InventoryItem {
   reorderPoint: number;
   supplierId: string;
   lastRestocked: string;
+  /** Shelf/bin location — client feedback: "No ability to enter locations". */
+  location: string;
+  /** Free-text grouping (e.g. "Fluids", "Brakes") — no categories table exists,
+   *  so this is a plain field; the inventory list derives its filter dropdown
+   *  from whatever distinct values are already in use. */
+  category: string;
+  manufacturer: string;
+  /** The manufacturer's own part #, distinct from our internal `sku`. */
+  manufacturerPartNumber: string;
+  /** A cross-reference part # from a different manufacturer/catalog. */
+  alternativePartNumber: string;
+  /** Same loose string-id convention as `supplierId` — a second supplier to
+   *  fall back on when the primary is out of stock or slow. */
+  alternativeSupplierId: string;
+  /**
+   * Storage PATH (not a baked signed URL) into the private `part-photos`
+   * bucket, or a `data:` URL in mock mode — same convention as
+   * TicketPhoto.photoUrl. Views mint a fresh signed URL on demand via
+   * api.signInventoryPhotoUrl so a stale link never 403s an <img>.
+   */
+  photoUrl: string;
+  /**
+   * Assignment for trackable/high-value parts (Fleetio pressure point #4:
+   * "isn't designed to manage parts that may be assigned to vehicles or
+   * actual operators/users... equipment that seem to be displaced at the
+   * worst possible times"). Mutually exclusive with assignedUserId — a part
+   * is either on a truck, checked out to a person, or sitting in the spare
+   * pool (both null). "Transfer" is just editing this field again.
+   */
+  assignedVehicleId: string | null;
+  assignedUserId: string | null;
+  /**
+   * Soft-hide, not a delete — a retired/superseded part still has to keep
+   * every historical reference to it intact (purchase requests, work-order
+   * parts_used, maintenance logs all point at inventory_items.id).
+   * Archived parts drop out of the active list, the low-stock count, and
+   * every part-picker across the app.
+   */
+  archived: boolean;
+  /**
+   * Bill of Materials flag — this part number represents a kit of other
+   * parts (see BomComponent) rather than its own physically-stocked row.
+   * Client feedback: "one part number that represents many part numbers...
+   * even a decant hose... is made up of four part numbers." Allocating a
+   * BOM part decrements its components (bom_components), not this row's
+   * own qty_on_hand.
+   */
+  isBom: boolean;
+}
+
+/**
+ * One component line of a BOM part's recipe. qtyPer is how many units of
+ * the component one unit of the parent BOM part consumes.
+ */
+export interface BomComponent {
+  id: string;
+  parentItemId: string;
+  componentItemId: string;
+  qtyPer: number;
+}
+
+/**
+ * Core-return / surcharge-credit audit trail. Client feedback: "A customer
+ * returns a pump. It has a core value. The pump is returned to the
+ * supplier. The supplier issues a credit. I need the system to track every
+ * stage automatically until the credit is received and applied." A pure
+ * financial/paper trail — never touches inventory_items.qty_on_hand.
+ */
+export type CoreReturnStatus = "received" | "returned_to_supplier" | "credited";
+
+export interface CoreReturn {
+  id: string;
+  partDescription: string;
+  /** Optional correlation to the catalog part that carries this core value. */
+  inventoryItemId: string | null;
+  coreValue: number;
+  customerName: string;
+  status: CoreReturnStatus;
+  receivedAt: string;
+  /** Same loose string-id convention as inventory_items.supplierId. */
+  supplierId: string | null;
+  /** RTS = Return To Supplier — the client's own term for the paper note. */
+  rtsReference: string;
+  rtsAt: string | null;
+  creditAmount: number | null;
+  creditedAt: string | null;
+  notes: string;
+  createdBy: string | null;
+  createdAt: string;
 }
 
 export type SmsDeliveryStatus = "queued" | "sent" | "delivered" | "failed";
@@ -475,7 +591,7 @@ export type MaintenanceWorkOrderStatus =
   | "completed"
   | "cancelled";
 export type MaintenanceWorkOrderPriority = "low" | "medium" | "high" | "critical";
-export type MaintenanceWorkOrderSource = "inspection" | "admin" | "driver_note";
+export type MaintenanceWorkOrderSource = "inspection" | "admin" | "driver_note" | "mechanic";
 
 export interface MaintenanceWorkOrderPart {
   inventoryItemId: string;
@@ -503,6 +619,21 @@ export interface MaintenanceWorkOrder {
   completionNotes: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Photo a mechanic attaches to a work order while it's in progress (before/
+ * after shots, damage evidence, etc.). Client feedback (Mechanic Profile #9):
+ * "how are the Work Orders going to be structured e.g. with service tasks
+ * and inventory ability with photos etc. as this is crucial." Mirrors
+ * TicketPhoto's storage-path-not-baked-URL pattern.
+ */
+export interface WorkOrderPhoto {
+  id: string;
+  workOrderId: string;
+  mechanicId: string | null;
+  photoUrl: string;
+  uploadedAt: string;
 }
 
 /**
@@ -572,6 +703,15 @@ export interface BillingSubscription {
   status: BillingStatus;
   cancelRequestedAt: string | null;
   cancelReason: string | null;
+  /**
+   * Self-service "ask for more" ping (see 20260718090000_vehicle_capacity_
+   * request.sql) — client feedback worried this system would repeat
+   * Fleetio's "expensive to add more vehicles" hard limit. vehiclesLimit is
+   * never enforced as a technical cap; this just lets an admin flag that
+   * they've outgrown it without needing a developer to bump a constant.
+   */
+  vehicleCapacityRequestedAt: string | null;
+  vehicleCapacityRequestNote: string | null;
 }
 
 export const DEFAULT_BILLING_SUBSCRIPTION: BillingSubscription = {
@@ -582,6 +722,8 @@ export const DEFAULT_BILLING_SUBSCRIPTION: BillingSubscription = {
   status: "active",
   cancelRequestedAt: null,
   cancelReason: null,
+  vehicleCapacityRequestedAt: null,
+  vehicleCapacityRequestNote: null,
 };
 
 export interface SupportTicket {

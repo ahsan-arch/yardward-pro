@@ -21,6 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Wrench,
   Play,
@@ -30,6 +31,8 @@ import {
   Undo2,
   Plus,
   X,
+  ListChecks,
+  Camera,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -38,6 +41,7 @@ import type {
   MaintenanceWorkOrder,
   MaintenanceWorkOrderPart,
   MaintenanceWorkOrderPriority,
+  WorkOrderPhoto,
 } from "@/types/domain";
 
 export const Route = createFileRoute("/mechanic/work-orders")({
@@ -54,9 +58,20 @@ const PRIORITY_WEIGHT: Record<MaintenanceWorkOrderPriority, number> = {
   low: 1,
 };
 
+// Ordering for the workshop-manager "All work orders" tab — active work
+// surfaces first, then queued, then finished/cancelled at the bottom.
+const STATUS_WEIGHT: Record<string, number> = {
+  in_progress: 3,
+  claimed: 3,
+  queued: 2,
+  completed: 1,
+  cancelled: 0,
+};
+
 function Page() {
-  const { maintenanceWorkOrders, vehicles, inventoryItems, mechanics } = useData();
-  const { user } = useAuth();
+  const { maintenanceWorkOrders, vehicles, inventoryItems, mechanics, workOrderPhotos } =
+    useData();
+  const { user, isWorkshopManager } = useAuth();
   const me = user.id;
 
   // Resolve a mechanic profile id to a display name for the "claimed by X"
@@ -72,9 +87,10 @@ function Page() {
     return `mechanic ${tail}`;
   }
 
-  const [tab, setTab] = useState<"queue" | "active" | "history">("queue");
+  const [tab, setTab] = useState<"queue" | "active" | "history" | "all">("queue");
   const [openId, setOpenId] = useState<string | null>(null);
   const [claiming, setClaiming] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Three filtered views over the shared array. Memoized so a realtime
   // payload triggering a parent re-render doesn't re-sort N times.
@@ -119,6 +135,24 @@ function Page() {
         }),
     [maintenanceWorkOrders, me],
   );
+  // Workshop-manager-only shop-wide overview — every MWO regardless of status
+  // or assignee. Client feedback: "assigned to me" has no general list for a
+  // manager to see the whole floor at once. Sorted so the busiest/oldest-open
+  // rows surface first: active work ahead of queued ahead of finished.
+  const allRows = useMemo(
+    () =>
+      isWorkshopManager
+        ? maintenanceWorkOrders
+            .slice()
+            .sort((a, b) => {
+              const sa = STATUS_WEIGHT[a.status] ?? 0;
+              const sb = STATUS_WEIGHT[b.status] ?? 0;
+              if (sa !== sb) return sb - sa;
+              return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+            })
+        : [],
+    [maintenanceWorkOrders, isWorkshopManager],
+  );
 
   const open = maintenanceWorkOrders.find((w) => w.id === openId) ?? null;
 
@@ -148,11 +182,25 @@ function Page() {
 
   return (
     <MechanicShell title="Workshop work orders">
+      <div className="flex items-center justify-end mb-4">
+        <Button
+          onClick={() => setCreating(true)}
+          data-testid="new-work-order"
+          className="h-9 px-3 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-sm font-semibold"
+        >
+          <Plus className="w-4 h-4" /> New work order
+        </Button>
+      </div>
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
           <TabsTrigger value="queue">Queue ({queueRows.length})</TabsTrigger>
           <TabsTrigger value="active">My active ({activeRows.length})</TabsTrigger>
           <TabsTrigger value="history">History ({historyRows.length})</TabsTrigger>
+          {isWorkshopManager && (
+            <TabsTrigger value="all" data-testid="tab-all-work-orders">
+              <ListChecks className="w-3.5 h-3.5" /> All work orders ({allRows.length})
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="queue" className="mt-4">
@@ -183,6 +231,17 @@ function Page() {
             showCompletedAt
           />
         </TabsContent>
+        {isWorkshopManager && (
+          <TabsContent value="all" className="mt-4">
+            <AllWorkOrdersTable
+              rows={allRows}
+              vehicleLabel={vehicleLabel}
+              onOpen={setOpenId}
+              myId={me}
+              nameForMechanic={nameForMechanic}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       <Sheet open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
@@ -199,12 +258,143 @@ function Page() {
               vehicleLabel={vehicleLabel(open.vehicleId)}
               inventoryItems={inventoryItems}
               nameForMechanic={nameForMechanic}
+              photos={workOrderPhotos.filter((p) => p.workOrderId === open.id)}
               onClose={() => setOpenId(null)}
             />
           )}
         </SheetContent>
       </Sheet>
+
+      <NewWorkOrderDialog
+        open={creating}
+        onOpenChange={setCreating}
+        vehicles={vehicles}
+        reportedBy={me}
+      />
     </MechanicShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New work order — a mechanic manually opening a queue entry for an issue
+// they noticed, rather than one auto-created from a failed inspection or a
+// driver_note flag. Client feedback: "Work Orders cannot be created" — this
+// was true both in the UI (no button existed) and at the RLS layer (no
+// INSERT policy covered a mechanic; see the migration that added
+// maintenance_wo_mechanic_insert_own). Lands in the queue same as any other
+// entry point — unclaimed, status 'queued' — so it goes through the normal
+// claim flow rather than auto-assigning to the reporter.
+// ---------------------------------------------------------------------------
+function NewWorkOrderDialog({
+  open,
+  onOpenChange,
+  vehicles,
+  reportedBy,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  vehicles: { id: string; name: string }[];
+  reportedBy: string;
+}) {
+  const [vehicleId, setVehicleId] = useState<string>("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [priority, setPriority] = useState<MaintenanceWorkOrderPriority>("medium");
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setVehicleId("");
+    setIssueDescription("");
+    setPriority("medium");
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!vehicleId || !issueDescription.trim()) {
+      toast.error("Pick a vehicle and describe the issue");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.createMaintenanceWorkOrder({
+        vehicleId,
+        issueDescription: issueDescription.trim(),
+        priority,
+        reportedBy,
+        reportedFrom: "mechanic",
+      });
+      toast.success("Work order opened — added to the queue");
+      reset();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not open work order");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New work order</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <Label>Vehicle</Label>
+            <Select value={vehicleId} onValueChange={setVehicleId}>
+              <SelectTrigger className="mt-1.5">
+                <SelectValue placeholder="Select a vehicle" />
+              </SelectTrigger>
+              <SelectContent>
+                {vehicles.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.id} — {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Issue</Label>
+            <Textarea
+              required
+              rows={3}
+              placeholder="What's wrong, and where"
+              value={issueDescription}
+              onChange={(e) => setIssueDescription(e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+          <div>
+            <Label>Priority</Label>
+            <div className="grid grid-cols-4 gap-1 mt-1.5 bg-muted rounded-md p-1">
+              {(["low", "medium", "high", "critical"] as const).map((p) => (
+                <button
+                  type="button"
+                  key={p}
+                  onClick={() => setPriority(p)}
+                  className={
+                    "h-10 rounded text-sm font-medium capitalize " +
+                    (priority === p
+                      ? "bg-amber-brand text-amber-brand-foreground"
+                      : "text-muted-foreground")
+                  }
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 font-semibold h-11"
+          >
+            {saving ? "Opening…" : "Open work order"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -380,6 +570,76 @@ function RowTable({
 }
 
 // ---------------------------------------------------------------------------
+// Workshop-manager overview — every MWO in the shop, any status/assignee.
+// Read-only from this tab (opening a row you don't own shows the sheet's
+// existing "Claimed by X" read view — no edit fields render for non-owners).
+// ---------------------------------------------------------------------------
+function AllWorkOrdersTable({
+  rows,
+  vehicleLabel,
+  onOpen,
+  myId,
+  nameForMechanic,
+}: {
+  rows: MaintenanceWorkOrder[];
+  vehicleLabel: (id: string) => string;
+  onOpen: (id: string) => void;
+  myId: string;
+  nameForMechanic: (profileId: string | null | undefined) => string;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-x-auto">
+      <table className="w-full text-sm min-w-[800px]">
+        <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+          <tr>
+            {["MWO #", "Vehicle", "Issue", "Priority", "Status", "Assigned to"].map((h) => (
+              <th key={h} className="text-left font-medium px-4 py-3">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((w) => (
+            <tr
+              key={w.id}
+              className="border-t border-border hover:bg-muted/30 cursor-pointer"
+              onClick={() => onOpen(w.id)}
+            >
+              <td className="px-4 py-3 font-mono text-xs font-medium text-amber-brand">
+                {w.id}
+              </td>
+              <td className="px-4 py-3">{vehicleLabel(w.vehicleId)}</td>
+              <td className="px-4 py-3 max-w-[28ch] truncate">{w.issueDescription}</td>
+              <td className="px-4 py-3">
+                <StatusBadge status={w.priority} />
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge status={w.status} />
+              </td>
+              <td className="px-4 py-3 text-xs text-muted-foreground">
+                {w.assignedMechanicId
+                  ? w.assignedMechanicId === myId
+                    ? "You"
+                    : nameForMechanic(w.assignedMechanicId)
+                  : "Unclaimed"}
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No work orders in the shop yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sheet — vehicle/issue/source info + action buttons gated on current status.
 // Edit form for in_progress: laborHours / laborNotes / partsUsed / finalCost /
 // completionNotes. Releases back to queue from the 'claimed' state only.
@@ -390,13 +650,21 @@ function WorkOrderSheet({
   vehicleLabel,
   inventoryItems,
   nameForMechanic,
+  photos,
   onClose,
 }: {
   wo: MaintenanceWorkOrder;
   myId: string;
   vehicleLabel: string;
-  inventoryItems: { id: string; name: string; sku: string }[];
+  inventoryItems: {
+    id: string;
+    name: string;
+    sku: string;
+    archived: boolean;
+    isBom: boolean;
+  }[];
   nameForMechanic: (profileId: string | null | undefined) => string;
+  photos: WorkOrderPhoto[];
   onClose: () => void;
 }) {
   const owns = wo.assignedMechanicId === myId;
@@ -541,6 +809,33 @@ function WorkOrderSheet({
     setParts((arr) => arr.filter((p) => p.inventoryItemId !== itemId));
   }
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await api.uploadWorkOrderPhoto({
+          workOrderId: wo.id,
+          mechanicId: myId,
+          dataUrl: reader.result as string,
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Photo upload failed");
+      } finally {
+        setUploadingPhoto(false);
+      }
+    };
+    reader.onerror = () => {
+      setUploadingPhoto(false);
+      toast.error("Could not read photo file");
+    };
+    reader.readAsDataURL(file);
+  }
+
   // Centralized error toast that special-cases the typed reassigned error so
   // every action button surfaces the same friendly copy + closes the sheet.
   function handleActionError(err: unknown, fallback: string) {
@@ -599,19 +894,22 @@ function WorkOrderSheet({
     }
     setBusy(true);
     try {
-      await api.updateMaintenanceWorkOrder(
-        wo.id,
-        {
-          status: "completed",
-          completedAt: new Date().toISOString(),
-          laborHours: lh,
-          laborNotes,
-          partsUsed: parts,
-          finalCost: fc,
-          completionNotes,
-        },
-        myId,
-      );
+      // Completion is a separate call from saveProgress's generic patch: it
+      // has a one-time side effect (consuming qty_on_hand for every part
+      // recorded) that must not double-fire on a retried click — see
+      // complete_maintenance_work_order in
+      // 20260717150000_complete_wo_consumes_parts.sql.
+      const r = await api.completeMaintenanceWorkOrder(wo.id, myId, {
+        laborHours: lh,
+        laborNotes,
+        partsUsed: parts,
+        finalCost: fc,
+        completionNotes,
+      });
+      if (!r.ok) {
+        toast.error(r.reason);
+        return;
+      }
       toast.success("Marked complete");
       onClose();
     } catch (err) {
@@ -793,11 +1091,19 @@ function WorkOrderSheet({
                           <SelectValue placeholder="Pick inventory item" />
                         </SelectTrigger>
                         <SelectContent>
-                          {inventoryItems.map((it) => (
-                            <SelectItem key={it.id} value={it.id}>
-                              {it.name} ({it.sku})
-                            </SelectItem>
-                          ))}
+                          {/* Archived parts are retired — don't let a new
+                              record be added against one, but keep them in
+                              the `inventoryItems` lookup above so a part
+                              already recorded on this job before it was
+                              archived still resolves its name via
+                              partLabel() instead of falling back to a raw id. */}
+                          {inventoryItems
+                            .filter((it) => !it.archived)
+                            .map((it) => (
+                              <SelectItem key={it.id} value={it.id}>
+                                {it.name} ({it.sku}){it.isBom ? " — BOM" : ""}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -821,6 +1127,33 @@ function WorkOrderSheet({
                       <Plus className="w-4 h-4" />
                     </Button>
                   </div>
+                )}
+              </Section>
+
+              <Section title="Photos">
+                {photos.length === 0 ? (
+                  <p className="text-xs font-mono text-muted-foreground mb-2">
+                    No photos attached yet.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {photos.map((p) => (
+                      <WorkOrderPhotoThumb key={p.id} path={p.photoUrl} />
+                    ))}
+                  </div>
+                )}
+                {wo.status === "in_progress" && (
+                  <label className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-border text-sm font-medium cursor-pointer hover:bg-muted">
+                    <Camera className="w-4 h-4" />
+                    {uploadingPhoto ? "Uploading…" : "Add photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoPick}
+                      disabled={uploadingPhoto}
+                      className="hidden"
+                    />
+                  </label>
                 )}
               </Section>
 
@@ -898,5 +1231,34 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </h3>
       {children}
     </div>
+  );
+}
+
+// Mints a fresh signed URL on mount (mock mode's data-URL photoUrl round-trips
+// unchanged) — mirrors SignedPartImg in admin.inventory.tsx.
+function WorkOrderPhotoThumb({ path }: { path: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    api
+      .signWorkOrderPhotoUrl(path)
+      .then((s) => {
+        if (!cancelled) setSrc(s ?? path);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(path);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  if (!src) return <div className="w-16 h-16 rounded-md bg-muted animate-pulse" aria-busy />;
+  return (
+    <img
+      src={src}
+      alt="Work order photo"
+      className="w-16 h-16 rounded-md object-cover border border-border"
+    />
   );
 }

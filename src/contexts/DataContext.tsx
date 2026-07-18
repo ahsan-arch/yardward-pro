@@ -39,12 +39,16 @@ import type {
   RateLineItem,
   MaintenanceLog,
   FuelLog,
+  Tool,
   MaintenanceWorkOrder,
   Mechanic,
   Conversation,
   ConversationParticipant,
   Message,
   Admin,
+  CoreReturn,
+  BomComponent,
+  WorkOrderPhoto,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
@@ -77,15 +81,31 @@ type Ctx = {
    * mechanic from /mechanic/work-orders. Backed by maintenance_work_orders.
    */
   maintenanceWorkOrders: MaintenanceWorkOrder[];
+  /** Photos a mechanic attaches to a work order while it's in progress. */
+  workOrderPhotos: WorkOrderPhoto[];
+  /** Prepend a freshly-uploaded work order photo. Used by api.uploadWorkOrderPhoto. */
+  addWorkOrderPhoto: (p: WorkOrderPhoto) => void;
   tools: typeof seed.tools;
   toolChecklistSubmissions: ToolChecklistSubmission[];
   purchaseRequests: PurchaseRequest[];
   inventoryItems: typeof seed.inventoryItems;
+  coreReturns: CoreReturn[];
+  /** Prepend a freshly-logged core return. Used by api.createCoreReturn. */
+  addCoreReturn: (r: CoreReturn) => void;
+  /** Patch a core return's stage (RTS, credited, etc). Used by api.updateCoreReturn. */
+  patchCoreReturn: (id: string, patch: Partial<CoreReturn>) => void;
+  bomComponents: BomComponent[];
+  /**
+   * Wholesale-replace a BOM part's component list (and flip its isBom flag)
+   * after api.setBomComponents succeeds. Mirrors the delete+insert the RPC
+   * just did server-side.
+   */
+  replaceBomComponents: (parentItemId: string, isBom: boolean, components: BomComponent[]) => void;
   /**
    * Mirror the qty_reserved bump that api.approvePurchaseRequest writes to
    * the inventory_items row when the requested item is in stock. Lets the
-   * admin review sheet show the live "1 of N reserved" count without a
-   * round-trip refetch.
+   * admin review sheet show the live "reserved of N requested" count without
+   * a round-trip refetch.
    */
   adjustInventoryReservation: (inventoryItemId: string, qtyDelta: number) => void;
   /** Upsert-by-id after an inventory edit lands in the DB (admin page / mechanic Adjust). */
@@ -102,6 +122,9 @@ type Ctx = {
   // the admin/drivers Sheet after api.updateUserPhone succeeds so the UI
   // reflects the new number without waiting for a refetch.
   setUserPhone: (userId: string, phone: string) => void;
+  // Updates the cached Workshop Manager tier on a mechanic locally. Called
+  // from admin.settings.tsx after api.setWorkshopManager succeeds.
+  setMechanicWorkshopManager: (mechanicId: string, isWorkshopManager: boolean) => void;
   notifications: Notification[];
   driverTokens: DriverToken[];
   ticketPhotos: TicketPhoto[];
@@ -204,6 +227,12 @@ type Ctx = {
    * addMaintenanceLog — keeps the admin vehicle-detail fuel table live.
    */
   addFuelLog: (log: FuelLog) => void;
+  /** Prepend a newly-created tool. Used by api.createTool after a successful insert. */
+  addTool: (tool: Tool) => void;
+  /** Patch a tool's name/condition/vehicle assignment. Used by api.updateTool. */
+  patchTool: (id: string, patch: Partial<Pick<Tool, "name" | "condition" | "vehicleId">>) => void;
+  /** Drop a tool from local state. Used by api.deleteTool after a successful delete. */
+  removeTool: (id: string) => void;
   /**
    * Upsert a maintenance work order into local state. Used by the api claim /
    * update / create paths after a successful Supabase write so the mechanic
@@ -324,6 +353,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [inventoryItems, setInventoryItems] = useState<typeof seed.inventoryItems>(
     seed.inventoryItems,
   );
+  const [coreReturns, setCoreReturns] = useState<CoreReturn[]>(
+    initEmpty ? [] : seed.coreReturns,
+  );
+  const [bomComponents, setBomComponents] = useState<BomComponent[]>(
+    initEmpty ? [] : seed.bomComponents,
+  );
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(initEmpty ? [] : seed.smsLogs);
   // Communications. Empty seed — no mock fixtures because the feature is
   // strictly Supabase-backed; mock-mode developers see an empty inbox.
@@ -380,6 +415,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [maintenanceWorkOrders, setMaintenanceWorkOrders] = useState<MaintenanceWorkOrder[]>(
     initEmpty ? [] : seed.maintenanceWorkOrders,
   );
+  const [workOrderPhotos, setWorkOrderPhotos] = useState<WorkOrderPhoto[]>([]);
   const [rateTables, setRateTables] = useState<RateTable[]>(initEmpty ? [] : seed.rateTables);
   // Drivers/tools/tenders: previously bound directly to seed in the provider
   // value (never hydrated). Now in state + fetched from Supabase like the rest.
@@ -460,6 +496,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setMaintenanceLogs(data.maintenanceLogs);
       setFuelLogs(data.fuelLogs);
       setMaintenanceWorkOrders(data.maintenanceWorkOrders);
+      setWorkOrderPhotos(data.workOrderPhotos);
       setMechanics(data.mechanics);
       setDrivers(data.drivers);
       setAdmins(data.admins);
@@ -472,6 +509,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // seed — this is what the mechanic Parts page, the admin Inventory
       // page, and the purchase-request stock check all read.
       setInventoryItems(data.inventoryItems);
+      setCoreReturns(data.coreReturns);
+      setBomComponents(data.bomComponents);
     });
     return () => {
       cancelled = true;
@@ -888,6 +927,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }),
     [],
   );
+  const addCoreReturn = useCallback(
+    (r: CoreReturn) => setCoreReturns((arr) => [r, ...arr]),
+    [],
+  );
+  const addWorkOrderPhoto = useCallback(
+    (p: WorkOrderPhoto) => setWorkOrderPhotos((arr) => [p, ...arr]),
+    [],
+  );
+  const patchCoreReturn = useCallback(
+    (id: string, patch: Partial<CoreReturn>) =>
+      setCoreReturns((arr) => arr.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+    [],
+  );
+  const replaceBomComponents = useCallback(
+    (parentItemId: string, isBom: boolean, components: BomComponent[]) => {
+      setBomComponents((arr) => [
+        ...arr.filter((c) => c.parentItemId !== parentItemId),
+        ...components,
+      ]);
+      setInventoryItems((arr) =>
+        arr.map((i) => (i.id === parentItemId ? { ...i, isBom } : i)),
+      );
+    },
+    [],
+  );
   const clockIn = useCallback((entry: TimeEntry) => setTimeEntries((arr) => [entry, ...arr]), []);
   const clockOut = useCallback(
     (entryId: string, patch: Partial<TimeEntry>) =>
@@ -917,6 +981,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setDrivers((prev) => prev.map((d) => (d.id === userId ? { ...d, phone } : d)));
     setMechanics((prev) => prev.map((m) => (m.id === userId ? { ...m, phone } : m)));
   }, []);
+  const setMechanicWorkshopManager = useCallback(
+    (mechanicId: string, isWorkshopManager: boolean) => {
+      setMechanics((prev) =>
+        prev.map((m) => (m.id === mechanicId ? { ...m, isWorkshopManager } : m)),
+      );
+    },
+    [],
+  );
   const generateDriverToken = useCallback((token: DriverToken) => {
     setTokens((arr) => {
       const next = [token, ...arr];
@@ -1002,6 +1074,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
   const addFuelLog = useCallback((log: FuelLog) => setFuelLogs((arr) => [log, ...arr]), []);
+  const addTool = useCallback((tool: Tool) => setTools((arr) => [tool, ...arr]), []);
+  const patchTool = useCallback(
+    (id: string, patch: Partial<Pick<Tool, "name" | "condition" | "vehicleId">>) =>
+      setTools((arr) => arr.map((t) => (t.id === id ? { ...t, ...patch } : t))),
+    [],
+  );
+  const removeTool = useCallback(
+    (id: string) => setTools((arr) => arr.filter((t) => t.id !== id)),
+    [],
+  );
   const upsertMaintenanceWorkOrder = useCallback(
     (wo: MaintenanceWorkOrder) =>
       setMaintenanceWorkOrders((arr) =>
@@ -1051,18 +1133,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
         maintenanceLogs,
         fuelLogs,
         maintenanceWorkOrders,
+        workOrderPhotos,
+        addWorkOrderPhoto,
         tools,
         toolChecklistSubmissions,
         purchaseRequests,
         inventoryItems,
         adjustInventoryReservation,
         applyInventoryItem,
+        coreReturns,
+        addCoreReturn,
+        patchCoreReturn,
+        bomComponents,
+        replaceBomComponents,
         smsLogs,
         conversations,
         conversationParticipants,
         messages,
         upsertConversation,
         setUserPhone,
+        setMechanicWorkshopManager,
         upsertParticipant,
         upsertMessage,
         notifications,
@@ -1105,6 +1195,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         upsertClientRateTable,
         addMaintenanceLog,
         addFuelLog,
+        addTool,
+        patchTool,
+        removeTool,
         upsertMaintenanceWorkOrder,
         upsertVehicle,
       }}

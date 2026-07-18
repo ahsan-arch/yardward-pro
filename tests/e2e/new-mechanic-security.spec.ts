@@ -86,7 +86,7 @@ test.describe("Mechanic role + cross-role security sweep", () => {
     expect(pageErrors, `Page errors thrown:\n${pageErrors.join("\n")}`).toEqual([]);
   });
 
-  test("purchase requests page renders tabs + table and New request routes to the form", async ({
+  test("purchase requests page renders tabs + table and New request opens the create sheet", async ({
     page,
   }) => {
     await loginAs(page, "mechanic");
@@ -100,9 +100,9 @@ test.describe("Mechanic role + cross-role security sweep", () => {
     // Either real rows or the empty-state row — both are valid in mock mode
     await expect(page.locator("tbody tr").first()).toBeVisible();
 
-    // "New request" is a Link back to the dashboard, where the create form lives
-    await page.getByRole("link", { name: /new request/i }).click();
-    await page.waitForURL((url) => url.pathname === "/mechanic", { timeout: 10_000 });
+    // "New request" opens the create form in a sheet, in place on this page.
+    await page.getByRole("button", { name: /new request/i }).click();
+    await expect(page).toHaveURL(/\/mechanic\/purchase-requests$/);
     await expect(page.getByRole("heading", { name: /new purchase request/i })).toBeVisible({
       timeout: 10_000,
     });
@@ -110,7 +110,8 @@ test.describe("Mechanic role + cross-role security sweep", () => {
 
   test("purchase request form blocks submit when required fields are empty", async ({ page }) => {
     await loginAs(page, "mechanic");
-    await page.goto("/mechanic");
+    await page.goto("/mechanic/purchase-requests");
+    await page.getByRole("button", { name: /new request/i }).click();
     await expect(page.getByRole("heading", { name: /new purchase request/i })).toBeVisible({
       timeout: 10_000,
     });
@@ -122,7 +123,8 @@ test.describe("Mechanic role + cross-role security sweep", () => {
 
   test("mechanic submits a purchase request and gets a success toast", async ({ page }) => {
     await loginAs(page, "mechanic");
-    await page.goto("/mechanic");
+    await page.goto("/mechanic/purchase-requests");
+    await page.getByRole("button", { name: /new request/i }).click();
     await expect(page.getByRole("heading", { name: /new purchase request/i })).toBeVisible({
       timeout: 10_000,
     });

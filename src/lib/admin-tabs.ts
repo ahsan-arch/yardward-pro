@@ -15,6 +15,7 @@ export type AdminTabKey =
   | "jobs"
   | "drivers"
   | "vehicles"
+  | "inspections"
   | "map"
   | "work-orders"
   | "communications"
@@ -49,6 +50,7 @@ export const ADMIN_TABS: ReadonlyArray<{
   { key: "jobs", label: "Jobs", path: "/admin/jobs", group: "Operations" },
   { key: "drivers", label: "Drivers", path: "/admin/drivers", group: "Operations" },
   { key: "vehicles", label: "Vehicles", path: "/admin/vehicles", group: "Operations" },
+  { key: "inspections", label: "Inspections", path: "/admin/inspections", group: "Operations" },
   { key: "map", label: "Live map", path: "/admin/map", group: "Operations" },
   { key: "work-orders", label: "Work Orders", path: "/admin/work-orders", group: "Operations" },
   { key: "communications", label: "Communications", path: "/admin/communications", group: "Operations" },
@@ -57,11 +59,13 @@ export const ADMIN_TABS: ReadonlyArray<{
   { key: "purchase-orders", label: "Purchase Orders", path: "/admin/purchase-requests", group: "Financial" },
   { key: "inventory", label: "Inventory", path: "/admin/inventory", group: "Financial" },
   { key: "prepaid-tickets", label: "Prepaid tickets", path: "/admin/prepaid-tickets", group: "Financial" },
+  // Grouped next to Prepaid tickets per client feedback — hauling records
+  // are the delivery-side counterpart to the same ticket/billing workflow.
+  { key: "hauling-records", label: "Hauling records", path: "/admin/hauling-records", group: "Financial" },
   { key: "clients", label: "Clients", path: "/admin/clients", group: "Financial" },
   { key: "receivables", label: "Receivables", path: "/admin/receivables", group: "Financial" },
   { key: "reports", label: "Reports", path: "/admin/reports", group: "Financial" },
   { key: "forms", label: "Forms & Submissions", path: "/admin/forms", group: "Admin" },
-  { key: "hauling-records", label: "Hauling records", path: "/admin/hauling-records", group: "Admin" },
   { key: "form-templates", label: "Form templates", path: "/admin/form-templates", group: "Admin" },
   { key: "errors", label: "Error log", path: "/admin/errors", group: "Admin" },
   { key: "settings", label: "Settings", path: "/admin/settings", group: "Admin" },

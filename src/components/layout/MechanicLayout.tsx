@@ -13,6 +13,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
 import { BrandMark } from "@/components/crm/BrandMark";
+import { NotificationsBell } from "@/components/crm/NotificationsBell";
 
 const navItems = [
   { to: "/mechanic", label: "Dashboard", icon: Home, exact: true },
@@ -31,7 +32,7 @@ export function MechanicShell({ children, title }: { children?: ReactNode; title
     <div className="flex min-h-[calc(100vh-44px)] bg-background">
       <aside
         className={cn(
-          "fixed lg:static inset-y-0 left-0 top-11 lg:top-0 z-40 w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-transform",
+          "fixed lg:sticky left-0 top-11 bottom-0 lg:bottom-auto lg:h-[calc(100vh-44px)] lg:self-start z-40 w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-transform",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
@@ -98,6 +99,9 @@ export function MechanicShell({ children, title }: { children?: ReactNode; title
           <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
             {title || "Workshop dashboard"}
           </h1>
+          <div className="ml-auto flex items-center gap-2">
+            <NotificationsBell />
+          </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">{children ?? <Outlet />}</main>
       </div>

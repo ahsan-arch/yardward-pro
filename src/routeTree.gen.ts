@@ -53,6 +53,7 @@ import { Route as AdminPrepaidTicketsRouteImport } from './routes/admin.prepaid-
 import { Route as AdminMapRouteImport } from './routes/admin.map'
 import { Route as AdminJobsRouteImport } from './routes/admin.jobs'
 import { Route as AdminInventoryRouteImport } from './routes/admin.inventory'
+import { Route as AdminInspectionsRouteImport } from './routes/admin.inspections'
 import { Route as AdminHaulingRecordsRouteImport } from './routes/admin.hauling-records'
 import { Route as AdminFormsRouteImport } from './routes/admin.forms'
 import { Route as AdminFormTemplatesRouteImport } from './routes/admin.form-templates'
@@ -287,6 +288,11 @@ const AdminInventoryRoute = AdminInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminInspectionsRoute = AdminInspectionsRouteImport.update({
+  id: '/inspections',
+  path: '/inspections',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminHaulingRecordsRoute = AdminHaulingRecordsRouteImport.update({
   id: '/hauling-records',
   path: '/hauling-records',
@@ -359,6 +365,7 @@ export interface FileRoutesByFullPath {
   '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/hauling-records': typeof AdminHaulingRecordsRoute
+  '/admin/inspections': typeof AdminInspectionsRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
@@ -413,6 +420,7 @@ export interface FileRoutesByTo {
   '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/hauling-records': typeof AdminHaulingRecordsRoute
+  '/admin/inspections': typeof AdminInspectionsRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
@@ -471,6 +479,7 @@ export interface FileRoutesById {
   '/admin/form-templates': typeof AdminFormTemplatesRoute
   '/admin/forms': typeof AdminFormsRoute
   '/admin/hauling-records': typeof AdminHaulingRecordsRoute
+  '/admin/inspections': typeof AdminInspectionsRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/jobs': typeof AdminJobsRoute
   '/admin/map': typeof AdminMapRoute
@@ -530,6 +539,7 @@ export interface FileRouteTypes {
     | '/admin/form-templates'
     | '/admin/forms'
     | '/admin/hauling-records'
+    | '/admin/inspections'
     | '/admin/inventory'
     | '/admin/jobs'
     | '/admin/map'
@@ -584,6 +594,7 @@ export interface FileRouteTypes {
     | '/admin/form-templates'
     | '/admin/forms'
     | '/admin/hauling-records'
+    | '/admin/inspections'
     | '/admin/inventory'
     | '/admin/jobs'
     | '/admin/map'
@@ -641,6 +652,7 @@ export interface FileRouteTypes {
     | '/admin/form-templates'
     | '/admin/forms'
     | '/admin/hauling-records'
+    | '/admin/inspections'
     | '/admin/inventory'
     | '/admin/jobs'
     | '/admin/map'
@@ -1007,6 +1019,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminInventoryRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/inspections': {
+      id: '/admin/inspections'
+      path: '/inspections'
+      fullPath: '/admin/inspections'
+      preLoaderRoute: typeof AdminInspectionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/hauling-records': {
       id: '/admin/hauling-records'
       path: '/hauling-records'
@@ -1095,6 +1114,7 @@ interface AdminRouteChildren {
   AdminFormTemplatesRoute: typeof AdminFormTemplatesRoute
   AdminFormsRoute: typeof AdminFormsRoute
   AdminHaulingRecordsRoute: typeof AdminHaulingRecordsRoute
+  AdminInspectionsRoute: typeof AdminInspectionsRoute
   AdminInventoryRoute: typeof AdminInventoryRoute
   AdminJobsRoute: typeof AdminJobsRoute
   AdminMapRoute: typeof AdminMapRoute
@@ -1124,6 +1144,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFormTemplatesRoute: AdminFormTemplatesRoute,
   AdminFormsRoute: AdminFormsRoute,
   AdminHaulingRecordsRoute: AdminHaulingRecordsRoute,
+  AdminInspectionsRoute: AdminInspectionsRoute,
   AdminInventoryRoute: AdminInventoryRoute,
   AdminJobsRoute: AdminJobsRoute,
   AdminMapRoute: AdminMapRoute,
