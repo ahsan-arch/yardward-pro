@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Truck, Shield, Wrench, Loader2, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Truck, Shield, Wrench, Loader2, Moon, Sun, Eye, EyeOff, type LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/crm/BrandMark";
 import { useApp, type Role } from "@/contexts/AppContext";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ function LoginPage() {
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSending, setForgotSending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const presets: Record<Role, string> = {
     admin: "alex@fleetops.co",
@@ -276,19 +277,34 @@ function LoginPage() {
                     Forgot?
                   </button>
                 </div>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-invalid={!!err.password}
-                  aria-describedby={err.password ? "password-error" : undefined}
-                  className={cn(
-                    "h-11 mt-1.5",
-                    err.password && "border-danger focus-visible:ring-danger",
-                  )}
-                />
+                <div className="relative mt-1.5">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    aria-invalid={!!err.password}
+                    aria-describedby={err.password ? "password-error" : undefined}
+                    className={cn(
+                      "h-11 pr-10",
+                      err.password && "border-danger focus-visible:ring-danger",
+                    )}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    data-testid="toggle-password-visibility"
+                    className="absolute right-0 top-0 h-11 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
                 {err.password && (
                   <p id="password-error" className="text-xs text-danger mt-1">
                     {err.password}
