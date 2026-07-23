@@ -326,6 +326,7 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       assignedUserId: r.assigned_user_id ?? null,
       archived: r.archived ?? false,
       isBom: r.is_bom ?? false,
+      isUntracked: r.is_untracked ?? false,
     })),
     coreReturns: (coreReturnRows.data ?? []).map(dbCoreReturnToDomain),
     bomComponents: (bomComponentRows.data ?? []).map((r) => ({

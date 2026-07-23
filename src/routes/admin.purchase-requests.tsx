@@ -95,6 +95,8 @@ function Page() {
       const res = await api.approvePurchaseRequest(id, user.id);
       if (res.reservedInventory) {
         toast.success(`${id} approved · reserved ${res.reservedInventory.qty} from stock`);
+      } else if (res.matchedUntracked) {
+        toast.success(`${id} approved · matched a non-stock/consumable part, no reservation needed`);
       } else {
         toast.success(`${id} approved · no stock match, place supplier order`);
       }

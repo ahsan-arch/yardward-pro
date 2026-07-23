@@ -1115,6 +1115,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A2",
@@ -1136,6 +1137,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A3",
@@ -1157,6 +1159,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A4",
@@ -1178,6 +1181,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: "M-01",
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A5",
@@ -1199,6 +1203,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A6",
@@ -1220,6 +1225,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   // The next three items are a worked BOM example — the client's own
   // "decant hose" case: a hose assembly built from smaller parts, sold and
@@ -1245,6 +1251,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A8",
@@ -1266,6 +1273,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: false,
+    isUntracked: false,
   },
   {
     id: "INV-A9",
@@ -1287,6 +1295,7 @@ export const inventoryItems: InventoryItem[] = [
     assignedUserId: null,
     archived: false,
     isBom: true,
+    isUntracked: false,
   },
 ];
 

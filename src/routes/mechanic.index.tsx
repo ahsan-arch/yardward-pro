@@ -61,7 +61,10 @@ function Page() {
     [maintenanceWorkOrders],
   );
   const lowStockItems = useMemo(
-    () => inventoryItems.filter((i) => !i.archived && i.qtyOnHand <= i.reorderPoint).slice(0, 5),
+    () =>
+      inventoryItems
+        .filter((i) => !i.archived && !i.isUntracked && i.qtyOnHand <= i.reorderPoint)
+        .slice(0, 5),
     [inventoryItems],
   );
   const recentRequests = useMemo(() => purchaseRequests.slice(0, 5), [purchaseRequests]);
@@ -94,7 +97,8 @@ function Page() {
     {
       label: "Parts at/below reorder point",
       value: String(
-        inventoryItems.filter((i) => !i.archived && i.qtyOnHand <= i.reorderPoint).length,
+        inventoryItems.filter((i) => !i.archived && !i.isUntracked && i.qtyOnHand <= i.reorderPoint)
+          .length,
       ),
       icon: Package,
       badge: lowStockItems.length > 0 ? "Needs restock" : "All clear",

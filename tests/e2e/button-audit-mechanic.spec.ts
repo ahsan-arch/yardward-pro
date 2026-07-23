@@ -413,8 +413,14 @@ test.describe("Mechanic inventory buttons", () => {
     const adjust = page.getByRole("button", { name: /^adjust$/i }).first();
     await expect(adjust).toBeVisible();
     await adjust.click();
-    // toast.success("{SKU} adjusted (mock)") — assert the suffix.
-    await expect(page.getByText(/adjusted \(mock\)/i)).toBeVisible({ timeout: 5_000 });
+    // Opening Adjust only shows the dialog — the toast fires on Save count,
+    // once the new on-hand qty is actually persisted via updateInventoryItem.
+    const qtyInput = page.getByTestId("mech-inv-adjust-qty");
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill("9");
+    await page.getByTestId("mech-inv-adjust-save").click();
+    // toast.success("{SKU} set to {n} on hand")
+    await expect(page.getByText(/set to 9 on hand/i)).toBeVisible({ timeout: 5_000 });
   });
 
   test("Reorder (low-stock row) raises a reorder request toast", async ({ page }) => {

@@ -163,7 +163,7 @@ function InventoryOverview({
   const lowStockList = useMemo(
     () =>
       activeItems
-        .filter((i) => i.qtyOnHand <= i.reorderPoint)
+        .filter((i) => !i.isUntracked && i.qtyOnHand <= i.reorderPoint)
         .sort((a, b) => a.qtyOnHand - a.reorderPoint - (b.qtyOnHand - b.reorderPoint))
         .slice(0, 5),
     [activeItems],
@@ -337,14 +337,14 @@ function Page() {
         i.manufacturer.toLowerCase().includes(q) ||
         i.manufacturerPartNumber.toLowerCase().includes(q) ||
         i.alternativePartNumber.toLowerCase().includes(q);
-      const matchLow = !lowOnly || i.qtyOnHand <= i.reorderPoint;
+      const matchLow = !lowOnly || (!i.isUntracked && i.qtyOnHand <= i.reorderPoint);
       const matchCategory = category === ALL_CATEGORIES || i.category === category;
       return matchSearch && matchLow && matchCategory;
     });
   }, [inventoryItems, activeItems, showArchived, search, lowOnly, category]);
 
   const lowCount = useMemo(
-    () => activeItems.filter((i) => i.qtyOnHand <= i.reorderPoint).length,
+    () => activeItems.filter((i) => !i.isUntracked && i.qtyOnHand <= i.reorderPoint).length,
     [activeItems],
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -558,7 +558,7 @@ function Page() {
           <tbody>
             {pageRows.map((i) => {
               const available = i.qtyOnHand - i.qtyReserved;
-              const low = i.qtyOnHand <= i.reorderPoint;
+              const low = !i.isUntracked && i.qtyOnHand <= i.reorderPoint;
               return (
                 <tr
                   key={i.id}
@@ -580,6 +580,11 @@ function Page() {
                       {i.isBom && (
                         <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-brand/15 text-amber-brand shrink-0">
                           BOM
+                        </span>
+                      )}
+                      {i.isUntracked && (
+                        <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                          Non-stock
                         </span>
                       )}
                     </span>
@@ -699,6 +704,7 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
   const [supplierId, setSupplierId] = useState(item.supplierId);
   const [altSupplierId, setAltSupplierId] = useState(item.alternativeSupplierId);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [isUntracked, setIsUntracked] = useState(item.isUntracked);
   const [saving, setSaving] = useState(false);
 
   // Assignment: exactly one of unassigned/vehicle/person — mirrors the DB
@@ -760,6 +766,7 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
         alternativeSupplierId: altSupplierId,
         assignedVehicleId: nextAssignedVehicleId,
         assignedUserId: nextAssignedUserId,
+        isUntracked,
       });
       if (!r.ok) {
         toast.error(r.reason);
@@ -796,6 +803,7 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
         photoUrl,
         assignedVehicleId: nextAssignedVehicleId,
         assignedUserId: nextAssignedUserId,
+        isUntracked,
       });
     } finally {
       setSaving(false);
@@ -809,6 +817,20 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
         pendingDataUrl={pendingPhoto}
         onPick={setPendingPhoto}
       />
+      <div className="flex items-center justify-between rounded-md border p-3">
+        <div>
+          <Label>Untracked / non-stock part</Label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Consumable or one-off purchase — skip qty tracking, low-stock alerts, and PR
+            reservation for this part.
+          </p>
+        </div>
+        <Switch
+          checked={isUntracked}
+          onCheckedChange={setIsUntracked}
+          data-testid="admin-inv-edit-untracked"
+        />
+      </div>
       <div>
         <Label>Name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
@@ -822,6 +844,7 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             className="mt-1 font-mono"
+            disabled={isUntracked}
             data-testid="admin-inv-edit-qty"
           />
         </div>
@@ -833,12 +856,15 @@ function EditItemForm({ item, onSaved }: { item: Item; onSaved: (i: Item) => voi
             value={reorder}
             onChange={(e) => setReorder(e.target.value)}
             className="mt-1 font-mono"
+            disabled={isUntracked}
           />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Reserved: {item.qtyReserved} (managed automatically by purchase-request approvals)
-      </p>
+      {!isUntracked && (
+        <p className="text-xs text-muted-foreground">
+          Reserved: {item.qtyReserved} (managed automatically by purchase-request approvals)
+        </p>
+      )}
       <div>
         <Label>Location</Label>
         <Input
@@ -1221,6 +1247,7 @@ function CreateItemForm({ onSaved }: { onSaved: (i: Item) => void }) {
   const [supplierId, setSupplierId] = useState("");
   const [altSupplierId, setAltSupplierId] = useState("");
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [isUntracked, setIsUntracked] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -1244,6 +1271,7 @@ function CreateItemForm({ onSaved }: { onSaved: (i: Item) => void }) {
         alternativePartNumber: altPartNumber,
         supplierId,
         alternativeSupplierId: altSupplierId,
+        isUntracked,
       });
       if (!r.ok) {
         toast.error(r.reason);
@@ -1282,6 +1310,7 @@ function CreateItemForm({ onSaved }: { onSaved: (i: Item) => void }) {
         assignedUserId: null,
         archived: false,
         isBom: false,
+        isUntracked,
       });
     } finally {
       setSaving(false);
@@ -1291,6 +1320,20 @@ function CreateItemForm({ onSaved }: { onSaved: (i: Item) => void }) {
   return (
     <div className="space-y-3">
       <PhotoField pendingDataUrl={pendingPhoto} onPick={setPendingPhoto} />
+      <div className="flex items-center justify-between rounded-md border p-3">
+        <div>
+          <Label>Untracked / non-stock part</Label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Consumable or one-off purchase — skip qty tracking, low-stock alerts, and PR
+            reservation for this part.
+          </p>
+        </div>
+        <Switch
+          checked={isUntracked}
+          onCheckedChange={setIsUntracked}
+          data-testid="admin-inv-new-untracked"
+        />
+      </div>
       <div>
         <Label>SKU</Label>
         <Input

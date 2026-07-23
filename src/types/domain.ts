@@ -455,6 +455,14 @@ export interface InventoryItem {
    * own qty_on_hand.
    */
   isBom: boolean;
+  /**
+   * Consumable/non-stock part — client's #1 Fleetio complaint: forcing every
+   * part into strict qty tracking produced a stores count that drifted from
+   * reality for one-off purchases. When true, qtyOnHand/reorderPoint are
+   * still stored but never enforced: no low-stock alert, no PR reservation,
+   * no work-order-completion decrement.
+   */
+  isUntracked: boolean;
 }
 
 /**

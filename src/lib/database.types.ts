@@ -791,6 +791,7 @@ export type Database = {
           category: string
           id: string
           is_bom: boolean
+          is_untracked: boolean
           last_restocked: string | null
           last_updated_at: string
           location: string
@@ -813,6 +814,7 @@ export type Database = {
           category?: string
           id: string
           is_bom?: boolean
+          is_untracked?: boolean
           last_restocked?: string | null
           last_updated_at?: string
           location?: string
@@ -835,6 +837,7 @@ export type Database = {
           category?: string
           id?: string
           is_bom?: boolean
+          is_untracked?: boolean
           last_restocked?: string | null
           last_updated_at?: string
           location?: string
@@ -2661,6 +2664,7 @@ export type Database = {
         Returns: {
           inventory_decrement_qty: number
           matched_inventory_id: string
+          matched_untracked: boolean
           ok: boolean
           pr_status: Database["public"]["Enums"]["purchase_request_status"]
         }[]

@@ -37,13 +37,13 @@ function Page() {
           search === "" ||
           i.name.toLowerCase().includes(search.toLowerCase()) ||
           i.sku.toLowerCase().includes(search.toLowerCase());
-        const matchLow = !lowOnly || i.qtyOnHand <= i.reorderPoint;
+        const matchLow = !lowOnly || (!i.isUntracked && i.qtyOnHand <= i.reorderPoint);
         return matchSearch && matchLow;
       }),
     [inventoryItems, search, lowOnly],
   );
 
-  const lowCount = inventoryItems.filter((i) => i.qtyOnHand <= i.reorderPoint).length;
+  const lowCount = inventoryItems.filter((i) => !i.isUntracked && i.qtyOnHand <= i.reorderPoint).length;
 
   return (
     <MechanicShell title="Parts inventory">
@@ -91,7 +91,7 @@ function Page() {
           <tbody>
             {filtered.map((i) => {
               const available = i.qtyOnHand - i.qtyReserved;
-              const low = i.qtyOnHand <= i.reorderPoint;
+              const low = !i.isUntracked && i.qtyOnHand <= i.reorderPoint;
               return (
                 <tr
                   key={i.id}
@@ -101,6 +101,11 @@ function Page() {
                   <td className="px-4 py-3 font-medium flex items-center gap-2">
                     <Package className="w-3.5 h-3.5 text-muted-foreground" />
                     {i.name}
+                    {i.isUntracked && (
+                      <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                        Non-stock
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                     {i.location || "—"}

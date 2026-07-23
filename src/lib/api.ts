@@ -228,10 +228,11 @@ function notifyAllMechanicsMock(
 // and a mechanic completing a work order with parts used).
 function maybeNotifyLowStockMock(
   store: ReturnType<typeof getStore>,
-  before: { name: string; sku: string; qtyOnHand: number; reorderPoint: number },
+  before: { name: string; sku: string; qtyOnHand: number; reorderPoint: number; isUntracked?: boolean },
   newQty: number,
   newReorder: number,
 ): void {
+  if (before.isUntracked) return;
   const wasLow = before.qtyOnHand <= before.reorderPoint;
   const isLow = newQty <= newReorder;
   if (!wasLow && isLow) {
@@ -1546,6 +1547,7 @@ export const api = {
           alreadyHandled: true as const,
           currentStatus: row?.pr_status ?? "approved",
           reservedInventory: null,
+          matchedUntracked: false,
         };
       }
       const reservation =
@@ -1554,10 +1556,17 @@ export const api = {
           : null;
       if (reservation) store.adjustInventoryReservation(reservation.itemId, reservation.qty);
       store.approvePurchaseRequest(id, approverId, reservation);
-      return { ok: true as const, reservedInventory: reservation };
+      return {
+        ok: true as const,
+        reservedInventory: reservation,
+        matchedUntracked: !!row.matched_untracked,
+      };
     }
 
     // Mock path: keep the open-coded inventory match for the demo-without-Supabase case.
+    // Untracked (consumable) parts match regardless of qty on hand — there's
+    // no stock number to be "available" against — but a tracked match with
+    // free stock wins the tie-break when both exist.
     const needle = pr.item.trim().toLowerCase();
     const candidates = needle
       ? store.inventoryItems.filter(
@@ -1569,17 +1578,23 @@ export const api = {
               needle.includes(it.sku.toLowerCase())),
         )
       : [];
-    const matched =
+    const trackedMatch =
       candidates
-        .filter((it) => it.qtyOnHand - it.qtyReserved >= 1)
+        .filter((it) => !it.isUntracked && it.qtyOnHand - it.qtyReserved >= 1)
         .sort((a, b) => a.name.length - b.name.length)[0] ?? null;
-    const reservation = matched
-      ? { itemId: matched.id, qty: Math.min(matched.qtyOnHand - matched.qtyReserved, pr.quantity) }
-      : null;
+    const untrackedMatch =
+      candidates.filter((it) => it.isUntracked).sort((a, b) => a.name.length - b.name.length)[0] ??
+      null;
+    const matched = trackedMatch ?? untrackedMatch;
+    const matchedUntracked = !trackedMatch && !!untrackedMatch;
+    const reservation =
+      matched && !matchedUntracked
+        ? { itemId: matched.id, qty: Math.min(matched.qtyOnHand - matched.qtyReserved, pr.quantity) }
+        : null;
     await wait();
     if (reservation) store.adjustInventoryReservation(reservation.itemId, reservation.qty);
     store.approvePurchaseRequest(id, approverId, reservation);
-    return { ok: true as const, reservedInventory: reservation };
+    return { ok: true as const, reservedInventory: reservation, matchedUntracked };
   },
 
   /**
@@ -2121,12 +2136,12 @@ export const api = {
         const recipe = store.bomComponents.filter((c) => c.parentItemId === item.id);
         for (const comp of recipe) {
           const compItem = store.inventoryItems.find((i) => i.id === comp.componentItemId);
-          if (!compItem) continue;
+          if (!compItem || compItem.isUntracked) continue;
           const newQty = Math.max(0, compItem.qtyOnHand - comp.qtyPer * part.qty);
           maybeNotifyLowStockMock(store, compItem, newQty, compItem.reorderPoint);
           store.applyInventoryItem({ ...compItem, qtyOnHand: newQty });
         }
-      } else {
+      } else if (!item.isUntracked) {
         const newQty = Math.max(0, item.qtyOnHand - part.qty);
         maybeNotifyLowStockMock(store, item, newQty, item.reorderPoint);
         store.applyInventoryItem({ ...item, qtyOnHand: newQty });
@@ -3566,6 +3581,8 @@ export const api = {
       assignedUserId?: string | null;
       /** Soft-hide (see 20260717170000_archived_parts.sql) — never a delete. */
       archived?: boolean;
+      /** Consumable/non-stock part — see 20260723090000_untracked_parts.sql. */
+      isUntracked?: boolean;
     },
   ): Promise<{ ok: true } | { ok: false; reason: string }> => {
     if (!USE_SUPABASE || !supabase) {
@@ -3578,7 +3595,7 @@ export const api = {
       if (before) {
         maybeNotifyLowStockMock(
           getStore(),
-          before,
+          { ...before, isUntracked: patch.isUntracked ?? before.isUntracked },
           patch.qtyOnHand ?? before.qtyOnHand,
           patch.reorderPoint ?? before.reorderPoint,
         );
@@ -3607,6 +3624,7 @@ export const api = {
       dbPatch.assigned_vehicle_id = patch.assignedVehicleId;
     if (patch.assignedUserId !== undefined) dbPatch.assigned_user_id = patch.assignedUserId;
     if (patch.archived !== undefined) dbPatch.archived = patch.archived;
+    if (patch.isUntracked !== undefined) dbPatch.is_untracked = patch.isUntracked;
     const { error } = await supabase
       .from("inventory_items")
       .update(dbPatch as never)
@@ -3629,6 +3647,8 @@ export const api = {
     manufacturerPartNumber?: string;
     alternativePartNumber?: string;
     alternativeSupplierId?: string;
+    /** Consumable/non-stock part — see 20260723090000_untracked_parts.sql. */
+    isUntracked?: boolean;
   }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> => {
     const id = uid("INV");
     if (!USE_SUPABASE || !supabase) {
@@ -3636,7 +3656,8 @@ export const api = {
       // A new part created already at/below its reorder point (e.g. logging
       // a part that's already out of stock) is just as "low" as one that
       // dropped there — same mirror as updateInventoryItem's mock branch.
-      if (input.qtyOnHand <= input.reorderPoint) {
+      // Untracked parts never alert regardless of the qty/reorder numbers.
+      if (!input.isUntracked && input.qtyOnHand <= input.reorderPoint) {
         notifyAllAdminsMock(
           getStore(),
           "alert",
@@ -3661,6 +3682,7 @@ export const api = {
       manufacturer_part_number: input.manufacturerPartNumber?.trim() ?? "",
       alternative_part_number: input.alternativePartNumber?.trim() ?? "",
       alternative_supplier_id: input.alternativeSupplierId?.trim() || null,
+      is_untracked: input.isUntracked ?? false,
     } as never);
     if (error) {
       const reason =
