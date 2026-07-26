@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
-import { driverById } from "@/data/mockData";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { MessageSquare, Radio } from "lucide-react";
 
@@ -13,7 +12,7 @@ export const Route = createFileRoute("/admin/sms-log")({
 const LIVE_THRESHOLD_MS = 60_000;
 
 function Page() {
-  const { smsLogs } = useData();
+  const { smsLogs, drivers } = useData();
   const sorted = [...smsLogs].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
   const now = Date.now();
 
@@ -60,7 +59,9 @@ function Page() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">{driverById(s.driverId)?.name ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    {drivers.find((d) => d.id === s.driverId)?.name ?? "—"}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs">{s.jobId ?? "—"}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5">

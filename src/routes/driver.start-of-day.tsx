@@ -178,7 +178,15 @@ function Page() {
     if (pax && passengerNames.length === 0)
       errs.passengers = "Add at least one passenger name (or turn the toggle off)";
     setErr(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      // The odometer field sits at the top of a long form and the Submit
+      // button at the bottom — an inline error under the field alone is
+      // easy to miss if the driver has scrolled down to reach Submit,
+      // making the tap look like it silently did nothing. A toast is
+      // visible regardless of scroll position.
+      toast.error(Object.values(errs)[0]);
+      return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -295,7 +303,13 @@ function Page() {
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold">Start of day</h1>
-            <p className="text-xs font-mono text-muted-foreground">14 May 2025</p>
+            <p className="text-xs font-mono text-muted-foreground">
+              {new Date().toLocaleDateString("en-GB", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+              })}
+            </p>
           </div>
           <GpsBadge result={gps.result} loading={gps.loading} onRetry={gps.refresh} />
         </div>
@@ -307,7 +321,7 @@ function Page() {
               inputMode="numeric"
               value={odo}
               onChange={(e) => setOdo(e.target.value)}
-              placeholder="84220"
+              placeholder="e.g. 84220"
               className={cn("h-14 mt-2 text-lg font-mono", err.odo && "border-danger")}
             />
             {err.odo && <p className="text-xs text-danger mt-1">{err.odo}</p>}

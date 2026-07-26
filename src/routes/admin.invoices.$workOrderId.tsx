@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
-import { clientById, jobById } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import {
@@ -25,7 +24,7 @@ export const Route = createFileRoute("/admin/invoices/$workOrderId")({
 
 function Page() {
   const { workOrderId } = useParams({ from: "/admin/invoices/$workOrderId" });
-  const { workOrders, invoiceData } = useData();
+  const { workOrders, invoiceData, jobs, clients } = useData();
   const wo = workOrders.find((w) => w.id === workOrderId);
   const inv = wo?.invoiceDataId
     ? invoiceData.find((i) => i.id === wo.invoiceDataId)
@@ -48,8 +47,8 @@ function Page() {
       </AdminShell>
     );
 
-  const job = jobById(wo.jobId);
-  const client = job ? clientById(job.clientId) : null;
+  const job = jobs.find((j) => j.id === wo.jobId);
+  const client = job ? clients.find((c) => c.id === job.clientId) : null;
   const lineItems =
     inv?.lineItems ??
     (wo.weightTonnes > 0

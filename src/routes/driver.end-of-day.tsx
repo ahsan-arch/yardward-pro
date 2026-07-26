@@ -117,7 +117,13 @@ function Page() {
     if (!odo || isNaN(+odo)) errs.odo = "Enter a valid odometer reading";
     if (!summary.trim()) errs.summary = "Add a quick summary";
     setErr(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      // Same silent-failure pattern as start-of-day: an inline error under a
+      // field near the top of a long form is easy to miss once the driver
+      // has scrolled down to Submit. Toast is visible regardless of scroll.
+      toast.error(Object.values(errs)[0]);
+      return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -212,7 +218,7 @@ function Page() {
               inputMode="numeric"
               value={odo}
               onChange={(e) => setOdo(e.target.value)}
-              placeholder="84580"
+              placeholder="e.g. 84580"
               className={cn("h-14 mt-2 text-lg font-mono", err.odo && "border-danger")}
             />
             {err.odo && <p className="text-xs text-danger mt-1">{err.odo}</p>}

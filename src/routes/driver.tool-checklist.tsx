@@ -40,11 +40,24 @@ const stateLabel: Record<ToolCondition, string> = {
 function Page() {
   const nav = useNavigate();
   const { kind } = Route.useSearch();
-  const { tools, drivers } = useData();
+  const { tools, drivers, vehicles } = useData();
   const { user } = useAuth();
   const { isOnline } = useOffline();
   const me = drivers.find((d) => d.id === user.id || d.email === user.email);
-  const vehicleId = me?.vehicleAssignmentId ?? "TRK-07";
+  // tool_checklist_submissions.vehicle_id is a NOT NULL FK to vehicles(id).
+  // This used to fall back to the literal string "TRK-07" — a leftover mock-
+  // seed id that doesn't exist in the real Supabase vehicles table — for any
+  // driver with no vehicleAssignmentId. Every submit then failed outright
+  // ("violates foreign key constraint tool_checklist_submissions_vehicle_id_
+  // fkey"), which permanently blocked that driver from ever satisfying the
+  // clock-in/out checklist gate in DriverLayout.tsx — they could never clock
+  // in or out at all. Falling back to a real vehicle from the live fleet
+  // keeps the submit working (matching this page's existing "never block the
+  // driver" design, see the empty-tools state below) instead of guaranteeing
+  // a crash. The real fix is an admin assigning this driver a vehicle —
+  // this is a stopgap so an unassigned driver isn't hard-locked out of
+  // clocking in until that happens.
+  const vehicleId = me?.vehicleAssignmentId ?? vehicles[0]?.id ?? "";
   const fallback = useMemo(() => {
     const c = geotabCoordsForVehicle(vehicleId);
     return c ? { lat: c.lat, lng: c.lng, label: `Vehicle ${vehicleId} last known` } : null;
@@ -127,6 +140,18 @@ function Page() {
   }
 
   async function submit() {
+    if (!vehicleId) {
+      // No vehicleAssignmentId and no fleet vehicle visible under this
+      // driver's RLS scope (vehicles_driver_read only returns rows where
+      // vehicles.driver_id = auth.uid()) — there is no real id we could
+      // send that wouldn't fail the NOT NULL FK on submit. Surface this
+      // plainly instead of letting the insert fail with a raw Postgres
+      // constraint-violation message. This is a data/assignment problem —
+      // an admin needs to assign this driver a vehicle — not something
+      // fixable client-side.
+      toast.error("No vehicle assigned to your account — ask an admin to assign you a vehicle before clocking in");
+      return;
+    }
     setLoading(true);
     try {
       const payload = {

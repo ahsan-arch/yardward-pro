@@ -5,7 +5,7 @@
 // Fetches run in parallel. Tables we haven't migrated to Supabase yet stay
 // on seed (see DataContext for the merge).
 // =============================================================================
-import { supabase } from "./supabase";
+import { supabase, type Row } from "./supabase";
 import {
   dbClientToDomain,
   dbVehicleToDomain,
@@ -108,6 +108,38 @@ export type HydratedData = {
   coreReturns: CoreReturn[];
   bomComponents: BomComponent[];
 };
+
+// Supabase/PostgREST enforces its own server-side "max rows" cap (commonly
+// 1000) on every request regardless of what the client asks for via
+// .limit() — past that cap it silently returns a truncated page instead of
+// erroring. inventory_items used a single .select("*").limit(10000) call
+// that looked like it asked for everything but was actually always capped
+// at ~1000 by the server. Found via QA: real Fleetio-imported inventory
+// (~1.5k rows) was being cut off mid-alphabet by the `order("sku")`, and
+// any newly-created part whose SKU sorted past that cutoff never appeared
+// anywhere — not in the count, not in search, not after a reload — because
+// it was never in the array DataContext hydrated from. Page through with
+// .range() so growth past the server cap can't silently truncate the
+// catalog again, no matter what that cap is set to.
+async function fetchAllInventoryItems() {
+  if (!supabase) return { data: [] as Row<"inventory_items">[], error: null };
+  const pageSize = 1000;
+  const all: Row<"inventory_items">[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from("inventory_items")
+      .select("*")
+      .order("sku")
+      .range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: all, error: null };
+}
 
 // Standalone fetch for app_settings — used both during hydration and on demand
 // from the System settings tab when the admin saves changes elsewhere.
@@ -233,10 +265,10 @@ export async function fetchAllFromSupabase(): Promise<HydratedData | null> {
       .select("id, email, name, phone, role, status, created_at, notification_preferences")
       .eq("role", "admin"),
     // Parts inventory — backs the mechanic Parts page, the admin Inventory
-    // page, and the purchase-request stock check. ~1.5k narrow rows after
-    // the Fleetio parts import; capped well above that so a silently
-    // truncated catalog can't make the stock check lie.
-    supabase.from("inventory_items").select("*").order("sku").limit(10000),
+    // page, and the purchase-request stock check. ~1.5k rows after the
+    // Fleetio parts import; paginated via fetchAllInventoryItems (see above)
+    // since a single .limit() call is silently capped server-side.
+    fetchAllInventoryItems(),
     supabase.from("core_returns").select("*").order("created_at", { ascending: false }),
     supabase.from("bom_components").select("*"),
   ]);

@@ -53,7 +53,14 @@ function Page() {
     if (!jobId) errs.job = "Pick a job";
     if (!note.trim()) errs.note = "Add a note";
     setErr(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      // The Job field's error only ever showed as a red border with no
+      // message — Note has an inline <p> below it but Job doesn't, so a
+      // driver who forgot to pick a job (or has none to pick, since myJobs
+      // can be empty) saw literally nothing happen when they tapped Save.
+      toast.error(Object.values(errs)[0]);
+      return;
+    }
     setLoading(true);
     try {
       const gpsCoords = gps.result?.ok ? gps.result.coords : null;
@@ -111,6 +118,7 @@ function Page() {
                 ))}
               </SelectContent>
             </Select>
+            {err.job && <p className="text-xs text-danger mt-1">{err.job}</p>}
           </div>
           <div>
             <Label>Note</Label>

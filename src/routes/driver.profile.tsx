@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { vehicleById } from "@/data/mockData";
 import {
   ArrowLeft,
   KeyRound,
@@ -37,7 +36,7 @@ export const Route = createFileRoute("/driver/profile")({
 function Page() {
   const nav = useNavigate();
   const { user, logout, sendPasswordReset } = useAuth();
-  const { drivers, timeEntries, appSettings } = useData();
+  const { drivers, timeEntries, appSettings, vehicles } = useData();
   // Hooks first (rules-of-hooks) so the unhydrated-roster guard below can
   // early-return without changing hook order between renders.
   const [notifOpen, setNotifOpen] = useState(false);
@@ -67,7 +66,7 @@ function Page() {
   }
 
   const openShift = timeEntries.find((t) => t.driverId === me.id && !t.clockOut);
-  const v = openShift ? vehicleById(me.vehicleAssignmentId) : undefined;
+  const v = openShift ? vehicles.find((x) => x.id === me.vehicleAssignmentId) : undefined;
   const hoursSoFar = openShift
     ? ((Date.now() - new Date(openShift.clockIn).getTime()) / 3600_000).toFixed(1)
     : null;

@@ -80,7 +80,7 @@ function Chrome() {
       <ErrorBoundary>
         <Outlet />
       </ErrorBoundary>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" closeButton />
       <PwaUpdateBanner />
     </>
   );

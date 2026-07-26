@@ -30,7 +30,7 @@ function Page() {
     return maintenanceWorkOrders
       .filter(
         (w) =>
-          w.assignedMechanicId === user.id && (w.status === "in_progress" || w.status === "queued"),
+          w.assignedMechanicId === user.id && (w.status === "claimed" || w.status === "in_progress"),
       )
       .slice(0, 6)
       .map((w) => {
@@ -57,7 +57,10 @@ function Page() {
   // client feedback flagged the old page as being "a New Purchase Request"
   // form first and a dashboard never. Read-only here; no permission change.
   const openWorkOrdersAll = useMemo(
-    () => maintenanceWorkOrders.filter((w) => w.status === "in_progress" || w.status === "queued"),
+    () =>
+      maintenanceWorkOrders.filter(
+        (w) => w.status === "claimed" || w.status === "in_progress" || w.status === "queued",
+      ),
     [maintenanceWorkOrders],
   );
   const lowStockItems = useMemo(

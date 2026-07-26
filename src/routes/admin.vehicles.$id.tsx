@@ -2,7 +2,6 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { driverById } from "@/data/mockData";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,7 +91,7 @@ function Page() {
   const logs = maintenanceLogs.filter((l) => l.vehicleId === v.id);
   const fuel = fuelLogs.filter((f) => f.vehicleId === v.id);
   const assignedTools = tools.filter((t) => t.vehicleId === v.id);
-  const driver = driverById(v.driverId);
+  const driver = drivers.find((d) => d.id === v.driverId);
   const openLog = openLogId ? logs.find((l) => l.id === openLogId) : null;
 
   return (
@@ -341,7 +340,7 @@ function Page() {
                     <td className="px-3 py-2 font-mono">${f.cost}</td>
                     <td className="px-3 py-2">{f.location}</td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {driverById(f.driverId)?.name ?? "—"}
+                      {drivers.find((d) => d.id === f.driverId)?.name ?? "—"}
                     </td>
                   </tr>
                 ))}

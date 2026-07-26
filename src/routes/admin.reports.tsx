@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { driverById, vehicleById } from "@/data/mockData";
 import { Clock, Truck, DollarSign, MapPinned, Wrench, ScrollText } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -142,7 +141,7 @@ function Page() {
 }
 
 function ReportBody({ report }: { report: ReportKey }) {
-  const { timeEntries, vehicles, invoiceData, maintenanceLogs, tenders, jobs } = useData();
+  const { timeEntries, vehicles, invoiceData, maintenanceLogs, tenders, jobs, drivers } = useData();
 
   // Defensive aggregations — if any of the underlying lists are missing or
   // malformed (e.g. a partial fetch result), we render an Empty placeholder
@@ -158,13 +157,13 @@ function ReportBody({ report }: { report: ReportKey }) {
         m.set(t.driverId, (m.get(t.driverId) ?? 0) + Math.max(0, ms / 3600_000));
       });
       return Array.from(m.entries()).map(([id, hrs]) => ({
-        name: driverById(id)?.name.split(" ")[0] ?? id,
+        name: drivers.find((d) => d.id === id)?.name.split(" ")[0] ?? id,
         hours: +hrs.toFixed(1),
       }));
     } catch {
       return [];
     }
-  }, [timeEntries]);
+  }, [timeEntries, drivers]);
 
   if (report === "hours") return <ChartBlock data={hoursData} dataKey="hours" />;
   if (report === "utilization")
@@ -188,7 +187,11 @@ function ReportBody({ report }: { report: ReportKey }) {
     return rows.length ? (
       <SimpleTable
         cols={["Entry", "Driver", "Issue"]}
-        rows={rows.map((t) => [t.id, driverById(t.driverId)?.name ?? "—", t.flagReason || "—"])}
+        rows={rows.map((t) => [
+          t.id,
+          drivers.find((d) => d.id === t.driverId)?.name ?? "—",
+          t.flagReason || "—",
+        ])}
       />
     ) : (
       <Empty msg="No GPS mismatches detected." />

@@ -5,7 +5,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Input } from "@/components/ui/input";
-import { driverById, vehicleById, jobById, clientById } from "@/data/mockData";
 import {
   MapPin,
   Flag,
@@ -37,8 +36,15 @@ type Row = {
 };
 
 function Page() {
-  const { toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos, vehicleInspections } =
-    useData();
+  const {
+    toolChecklistSubmissions,
+    workOrders,
+    timeEntries,
+    ticketPhotos,
+    vehicleInspections,
+    drivers,
+    vehicles,
+  } = useData();
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
   const [openRow, setOpenRow] = useState<Row | null>(null);
@@ -47,8 +53,8 @@ function Page() {
     const tcs = toolChecklistSubmissions.map<Row>((s) => ({
       id: s.id,
       type: "Tool checklist",
-      driver: driverById(s.driverId)?.name ?? "—",
-      context: vehicleById(s.vehicleId)?.id ?? s.vehicleId,
+      driver: drivers.find((d) => d.id === s.driverId)?.name ?? "—",
+      context: vehicles.find((v) => v.id === s.vehicleId)?.id ?? s.vehicleId,
       submittedAt: s.submittedAt,
       gpsOk: !!(s.gpsLat && s.gpsLng),
       flagged: s.items.some((i) => i.status !== "ok"),
@@ -57,7 +63,7 @@ function Page() {
     const wos = workOrders.map<Row>((w) => ({
       id: w.id,
       type: "Work order",
-      driver: driverById(w.driverId)?.name ?? "—",
+      driver: drivers.find((d) => d.id === w.driverId)?.name ?? "—",
       context: w.jobId,
       submittedAt: w.submittedAt,
       gpsOk: !!w.gpsCapture,
@@ -68,7 +74,7 @@ function Page() {
     const tes = timeEntries.map<Row>((t) => ({
       id: t.id,
       type: "Time entry",
-      driver: driverById(t.driverId)?.name ?? "—",
+      driver: drivers.find((d) => d.id === t.driverId)?.name ?? "—",
       context: t.clockOut ? "Shift completed" : "Shift active",
       submittedAt: t.clockIn,
       gpsOk: !!t.gpsClockIn,
@@ -83,7 +89,7 @@ function Page() {
     const tps = ticketPhotos.map<Row>((p) => ({
       id: p.id,
       type: "Ticket photo",
-      driver: driverById(p.driverId)?.name ?? "—",
+      driver: drivers.find((d) => d.id === p.driverId)?.name ?? "—",
       context: p.jobId,
       submittedAt: p.uploadedAt,
       gpsOk: !!p.location,
@@ -93,7 +99,7 @@ function Page() {
     const inspections = vehicleInspections.map<Row>((ins) => ({
       id: ins.id,
       type: "Vehicle inspection",
-      driver: driverById(ins.driverId)?.name ?? "—",
+      driver: drivers.find((d) => d.id === ins.driverId)?.name ?? "—",
       context: ins.vehicleId,
       submittedAt: ins.submittedAt,
       gpsOk: !!ins.gpsCapture,
@@ -103,7 +109,15 @@ function Page() {
     return [...tcs, ...wos, ...tes, ...tps, ...inspections].sort((a, b) =>
       b.submittedAt.localeCompare(a.submittedAt),
     );
-  }, [toolChecklistSubmissions, workOrders, timeEntries, ticketPhotos, vehicleInspections]);
+  }, [
+    toolChecklistSubmissions,
+    workOrders,
+    timeEntries,
+    ticketPhotos,
+    vehicleInspections,
+    drivers,
+    vehicles,
+  ]);
 
   const filtered = useMemo(
     () =>
@@ -240,6 +254,8 @@ function FormDetail({ row }: { row: Row }) {
     ticketPhotos,
     tools,
     vehicleInspections,
+    jobs,
+    clients,
   } = useData();
   let body: React.ReactNode = null;
 
@@ -265,12 +281,15 @@ function FormDetail({ row }: { row: Row }) {
       );
   } else if (row.type === "Work order") {
     const w = workOrders.find((x) => x.id === row.id);
-    const j = w ? jobById(w.jobId) : undefined;
+    const j = w ? jobs.find((x) => x.id === w.jobId) : undefined;
     if (w)
       body = (
         <div className="space-y-3 text-sm">
           <Field k="Job" v={w.jobId} />
-          <Field k="Client" v={j ? (clientById(j.clientId)?.name ?? "—") : "—"} />
+          <Field
+            k="Client"
+            v={j ? (clients.find((c) => c.id === j.clientId)?.name ?? "—") : "—"}
+          />
           <Field k="Work performed" v={w.workPerformed} />
           <Field k="Load" v={`${w.loadType} · ${w.weightTonnes}t`} />
           <Field k="Dump site" v={w.dumpSite} />

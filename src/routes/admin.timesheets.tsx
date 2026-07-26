@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
-import { driverById } from "@/data/mockData";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -680,7 +679,9 @@ function Page() {
                   className={`border-t border-border ${t._flagged ? "bg-danger/5" : ""}`}
                 >
                   <td className="px-4 py-3 font-mono text-xs">{t.id}</td>
-                  <td className="px-4 py-3">{driverById(t.driverId)?.name ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    {drivers.find((d) => d.id === t.driverId)?.name ?? "—"}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs">
                     {new Date(t.clockIn).toLocaleString()}
                   </td>

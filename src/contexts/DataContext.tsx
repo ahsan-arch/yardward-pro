@@ -49,11 +49,20 @@ import type {
   CoreReturn,
   BomComponent,
   WorkOrderPhoto,
+  Driver,
 } from "@/types/domain";
 import { DEFAULT_APP_SETTINGS } from "@/types/domain";
 
 type Ctx = {
   drivers: typeof seed.drivers;
+  // Local append/update after admin.drivers.tsx creates a driver via the
+  // admin-create-user edge function. That function writes straight to the
+  // DB with the service-role key, so it doesn't go through any client
+  // insert this context would otherwise mirror, and there's no realtime
+  // subscription on `profiles`/`drivers` (unlike jobs/work_orders/vehicles
+  // above) — without this the new driver silently didn't appear in the
+  // list until a full page reload, even though it was already saved.
+  upsertDriver: (d: Driver) => void;
   /**
    * Mechanic roster. Hydrated from public.profiles WHERE role='mechanic' so
    * the name-lookup tables in mechanic.work-orders.tsx resolve real profile
@@ -165,6 +174,14 @@ type Ctx = {
    * stock here.
    */
   markPurchaseRequestOrdered: (id: string, ordererId: string, supplierOrderRef: string) => void;
+  /**
+   * Flip a pending PR to 'rejected'. The admin "Reject" button used to be a
+   * permanent UI-only stub (toast said "(mock)", nothing changed) even
+   * though the reject_purchase_request RPC has existed on the backend since
+   * migration 20260611060000 — api.rejectPurchaseRequest just never called
+   * it. This is the local-state half of the real wire-up.
+   */
+  rejectPurchaseRequest: (id: string) => void;
   clockIn: (entry: TimeEntry) => void;
   clockOut: (entryId: string, patch: Partial<TimeEntry>) => void;
   addSms: (sms: SmsLog) => void;
@@ -890,6 +907,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ),
     [],
   );
+  const rejectPurchaseRequest = useCallback(
+    (id: string) =>
+      setPRs((arr) => arr.map((x) => (x.id === id ? { ...x, status: "rejected" } : x))),
+    [],
+  );
   const markPurchaseRequestOrdered = useCallback(
     (id: string, ordererId: string, supplierOrderRef: string) =>
       setPRs((arr) =>
@@ -1098,6 +1120,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ),
     [],
   );
+  const upsertDriver = useCallback(
+    (d: Driver) =>
+      setDrivers((arr) =>
+        arr.some((x) => x.id === d.id) ? arr.map((x) => (x.id === d.id ? d : x)) : [d, ...arr],
+      ),
+    [],
+  );
   const upsertClientRateTable = useCallback(
     (clientId: string, rateTableId: string, lineItems: RateLineItem[]) => {
       // Wholesale replace the rate table (matches the DELETE/INSERT done on
@@ -1120,6 +1149,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     <DataCtx.Provider
       value={{
         drivers,
+        upsertDriver,
         mechanics,
         admins,
         vehicles,
@@ -1176,6 +1206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         submitPurchaseRequest,
         approvePurchaseRequest,
         markPurchaseRequestOrdered,
+        rejectPurchaseRequest,
         clockIn,
         clockOut,
         addSms,

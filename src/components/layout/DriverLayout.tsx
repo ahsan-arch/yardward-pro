@@ -73,7 +73,17 @@ const menuGroups: { label: string; items: { to: string; label: string; icon: typ
     },
   ];
 
-export function DriverShell({ children }: { children?: ReactNode }) {
+export function DriverShell({
+  children,
+  onClockOpenerReady,
+}: {
+  children?: ReactNode;
+  // Lets a page rendered inside DriverShell (e.g. driver.index.tsx's "Start
+  // shift" button) open the clock-in/out sheet below, whose open state is
+  // otherwise private to this component and only reachable via the header
+  // button. Called once on mount with an imperative opener function.
+  onClockOpenerReady?: (opener: () => void) => void;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = useNavigate();
   const { user } = useAuth();
@@ -86,6 +96,16 @@ export function DriverShell({ children }: { children?: ReactNode }) {
   }, [me?.vehicleAssignmentId]);
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    // Register once on mount only — onClockOpenerReady is typically an
+    // inline arrow at the call site, so depending on it here would re-fire
+    // every render (the parent's setState call triggers a re-render, which
+    // creates a new inline function, which fires the effect again — an
+    // infinite loop). setOpen itself never changes, so a fresh opener isn't
+    // needed after mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    onClockOpenerReady?.(() => setOpen(true));
+  }, []);
   const [odo, setOdo] = useState("");
   const [busy, setBusy] = useState(false);
   const gps = useGpsCapture(fallback, open);

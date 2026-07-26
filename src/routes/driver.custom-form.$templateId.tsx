@@ -75,7 +75,15 @@ function Page() {
       }
     }
     setErrs(bad);
-    if (Object.keys(bad).length) return;
+    if (Object.keys(bad).length) {
+      // Same "long form, offscreen inline error, no other feedback" trap
+      // fixed on the other driver forms this session — Submit sits below
+      // the fold on longer templates and the errors are just a small red
+      // border + text on the missed field, so tapping Submit looked like it
+      // did nothing.
+      toast.error("Fill all required fields");
+      return;
+    }
     setSubmitting(true);
     try {
       const paths: string[] = [];

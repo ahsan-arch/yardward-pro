@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Loader2, AlertTriangle, Clock, ArrowRight } from "lucide-react";
 import type { DriverToken } from "@/types/domain";
-import { driverById } from "@/data/mockData";
 
 export const Route = createFileRoute("/t/$token")({
   head: () => ({ meta: [{ title: "Driver access — Engage Hydrovac CRM" }] }),
@@ -93,7 +92,15 @@ function Page() {
     );
   }
 
-  const driver = tokenData ? driverById(tokenData.driverId) : null;
+  const driverName = tokenData?.driverName?.trim() || null;
+  const driverInitials = driverName
+    ? driverName
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : null;
   const expiresIn = tokenData
     ? Math.max(0, Math.round((new Date(tokenData.expiresAt).getTime() - Date.now()) / 60_000))
     : 0;
@@ -159,9 +166,11 @@ function Page() {
       <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full">
         <div className="text-center">
           <div className="w-14 h-14 rounded-full bg-amber-brand mx-auto grid place-items-center text-amber-brand-foreground font-bold text-xl">
-            {driver?.initials ?? "?"}
+            {driverInitials ?? "?"}
           </div>
-          <h1 className="text-lg font-bold mt-3">Hi {driver?.name.split(" ")[0] ?? "Driver"}</h1>
+          <h1 className="text-lg font-bold mt-3">
+            Hi {driverName?.split(" ")[0] ?? "Driver"}
+          </h1>
           <p className="text-xs text-muted-foreground mt-1">
             No login needed — this link is just for you.
           </p>

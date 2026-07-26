@@ -2,10 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { Button } from "@/components/ui/button";
 import { ClipboardCheck, ClipboardList, Wrench, Notebook, Package, Play } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { clientById, vehicleById } from "@/data/mockData";
 
 export const Route = createFileRoute("/driver/")({
   head: () => ({ meta: [{ title: "Driver — Engage Hydrovac CRM" }] }),
@@ -46,7 +45,7 @@ const tiles = [
 ];
 
 function Home() {
-  const { jobs } = useData();
+  const { jobs, clients, vehicles } = useData();
   const { user } = useAuth();
   // Drafts are admin-private — they must never surface on a driver's home feed.
   // Pick the next non-draft job assigned to this driver (or the next non-draft
@@ -57,18 +56,32 @@ function Home() {
     const pool = mine.length ? mine : visible;
     return [...pool].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0] ?? null;
   }, [jobs, user.id]);
-  const todaysClient = todaysJob ? clientById(todaysJob.clientId) : null;
-  const todaysVehicle = todaysJob ? vehicleById(todaysJob.vehicleId) : null;
+  const todaysClient = todaysJob ? clients.find((c) => c.id === todaysJob.clientId) : null;
+  const todaysVehicle = todaysJob ? vehicles.find((v) => v.id === todaysJob.vehicleId) : null;
   const todaysTime = todaysJob
     ? todaysJob.scheduledAt.slice(11, 16)
     : "--:--";
+  const now = new Date();
+  const nowWeekday = now.toLocaleDateString("en-GB", { weekday: "short" });
+  const nowDayMonth = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  const nowClock = now.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  // "Start shift" below used to be a plain <Button> with no onClick at all —
+  // clicking it did nothing. The real clock-in flow (GPS capture, odometer,
+  // start-of-shift checklist gate) lives in DriverShell's header button/sheet,
+  // whose open state is private to that component, so we grab an imperative
+  // opener for it via onClockOpenerReady instead of duplicating that logic.
+  const [openClockSheet, setOpenClockSheet] = useState<(() => void) | null>(null);
 
   return (
-    <DriverShell>
+    <DriverShell onClockOpenerReady={(opener) => setOpenClockSheet(() => opener)}>
       <div className="p-4 space-y-4">
         <div className="bg-card border border-border rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
           <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
-            Wed · 14 May · 06:48
+            {nowWeekday} · {nowDayMonth} · {nowClock}
           </div>
           <h1 className="text-2xl font-bold mt-1">
             Good morning, {user.name.split(" ")[0] || "driver"}
@@ -102,7 +115,10 @@ function Home() {
               </div>
             )}
           </div>
-          <Button className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold">
+          <Button
+            onClick={() => openClockSheet?.()}
+            className="w-full mt-4 h-14 bg-amber-brand text-amber-brand-foreground hover:bg-amber-brand/90 text-base font-bold"
+          >
             <Play className="w-5 h-5 fill-current" /> Start shift
           </Button>
         </div>

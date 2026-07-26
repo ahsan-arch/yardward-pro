@@ -39,7 +39,7 @@ function isProbablyPlaceholder(phone: string): boolean {
 }
 
 function Page() {
-  const { drivers, mechanics, setUserPhone } = useData();
+  const { drivers, mechanics, setUserPhone, upsertDriver } = useData();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_DRIVER_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -103,6 +103,29 @@ function Page() {
         return;
       }
       toast.success(r.reassigned ? `${name} updated` : `${name} created`);
+      // admin-create-user writes straight to the DB via the service-role
+      // key — there's no realtime subscription on drivers/profiles, so
+      // without this the new driver wouldn't show up in the list below
+      // until a full page reload even though it was already saved.
+      upsertDriver({
+        id: r.userId,
+        email,
+        name,
+        role: "driver",
+        phone: phone || "",
+        status: "active",
+        createdAt: new Date().toISOString(),
+        licenseNumber,
+        licenseExpiry,
+        vehicleAssignmentId: null,
+        currentTokenId: null,
+        initials: name
+          .split(" ")
+          .map((p) => p[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+      });
       // This entry point doesn't (yet) offer the email-invite toggle, so
       // the response is always the tempPassword branch. Narrowing is
       // defensive — if we add the toggle here later, the else branch

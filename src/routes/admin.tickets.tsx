@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminLayout";
 import { useData } from "@/contexts/DataContext";
-import { driverById } from "@/data/mockData";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +45,7 @@ export const Route = createFileRoute("/admin/tickets")({
 });
 
 function Page() {
-  const { ticketPhotos } = useData();
+  const { ticketPhotos, drivers } = useData();
   const { user } = useAuth();
   const [tab, setTab] = useState<"awaiting" | "entered" | "all">("awaiting");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -131,7 +130,7 @@ function Page() {
                 <StatusBadge status={p.status === "entered" ? "Entered" : "Awaiting entry"} />
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {driverById(p.driverId)?.name ?? "—"}
+                {drivers.find((d) => d.id === p.driverId)?.name ?? "—"}
               </div>
               <div className="mt-2 text-xs flex justify-between">
                 <span>
@@ -168,7 +167,7 @@ function Page() {
                 </div>
                 <div className="text-sm flex justify-between">
                   <span className="text-muted-foreground">Driver</span>
-                  <span>{driverById(open.driverId)?.name}</span>
+                  <span>{drivers.find((d) => d.id === open.driverId)?.name}</span>
                 </div>
                 <div>
                   <Label>Weight (tonnes)</Label>

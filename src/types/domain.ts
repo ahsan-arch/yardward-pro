@@ -537,6 +537,12 @@ export interface DriverToken {
   scopedTo: TokenScope;
   expiresAt: string;
   usedAt: string | null;
+  /**
+   * Only populated by validate_driver_token (the anon-callable /t/<token>
+   * landing-page RPC) — the landing page has no authenticated session, so
+   * it can't hydrate the real `drivers` array to look this up itself.
+   */
+  driverName?: string;
 }
 
 export interface TicketPhoto {

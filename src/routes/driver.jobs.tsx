@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { DriverShell } from "@/components/layout/DriverLayout";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { clientById, vehicleById } from "@/data/mockData";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { ArrowLeft, MapPin, Clock, Truck, ExternalLink } from "lucide-react";
@@ -84,8 +83,9 @@ function JobCard({
   job: ReturnType<typeof useData>["jobs"][number];
   canStart: boolean;
 }) {
-  const c = clientById(job.clientId);
-  const v = vehicleById(job.vehicleId);
+  const { clients, vehicles } = useData();
+  const c = clients.find((x) => x.id === job.clientId);
+  const v = vehicles.find((x) => x.id === job.vehicleId);
   const dt = new Date(job.scheduledAt);
   const mapsHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.location.address)}`;
   const statusLabel = job.status.charAt(0).toUpperCase() + job.status.slice(1);

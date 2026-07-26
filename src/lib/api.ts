@@ -1457,10 +1457,23 @@ export const api = {
       status: "pending",
     };
     if (USE_SUPABASE && supabase) {
-      // Override the (possibly mock "A-01") mechanic id with the real actor uuid.
-      const actorId = await currentActorId();
-      if (!actorId) throw new Error("submitPurchaseRequest: no authenticated actor");
-      pr.mechanicId = actorId; // keep the local-store mirror consistent too
+      // Only fall back to the real actor uuid when the caller didn't already
+      // supply a real one. This used to unconditionally overwrite mechanicId
+      // with the signed-in actor's id — correct for the mechanic's own "New
+      // request" form (guards against a stale mock "A-01" id), but it also
+      // silently clobbered admin.purchase-requests.tsx's "New purchase
+      // request" dialog, which deliberately files on behalf of a *selected*
+      // mechanic. Every admin-created PR was reassigned to the admin's own
+      // id — which has no `mechanics` row — and failed with a foreign-key
+      // violation on every attempt.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        pr.mechanicId,
+      );
+      if (!isUuid) {
+        const actorId = await currentActorId();
+        if (!actorId) throw new Error("submitPurchaseRequest: no authenticated actor");
+        pr.mechanicId = actorId; // keep the local-store mirror consistent too
+      }
       try {
         await insertWithIdempotency("purchase_requests", {
           id: pr.id,
@@ -1595,6 +1608,42 @@ export const api = {
     if (reservation) store.adjustInventoryReservation(reservation.itemId, reservation.qty);
     store.approvePurchaseRequest(id, approverId, reservation);
     return { ok: true as const, reservedInventory: reservation, matchedUntracked };
+  },
+
+  /**
+   * Reject a pending PR. The admin "Reject" button used to be a permanent
+   * UI-only stub — no api method existed, so clicking it just toasted
+   * "rejected (mock)" and left the request pending forever, even though the
+   * reject_purchase_request RPC (admin-gated, atomic, idempotent — mirrors
+   * approve_purchase_request) has existed on the backend since migration
+   * 20260611060000_reject_purchase_request.sql.
+   */
+  rejectPurchaseRequest: async (id: string, rejecterId: string) => {
+    const store = getStore();
+    const pr = store.purchaseRequests.find((p) => p.id === id);
+    if (!pr) throw new Error(`rejectPurchaseRequest: PR ${id} not found`);
+
+    if (USE_SUPABASE && supabase) {
+      const { data, error } = await supabase.rpc("reject_purchase_request", {
+        p_id: id,
+        p_rejecter_id: rejecterId,
+      });
+      if (error)
+        throw new Error(
+          `rejectPurchaseRequest: ${reportApiError("REJECT_PR", error, { purchaseRequestId: id })}`,
+        );
+      const row = Array.isArray(data) ? data[0] : null;
+      if (!row?.ok) {
+        // Lost the race against another admin or a previous click.
+        return { ok: false as const, alreadyHandled: true as const, currentStatus: row?.status ?? "rejected" };
+      }
+      store.rejectPurchaseRequest(id);
+      return { ok: true as const };
+    }
+
+    await wait();
+    store.rejectPurchaseRequest(id);
+    return { ok: true as const };
   },
 
   /**
@@ -3232,6 +3281,7 @@ export const api = {
         scopedTo: row.scoped_to,
         expiresAt: row.expires_at,
         usedAt: row.used_at,
+        driverName: row.driver_name ?? undefined,
       };
       return { valid: row.state === "valid", token: domain };
     }
@@ -4687,9 +4737,26 @@ ${rows}
       throw new Error(`openConversation: ${reportApiError("OPEN_CONVERSATION", error, input)}`);
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error("openConversation: empty response");
-    const { dbConversationToDomain } = await import("./db-mappers");
+    const { dbConversationToDomain, dbConversationParticipantToDomain } = await import(
+      "./db-mappers"
+    );
     const conv = dbConversationToDomain(row as Row<"conversations">);
     getStore().upsertConversation(conv);
+    // open_conversation() inserts both the caller (as 'originator') and the
+    // counterparty as participants server-side, but only returns the
+    // conversation row — without this, the local conversationParticipants
+    // array never learns about either row. isParticipant checks throughout
+    // the UI (ConversationView, the conversation list itself) read that
+    // local array, so the creator's own new conversation showed "You are
+    // observing this conversation — Join to reply", and clicking Join
+    // failed outright since join_conversation() is admin-only by design.
+    // Mechanic/driver realtime does subscribe to this table too, but that
+    // hop shouldn't be the only path to a correct first render.
+    const { data: cpRows } = await supabase
+      .from("conversation_participants")
+      .select("*")
+      .eq("conversation_id", conv.id);
+    (cpRows ?? []).forEach((r) => getStore().upsertParticipant(dbConversationParticipantToDomain(r)));
     return conv;
   },
 
@@ -4729,9 +4796,20 @@ ${rows}
       );
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error("openConversationWithParticipants: empty response");
-    const { dbConversationToDomain } = await import("./db-mappers");
+    const { dbConversationToDomain, dbConversationParticipantToDomain } = await import(
+      "./db-mappers"
+    );
     const conv = dbConversationToDomain(row as Row<"conversations">);
     getStore().upsertConversation(conv);
+    // Same gap as openConversation above — the RPC inserts participant rows
+    // server-side but only returns the conversation, so fetch them so the
+    // caller (an admin, for this variant) is recognized as a participant
+    // immediately instead of showing the observing/Join-conversation state.
+    const { data: cpRows } = await supabase
+      .from("conversation_participants")
+      .select("*")
+      .eq("conversation_id", conv.id);
+    (cpRows ?? []).forEach((r) => getStore().upsertParticipant(dbConversationParticipantToDomain(r)));
     return conv;
   },
 

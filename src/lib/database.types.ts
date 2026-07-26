@@ -2899,6 +2899,13 @@ export type Database = {
           status: string
         }[]
       }
+      reject_purchase_request: {
+        Args: { p_id: string; p_reason?: string; p_rejecter_id: string }
+        Returns: {
+          ok: boolean
+          status: Database["public"]["Enums"]["purchase_request_status"]
+        }[]
+      }
       report_error: {
         Args: {
           p_context?: Json
@@ -2981,6 +2988,7 @@ export type Database = {
         Args: { p_token: string }
         Returns: {
           driver_id: string
+          driver_name: string
           expires_at: string
           scoped_to: Database["public"]["Enums"]["token_scope"]
           state: string

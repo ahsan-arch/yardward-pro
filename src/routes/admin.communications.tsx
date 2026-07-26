@@ -279,7 +279,11 @@ function Page() {
         onOpenChange={setNewOpen}
         onCreated={(id) => {
           setSelectedId(id);
-          setFilter("joined");
+          // Creating a conversation doesn't make the admin a "joined"
+          // participant (that's a separate explicit action) — switching to
+          // the "joined" filter here hid the conversation the admin just
+          // created and just opened, making it look like nothing happened.
+          setFilter("all");
         }}
       />
     </AdminShell>

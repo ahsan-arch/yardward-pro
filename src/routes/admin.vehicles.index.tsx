@@ -326,10 +326,19 @@ function Stat({
 
 // Empty defaults for the Add Vehicle form. Hoisted so the click handler can
 // fall back to these if seeding from contextual data ever throws.
-const EMPTY_VEHICLE_FORM = { id: "", name: "", type: "truck", year: "" };
+// year defaults to the current year — it used to start blank with only a
+// "2024" placeholder, which read as a filled-in value and let admins submit
+// with an empty year, tripping the "Year must be a valid number" toast on
+// every attempt until they noticed and typed one in themselves.
+const EMPTY_VEHICLE_FORM = {
+  id: "",
+  name: "",
+  type: "truck",
+  year: String(new Date().getFullYear()),
+};
 
 function Page() {
-  const { vehicles, drivers } = useData();
+  const { vehicles, drivers, upsertVehicle } = useData();
   // Build the display list from LIVE Supabase data. Resolves the driver
   // assigned to each vehicle against the live drivers array — no mockData
   // seed in the production render path.
@@ -450,6 +459,10 @@ function Page() {
         return;
       }
       toast.success(`${result.vehicle.id} added`);
+      // Don't rely solely on the vehicles realtime subscription to reflect
+      // this — insert it locally too so the new vehicle shows up in the
+      // list immediately even if the realtime event is slow or dropped.
+      upsertVehicle(result.vehicle);
       setAddVehicleOpen(false);
       setVehicleForm(EMPTY_VEHICLE_FORM);
     } finally {

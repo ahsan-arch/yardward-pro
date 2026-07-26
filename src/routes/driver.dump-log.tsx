@@ -88,7 +88,13 @@ function Page() {
     if (!location.trim()) errs.location = "Where was the load picked up?";
     if (!weight.trim() && !quantity.trim()) errs.weight = "Enter a weight or quantity";
     setErr(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      // Same silent-failure pattern fixed elsewhere in the driver forms this
+      // session: inline field errors alone are easy to miss, especially when
+      // Submit is scrolled well below the field that failed.
+      toast.error(Object.values(errs)[0]);
+      return;
+    }
     setLoading(true);
     try {
       const gpsCoords = gps.result?.ok ? gps.result.coords : null;

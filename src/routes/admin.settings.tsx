@@ -19,7 +19,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/crm/StatusBadge";
 import { api } from "@/lib/api";
-import { driverById } from "@/data/mockData";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_TABS, type AdminTabGroup } from "@/lib/admin-tabs";
 import {
@@ -1903,7 +1902,7 @@ function TokensTab() {
     }
   }
 
-  const resultDriver = result ? driverById(result.driverId) : null;
+  const resultDriver = result ? drivers.find((d) => d.id === result.driverId) : null;
   const resultUrl = result ? tokenUrl(result.token) : "";
 
   return (
@@ -1958,7 +1957,9 @@ function TokensTab() {
             const url = tokenUrl(t.token);
             return (
               <tr key={t.id} className="border-t border-border">
-                <td className="px-3 py-2">{driverById(t.driverId)?.name}</td>
+                <td className="px-3 py-2">
+                  {drivers.find((d) => d.id === t.driverId)?.name}
+                </td>
                 <td className="px-3 py-2 text-xs uppercase">{t.scopedTo}</td>
                 <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                   {new Date(t.expiresAt).toLocaleString()}
