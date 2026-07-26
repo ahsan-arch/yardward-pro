@@ -185,7 +185,7 @@ function Dashboard() {
   // and the today's-jobs tile is meant to mirror what's actually live.
   const todays = jobs
     .filter((j) => j.status !== "draft")
-    .map(jobDisplay)
+    .map((j) => jobDisplay(j, drivers, clients, vehicles))
     .filter((j) => j.day === 1)
     .slice(0, 6);
   const lowTicketClients = clients

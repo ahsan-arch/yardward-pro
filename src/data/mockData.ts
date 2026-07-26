@@ -1551,11 +1551,25 @@ export const jobById = (id: string) => jobs.find((j) => j.id === id);
 const pad = (n: number) => String(n).padStart(2, "0");
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace("-", " ");
 
-// Legacy display projection for jobs (string client/driver/truck/time/day)
-export function jobDisplay(j: Job) {
-  const c = clientById(j.clientId);
-  const d = driverById(j.driverId);
-  const v = vehicleById(j.vehicleId);
+// Legacy display projection for jobs (string client/driver/truck/time/day).
+// Optional live-data arrays override the mock lookups below — every call
+// site in the real (Supabase-backed) app passes these from useData() now.
+// Without them, jobDisplay always fell back to clientById/driverById/
+// vehicleById against the static demo dataset, which never matches a real
+// UUID — every real job showed client "—", driver "Unassigned", and truck
+// "—" on the Dashboard, Schedule, and Jobs pages, regardless of what was
+// actually assigned in the database.
+export function jobDisplay(
+  j: Job,
+  liveDrivers?: Driver[],
+  liveClients?: Client[],
+  liveVehicles?: Vehicle[],
+) {
+  const c = liveClients ? liveClients.find((x) => x.id === j.clientId) : clientById(j.clientId);
+  const d = liveDrivers ? liveDrivers.find((x) => x.id === j.driverId) : driverById(j.driverId);
+  const v = liveVehicles
+    ? liveVehicles.find((x) => x.id === j.vehicleId)
+    : vehicleById(j.vehicleId);
   const dt = new Date(j.scheduledAt);
   return {
     id: j.id,

@@ -83,7 +83,10 @@ function Page() {
       return true;
     });
   }, [jobs, statusFilter, driverFilter, truckFilter, dateRangeFilter]);
-  const display = filteredJobs.map((j) => ({ ...jobDisplay(j), rawStatus: j.status }));
+  const display = filteredJobs.map((j) => ({
+    ...jobDisplay(j, drivers, clients, vehicles),
+    rawStatus: j.status,
+  }));
   // Drafts panel honors the same filters as the grid above — the operator's
   // mental model is "I narrowed my view; everything I see is consistent with
   // that". Counting against the unfiltered jobs array used to leak hidden

@@ -42,7 +42,10 @@ function Page() {
   const { jobs, drivers, vehicles, clients } = useData();
   // Keep the raw status alongside the display row so we can spot drafts
   // without re-deriving from the lowercased mock-data string.
-  const rows = jobs.map((j) => ({ ...jobDisplay(j), rawStatus: j.status }));
+  const rows = jobs.map((j) => ({
+    ...jobDisplay(j, drivers, clients, vehicles),
+    rawStatus: j.status,
+  }));
   type Row = (typeof rows)[number];
   const [sort, setSort] = useState<{ k: keyof Row; dir: 1 | -1 }>({ k: "id", dir: 1 });
   const [query, setQuery] = useState("");
